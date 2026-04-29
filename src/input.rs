@@ -40,6 +40,7 @@ use crate::*;
 use crate::options_::{options_get_number_, options_get_only, options_remove_or_default, options_set_number};
 
 // Input parser cell.
+#[derive(Copy, Clone)]
 struct input_cell {
     cell: GridCell,
     set: i32,
@@ -294,7 +295,7 @@ pub struct input_transition {
     first: i32,
     last: i32,
 
-    handler: Option<unsafe fn(*mut input_ctx) -> i32>,
+    handler: Option<fn(&mut input_ctx) -> i32>,
     handler_is_input_print: bool,
     state: Option<&'static input_state>,
 }
@@ -302,7 +303,7 @@ impl input_transition {
     const fn new(
         first: i32,
         last: i32,
-        handler: Option<unsafe fn(*mut input_ctx) -> i32>,
+        handler: Option<fn(&mut input_ctx) -> i32>,
         state: Option<&'static input_state>,
     ) -> Self {
         Self {
@@ -328,16 +329,16 @@ impl input_transition {
 // Input state.
 pub struct input_state {
     name: SyncCharPtr,
-    enter: Option<unsafe fn(*mut input_ctx)>,
-    exit: Option<unsafe fn(*mut input_ctx)>,
+    enter: Option<fn(&mut input_ctx)>,
+    exit: Option<fn(&mut input_ctx)>,
     transitions: Option<&'static [input_transition]>,
 }
 
 impl input_state {
     const fn new(
         name: &'static CStr,
-        enter: Option<unsafe fn(*mut input_ctx)>,
-        exit: Option<unsafe fn(*mut input_ctx)>,
+        enter: Option<fn(&mut input_ctx)>,
+        exit: Option<fn(&mut input_ctx)>,
         transitions: Option<&'static [input_transition]>,
     ) -> Self {
         Self {
@@ -888,57 +889,58 @@ unsafe fn input_timer_fire(pane_id: PaneId) {
 }
 
 /// Start the timer.
-unsafe fn input_start_timer(ictx: *mut input_ctx) {
-    unsafe {
-        (*ictx).timer = None;
-        if let Some(pid) = (*ictx).wp {
-            (*ictx).timer = timer_add(
-                Duration::from_secs(5),
-                Box::new(move || input_timer_fire(pid)),
-            );
-        }
+fn input_start_timer(ictx: &mut input_ctx) {
+    ictx.timer = None;
+    if let Some(pid) = ictx.wp {
+        ictx.timer = timer_add(
+            Duration::from_secs(5),
+            Box::new(move || unsafe { input_timer_fire(pid) }),
+        );
     }
 }
 
 /// Reset cell state to default.
-unsafe fn input_reset_cell(ictx: *mut input_ctx) {
-    unsafe {
-        memcpy__(&raw mut (*ictx).cell.cell, &raw const GRID_DEFAULT_CELL);
-        (*ictx).cell.set = 0;
-        (*ictx).cell.g0set = 0;
-        (*ictx).cell.g1set = 0;
-
-        memcpy__(&raw mut (*ictx).old_cell, &raw const (*ictx).cell);
-        (*ictx).old_cx = 0;
-        (*ictx).old_cy = 0;
-    }
+fn input_reset_cell(ictx: &mut input_ctx) {
+    ictx.cell = input_cell {
+        cell: GRID_DEFAULT_CELL,
+        set: 0,
+        g0set: 0,
+        g1set: 0,
+    };
+    ictx.old_cell = ictx.cell;
+    ictx.old_cx = 0;
+    ictx.old_cy = 0;
 }
 
 /// Save screen state.
-unsafe fn input_save_state(ictx: *mut input_ctx) {
-    unsafe {
-        let sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-        let s: *mut screen = (*sctx).s;
-
-        memcpy__(&raw mut (*ictx).old_cell, &raw const (*ictx).cell);
-        (*ictx).old_cx = (*s).cx;
-        (*ictx).old_cy = (*s).cy;
-        (*ictx).old_mode = (*s).mode;
-    }
+fn input_save_state(ictx: &mut input_ctx) {
+    // SAFETY: `ctx.s` is set up by `screen_write_start*` before parsing
+    // begins and is non-null for the lifetime of the parse.
+    let (cx, cy, mode) = unsafe {
+        let s: *mut screen = ictx.ctx.s;
+        ((*s).cx, (*s).cy, (*s).mode)
+    };
+    ictx.old_cell = ictx.cell;
+    ictx.old_cx = cx;
+    ictx.old_cy = cy;
+    ictx.old_mode = mode;
 }
 
 /// Restore screen state.
-unsafe fn input_restore_state(ictx: *mut input_ctx) {
+fn input_restore_state(ictx: &mut input_ctx) {
+    ictx.cell = ictx.old_cell;
+    let old_mode = ictx.old_mode;
+    let old_cx = ictx.old_cx;
+    let old_cy = ictx.old_cy;
+    let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
+    // SAFETY: `sctx` points into `ictx`, valid for the duration of this call.
     unsafe {
-        let sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-
-        memcpy__(&raw mut (*ictx).cell, &raw const (*ictx).old_cell);
-        if (*ictx).old_mode.intersects(mode_flag::MODE_ORIGIN) {
+        if old_mode.intersects(mode_flag::MODE_ORIGIN) {
             screen_write_mode_set(sctx, mode_flag::MODE_ORIGIN);
         } else {
             screen_write_mode_clear(sctx, mode_flag::MODE_ORIGIN);
         }
-        screen_write_cursormove(sctx, (*ictx).old_cx as i32, (*ictx).old_cy as i32, 0);
+        screen_write_cursormove(sctx, old_cx as i32, old_cy as i32, 0);
     }
 }
 
@@ -988,13 +990,19 @@ pub unsafe fn input_free(ictx: *mut input_ctx) {
 // Reset input state and clear screen.
 
 pub unsafe fn input_reset(ictx: *mut input_ctx, clear: i32) {
-    unsafe {
-        let sctx = &raw mut (*ictx).ctx;
-        let wp = pane_ptr_from_id((*ictx).wp);
+    // SAFETY: caller guarantees `ictx` was returned by `input_init` and
+    // is exclusively borrowed here.
+    let ictx = unsafe { &mut *ictx };
 
-        input_reset_cell(ictx);
+    let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
+    // SAFETY: `wp` comes from a registry lookup; checked for null below.
+    let wp = unsafe { pane_ptr_from_id(ictx.wp) };
 
-        if clear != 0 && !wp.is_null() {
+    input_reset_cell(ictx);
+
+    if clear != 0 && !wp.is_null() {
+        // SAFETY: `wp` is non-null, points to a registered window_pane.
+        unsafe {
             if (*wp).modes.is_empty() {
                 screen_write_start_pane(sctx, wp, &raw mut (*wp).base);
             } else {
@@ -1003,12 +1011,12 @@ pub unsafe fn input_reset(ictx: *mut input_ctx, clear: i32) {
             screen_write_reset(sctx);
             screen_write_stop(sctx);
         }
-
-        input_clear(ictx);
-
-        (*ictx).state = &INPUT_STATE_GROUND;
-        (*ictx).flags = input_flags::empty();
     }
+
+    input_clear(ictx);
+
+    ictx.state = &INPUT_STATE_GROUND;
+    ictx.flags = input_flags::empty();
 }
 
 /// Return pending data — bytes received since the parser was last in the
@@ -1022,83 +1030,82 @@ pub unsafe fn input_pending(ictx: *mut input_ctx) -> *mut evbuffer {
 /// Transition the parser to `next`, running the current state's exit hook
 /// and the new state's enter hook. The states themselves are `'static`,
 /// so the reference is always valid for the lifetime of the parser.
-pub unsafe fn input_set_state(ictx: *mut input_ctx, next: &'static input_state) {
-    unsafe {
-        if let Some(exit) = (*ictx).state.exit {
-            exit(ictx);
-        }
+fn input_set_state(ictx: &mut input_ctx, next: &'static input_state) {
+    if let Some(exit) = ictx.state.exit {
+        exit(ictx);
+    }
 
-        (*ictx).state = next;
+    ictx.state = next;
 
-        if let Some(enter) = (*ictx).state.enter {
-            enter(ictx);
-        }
+    if let Some(enter) = ictx.state.enter {
+        enter(ictx);
     }
 }
 
 /// Parse data.
-fn input_parse(ictx: *mut input_ctx, buf: *mut u8, len: usize) {
-    unsafe {
-        let sctx = &raw mut (*ictx).ctx;
-        // Cache the most recently observed parser state as a raw pointer so
-        // we can detect state changes via cheap pointer-equality without
-        // refetching the transition table on every byte.
-        let mut state: *const input_state = std::ptr::null();
-        let mut itr: Option<&input_transition> = None;
-        let mut off = 0usize;
+fn input_parse(ictx: &mut input_ctx, buf: *const u8, len: usize) {
+    let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
+    // Cache the most recently observed parser state as a raw pointer so
+    // we can detect state changes via cheap pointer-equality without
+    // refetching the transition table on every byte.
+    let mut state: *const input_state = std::ptr::null();
+    let mut itr: Option<&input_transition> = None;
+    let mut off = 0usize;
 
-        // Parse the input.
-        while off < len {
-            (*ictx).ch = *buf.add(off) as i32;
-            off += 1;
+    // Parse the input.
+    while off < len {
+        // SAFETY: caller ensures `buf` is valid for `len` bytes.
+        ictx.ch = unsafe { *buf.add(off) } as i32;
+        off += 1;
 
-            // Find the transition.
-            if !std::ptr::eq((*ictx).state as *const _, state)
-                || itr.is_none()
-                || (*ictx).ch < itr.as_ref().unwrap().first
-                || (*ictx).ch > itr.as_ref().unwrap().last
-            {
-                itr = (*ictx)
-                    .state
-                    .transitions
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .find(|&itr| (*ictx).ch >= itr.first && (*ictx).ch <= itr.last);
+        // Find the transition.
+        if !std::ptr::eq(ictx.state as *const _, state)
+            || itr.is_none()
+            || ictx.ch < itr.as_ref().unwrap().first
+            || ictx.ch > itr.as_ref().unwrap().last
+        {
+            let ch = ictx.ch;
+            itr = ictx
+                .state
+                .transitions
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|&itr| ch >= itr.first && ch <= itr.last);
 
-                if itr.is_none() {
-                    fatalx("no transition from state");
-                } /* No transition? Eh? */
+            if itr.is_none() {
+                fatalx("no transition from state");
             }
-            state = (*ictx).state as *const _;
+        }
+        state = ictx.state as *const _;
 
-            // Any state except print stops the current collection. This is
-            // an optimization to avoid checking if the attributes have
-            // changed for every character. It will stop unnecessarily for
-            // sequences that don't make a terminal change, but they should
-            // be the minority.
-            if !itr.as_ref().unwrap().handler_is_input_print {
-                screen_write_collect_end(sctx);
-            }
+        // Any state except print stops the current collection. This is
+        // an optimization to avoid checking if the attributes have
+        // changed for every character. It will stop unnecessarily for
+        // sequences that don't make a terminal change, but they should
+        // be the minority.
+        if !itr.as_ref().unwrap().handler_is_input_print {
+            // SAFETY: `sctx` points into `ictx`, valid for the loop.
+            unsafe { screen_write_collect_end(sctx) };
+        }
 
-            // Execute the handler, if any. Don't switch state if it
-            // returns non-zero.
-            if let Some(handler) = itr.as_ref().unwrap().handler
-                && handler(ictx) != 0
-            {
-                continue;
-            }
+        // Execute the handler, if any. Don't switch state if it
+        // returns non-zero.
+        if let Some(handler) = itr.as_ref().unwrap().handler
+            && handler(ictx) != 0
+        {
+            continue;
+        }
 
-            // And switch state, if necessary.
-            if let Some(next) = itr.as_ref().unwrap().state {
-                input_set_state(ictx, next);
-            }
+        // And switch state, if necessary.
+        if let Some(next) = itr.as_ref().unwrap().state {
+            input_set_state(ictx, next);
+        }
 
-            // If not in ground state, save input.
-            if !std::ptr::eq((*ictx).state, &INPUT_STATE_GROUND) {
-                let byte = (*ictx).ch as u8;
-                (*ictx).since_ground.add(std::slice::from_ref(&byte));
-            }
+        // If not in ground state, save input.
+        if !std::ptr::eq(ictx.state, &INPUT_STATE_GROUND) {
+            let byte = ictx.ch as u8;
+            ictx.since_ground.add(std::slice::from_ref(&byte));
         }
     }
 }
@@ -1116,11 +1123,11 @@ pub unsafe fn input_parse_pane(wp: *mut window_pane) {
 /// Parse given input.
 pub unsafe fn input_parse_buffer(wp: *mut window_pane, buf: *mut u8, len: usize) {
     unsafe {
-        let ictx = (*wp).ictx;
-        let sctx = &raw mut (*ictx).ctx;
         if len == 0 {
             return;
         }
+        let ictx = &mut *(*wp).ictx;
+        let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
 
         window_update_activity(NonNull::new(window_pane_window(wp)).unwrap());
         (*wp).flags |= window_pane_flags::PANE_CHANGED;
@@ -1137,8 +1144,6 @@ pub unsafe fn input_parse_buffer(wp: *mut window_pane, buf: *mut u8, len: usize)
             screen_write_start(sctx, &raw mut (*wp).base);
         }
 
-        // log_debug!("{}: %%{} {}, {} bytes: %.*s", "input_parse_buffer", (*wp).id, (*ictx).state).name, len, (int)len, buf);
-
         input_parse(ictx, buf, len);
         screen_write_stop(sctx);
     }
@@ -1153,15 +1158,19 @@ pub unsafe fn input_parse_screen(
     buf: *mut u8,
     len: usize,
 ) {
+    if len == 0 {
+        return;
+    }
+    // SAFETY: caller passes a valid `*mut input_ctx`; exclusive borrow
+    // for the duration of the parse.
+    let ictx = unsafe { &mut *ictx };
+    let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
+
     unsafe {
-        let sctx: *mut screen_write_ctx = &raw mut (*ictx).ctx;
-
-        if len == 0 {
-            return;
-        }
-
         screen_write_start_callback(sctx, s, cb, arg);
-        input_parse(ictx, buf, len);
+    }
+    input_parse(ictx, buf, len);
+    unsafe {
         screen_write_stop(sctx);
     }
 }
@@ -1177,68 +1186,61 @@ pub unsafe fn input_parse_screen(
 /// than 24 parameters are present.
 const PARAM_LIST_LIMIT: usize = 24;
 
-unsafe fn input_split(ictx: *mut input_ctx) -> i32 {
-    unsafe {
-        let plist = &mut (*ictx).param_list;
-        plist.clear();
+fn input_split(ictx: &mut input_ctx) -> i32 {
+    ictx.param_list.clear();
 
-        if (*ictx).param_len == 0 {
-            return 0;
-        }
-
-        // `param_buf` is a fixed [u8; 64] populated by `input_parameter`,
-        // NUL-terminated at index `param_len`. Operate on the bytes directly.
-        let pbuf = &(*ictx).param_buf;
-        let buf = &pbuf[..(*ictx).param_len];
-        for part in buf.split(|&b| b == b';') {
-            if plist.len() >= PARAM_LIST_LIMIT {
-                return -1;
-            }
-            let param = if part.is_empty() {
-                InputParam::Missing
-            } else if part.contains(&b':') {
-                InputParam::String(part.to_vec())
-            } else {
-                let s = match std::str::from_utf8(part) {
-                    Ok(s) => s,
-                    Err(_) => return -1,
-                };
-                match s.parse::<i32>() {
-                    Ok(n) if n >= 0 => InputParam::Number(n),
-                    _ => return -1,
-                }
-            };
-            plist.push(param);
-        }
-
-        for (i, ip) in plist.iter().enumerate() {
-            match ip {
-                InputParam::Missing => log_debug!("parameter {}: missing", i),
-                InputParam::String(s) => log_debug!(
-                    "parameter {}: string {}",
-                    i,
-                    String::from_utf8_lossy(s)
-                ),
-                InputParam::Number(n) => log_debug!("parameter {}: number {}", i, n),
-            }
-        }
-
-        0
+    if ictx.param_len == 0 {
+        return 0;
     }
+
+    // `param_buf` is a fixed [u8; 64] populated by `input_parameter`,
+    // NUL-terminated at index `param_len`. Operate on the bytes directly.
+    let buf = &ictx.param_buf[..ictx.param_len];
+    for part in buf.split(|&b| b == b';') {
+        if ictx.param_list.len() >= PARAM_LIST_LIMIT {
+            return -1;
+        }
+        let param = if part.is_empty() {
+            InputParam::Missing
+        } else if part.contains(&b':') {
+            InputParam::String(part.to_vec())
+        } else {
+            let s = match std::str::from_utf8(part) {
+                Ok(s) => s,
+                Err(_) => return -1,
+            };
+            match s.parse::<i32>() {
+                Ok(n) if n >= 0 => InputParam::Number(n),
+                _ => return -1,
+            }
+        };
+        ictx.param_list.push(param);
+    }
+
+    for (i, ip) in ictx.param_list.iter().enumerate() {
+        match ip {
+            InputParam::Missing => log_debug!("parameter {}: missing", i),
+            InputParam::String(s) => log_debug!(
+                "parameter {}: string {}",
+                i,
+                String::from_utf8_lossy(s)
+            ),
+            InputParam::Number(n) => log_debug!("parameter {}: number {}", i, n),
+        }
+    }
+
+    0
 }
 
 /// Get a numeric argument at index `validx`. Returns:
 /// - `defval` if the slot is out-of-range or [`InputParam::Missing`]
 /// - `-1` if the slot is a colon sub-parameter [`InputParam::String`]
 /// - the slot's number, clamped to `>= minval`, otherwise.
-pub unsafe fn input_get(ictx: *mut input_ctx, validx: u32, minval: i32, defval: i32) -> i32 {
-    unsafe {
-        let plist = &(*ictx).param_list;
-        match plist.get(validx as usize) {
-            None | Some(InputParam::Missing) => defval,
-            Some(InputParam::String(_)) => -1,
-            Some(InputParam::Number(n)) => (*n).max(minval),
-        }
+pub fn input_get(ictx: &input_ctx, validx: u32, minval: i32, defval: i32) -> i32 {
+    match ictx.param_list.get(validx as usize) {
+        None | Some(InputParam::Missing) => defval,
+        Some(InputParam::String(_)) => -1,
+        Some(InputParam::Number(n)) => (*n).max(minval),
     }
 }
 
@@ -1248,165 +1250,159 @@ macro_rules! input_reply {
     };
 }
 /// Reply to terminal query — writes response data to the output buffer.
-unsafe fn input_reply_(ictx: *mut input_ctx, args: std::fmt::Arguments) {
+fn input_reply_(ictx: &mut input_ctx, args: std::fmt::Arguments) {
+    if ictx.event.is_null() {
+        return;
+    }
+    let reply = CString::new(args.to_string()).unwrap();
+    // SAFETY: `ictx.event` is non-null and owned by the caller; valid
+    // for the duration of this call. `_s` and `strlen` operate on the
+    // CString-owned buffer, which is NUL-terminated.
     unsafe {
-        let evb = (*ictx).event;
-        if evb.is_null() {
-            return;
-        }
-
-        let reply = CString::new(args.to_string()).unwrap();
         log_debug!("input_reply: {}", _s(reply.as_ptr()));
-        let data = std::slice::from_raw_parts(reply.as_ptr().cast::<u8>(), strlen(reply.as_ptr().cast()));
-        (*evb).add(data);
+        let data = std::slice::from_raw_parts(
+            reply.as_ptr().cast::<u8>(),
+            strlen(reply.as_ptr().cast()),
+        );
+        (*ictx.event).add(data);
     }
 }
 
 /// Clear saved state.
-unsafe fn input_clear(ictx: *mut input_ctx) {
-    unsafe {
-        (*ictx).timer = None;
+fn input_clear(ictx: &mut input_ctx) {
+    ictx.timer = None;
 
-        (*ictx).interm_buf[0] = b'\0';
-        (*ictx).interm_len = 0;
+    ictx.interm_buf[0] = b'\0';
+    ictx.interm_len = 0;
 
-        (*ictx).param_buf[0] = b'\0';
-        (*ictx).param_len = 0;
+    ictx.param_buf[0] = b'\0';
+    ictx.param_len = 0;
 
-        // Reset content but keep the trailing NUL so the C-string view
-        // (`input_buf.as_ptr()`) remains valid.
-        (*ictx).input_buf.clear();
-        (*ictx).input_buf.push(0);
-        (*ictx).input_len = 0;
+    // Reset content but keep the trailing NUL so the C-string view
+    // (`input_buf.as_ptr()`) remains valid.
+    ictx.input_buf.clear();
+    ictx.input_buf.push(0);
+    ictx.input_len = 0;
 
-        (*ictx).input_end = input_end_type::INPUT_END_ST;
+    ictx.input_end = input_end_type::INPUT_END_ST;
 
-        (*ictx).flags &= !input_flags::INPUT_DISCARD;
-    }
+    ictx.flags &= !input_flags::INPUT_DISCARD;
 }
 
 /// Reset for ground state.
-unsafe fn input_ground(ictx: *mut input_ctx) {
-    unsafe {
-        (*ictx).timer = None;
-        let len = (*ictx).since_ground.len();
-        (*ictx).since_ground.drain(len);
+fn input_ground(ictx: &mut input_ctx) {
+    ictx.timer = None;
+    let len = ictx.since_ground.len();
+    ictx.since_ground.drain(len);
 
-        if (*ictx).input_buf.capacity() > INPUT_BUF_START {
-            (*ictx).input_buf.shrink_to(INPUT_BUF_START);
-        }
+    if ictx.input_buf.capacity() > INPUT_BUF_START {
+        ictx.input_buf.shrink_to(INPUT_BUF_START);
     }
 }
 
 /// Output this character to the screen.
-unsafe fn input_print(ictx: *mut input_ctx) -> i32 {
-    unsafe {
-        let sctx = &raw mut (*ictx).ctx;
+fn input_print(ictx: &mut input_ctx) -> i32 {
+    ictx.utf8started = 0; /* can't be valid UTF-8 */
 
-        (*ictx).utf8started = 0; /* can't be valid UTF-8 */
-
-        let set = if (*ictx).cell.set == 0 {
-            (*ictx).cell.g0set
-        } else {
-            (*ictx).cell.g1set
-        };
-        if set == 1 {
-            (*ictx).cell.cell.attr |= GridAttr::GRID_ATTR_CHARSET;
-        } else {
-            (*ictx).cell.cell.attr &= !GridAttr::GRID_ATTR_CHARSET;
-        }
-
-        (*ictx).cell.cell.data = Utf8Data::single((*ictx).ch as u8);
-        screen_write_collect_add(sctx, &(*ictx).cell.cell);
-
-        (*ictx).last = (*ictx).cell.cell.data;
-        (*ictx).flags |= input_flags::INPUT_LAST;
-
-        (*ictx).cell.cell.attr &= !GridAttr::GRID_ATTR_CHARSET;
+    let set = if ictx.cell.set == 0 {
+        ictx.cell.g0set
+    } else {
+        ictx.cell.g1set
+    };
+    if set == 1 {
+        ictx.cell.cell.attr |= GridAttr::GRID_ATTR_CHARSET;
+    } else {
+        ictx.cell.cell.attr &= !GridAttr::GRID_ATTR_CHARSET;
     }
+
+    ictx.cell.cell.data = Utf8Data::single(ictx.ch as u8);
+    let cell = ictx.cell.cell;
+    let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
+    // SAFETY: `sctx` points into `ictx`, valid for this call.
+    unsafe { screen_write_collect_add(sctx, &cell) };
+
+    ictx.last = ictx.cell.cell.data;
+    ictx.flags |= input_flags::INPUT_LAST;
+
+    ictx.cell.cell.attr &= !GridAttr::GRID_ATTR_CHARSET;
 
     0
 }
 
 /// Collect intermediate string.
-unsafe fn input_intermediate(ictx: *mut input_ctx) -> i32 {
+fn input_intermediate(ictx: &mut input_ctx) -> i32 {
     let sizeof_interm_buf = 4;
-    unsafe {
-        if (*ictx).interm_len == sizeof_interm_buf - 1 {
-            (*ictx).flags |= input_flags::INPUT_DISCARD;
-        } else {
-            (*ictx).interm_buf[(*ictx).interm_len] = (*ictx).ch as u8;
-            (*ictx).interm_len += 1;
-            (*ictx).interm_buf[(*ictx).interm_len] = b'\0';
-        }
+    if ictx.interm_len == sizeof_interm_buf - 1 {
+        ictx.flags |= input_flags::INPUT_DISCARD;
+    } else {
+        ictx.interm_buf[ictx.interm_len] = ictx.ch as u8;
+        ictx.interm_len += 1;
+        ictx.interm_buf[ictx.interm_len] = b'\0';
     }
     0
 }
 
 /// Collect parameter string.
-unsafe fn input_parameter(ictx: *mut input_ctx) -> i32 {
+fn input_parameter(ictx: &mut input_ctx) -> i32 {
     let sizeof_param_buf = 64;
-    unsafe {
-        if (*ictx).param_len == sizeof_param_buf - 1 {
-            (*ictx).flags |= input_flags::INPUT_DISCARD;
-        } else {
-            (*ictx).param_buf[(*ictx).param_len] = (*ictx).ch as u8;
-            (*ictx).param_len += 1;
-            (*ictx).param_buf[(*ictx).param_len] = b'\0';
-        }
+    if ictx.param_len == sizeof_param_buf - 1 {
+        ictx.flags |= input_flags::INPUT_DISCARD;
+    } else {
+        ictx.param_buf[ictx.param_len] = ictx.ch as u8;
+        ictx.param_len += 1;
+        ictx.param_buf[ictx.param_len] = b'\0';
     }
 
     0
 }
 
 /// Collect input string.
-unsafe fn input_input(ictx: *mut input_ctx) -> i32 {
-    unsafe {
-        // Cap content length at INPUT_BUF_LIMIT-1 so the buffer (content + NUL)
-        // stays within the limit. C tmux doubles `input_space`; Vec grows on
-        // its own, so we just check the limit and let `Vec::push` handle
-        // capacity.
-        if (*ictx).input_len + 2 > INPUT_BUF_LIMIT {
-            (*ictx).flags |= input_flags::INPUT_DISCARD;
-            return 0;
-        }
-        // Overwrite the trailing NUL with the new byte, append a fresh NUL.
-        let buf = &mut (*ictx).input_buf;
-        let idx = (*ictx).input_len;
-        buf[idx] = (*ictx).ch as u8;
-        (*ictx).input_len += 1;
-        buf.push(0);
-
-        0
+fn input_input(ictx: &mut input_ctx) -> i32 {
+    // Cap content length at INPUT_BUF_LIMIT-1 so the buffer (content + NUL)
+    // stays within the limit. C tmux doubles `input_space`; Vec grows on
+    // its own, so we just check the limit and let `Vec::push` handle
+    // capacity.
+    if ictx.input_len + 2 > INPUT_BUF_LIMIT {
+        ictx.flags |= input_flags::INPUT_DISCARD;
+        return 0;
     }
+    // Overwrite the trailing NUL with the new byte, append a fresh NUL.
+    let idx = ictx.input_len;
+    let ch = ictx.ch as u8;
+    ictx.input_buf[idx] = ch;
+    ictx.input_len += 1;
+    ictx.input_buf.push(0);
+
+    0
 }
 
 /// Execute C0 control sequence.
-unsafe fn input_c0_dispatch(ictx: *mut input_ctx) -> i32 {
+fn input_c0_dispatch(ictx: &mut input_ctx) -> i32 {
     let func = "input_c0_dispatch";
+    ictx.utf8started = 0; /* can't be valid UTF-8 */
+
+    log_debug!("{}: '{}'", "input_c0_dispatch", ictx.ch as u8 as char);
+
+    const NUL: u8 = 0o00;
+    const BEL: u8 = 0o07;
+    const BS: u8 = 0o10;
+    const HT: u8 = 0o11;
+    const LF: u8 = 0o12;
+    const VT: u8 = 0o13;
+    const FF: u8 = 0o14;
+    const CR: u8 = 0o15;
+    const SO: u8 = 0o16;
+    const SI: u8 = 0o17;
+
+    let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
+    // SAFETY: `wp`, `s`, and screen_write_* calls operate on registry-
+    // owned and screen_write_start-initialised pointers valid for the
+    // lifetime of the parse.
     unsafe {
-        let sctx = &raw mut (*ictx).ctx;
-        let wp = pane_ptr_from_id((*ictx).wp);
+        let wp = pane_ptr_from_id(ictx.wp);
         let s = (*sctx).s;
 
-        (*ictx).utf8started = 0; /* can't be valid UTF-8 */
-
-        log_debug!("{}: '{}'", "input_c0_dispatch", (*ictx).ch as u8 as char);
-
-        const NUL: u8 = 0o00;
-        const BEL: u8 = 0o07;
-        const BS: u8 = 0o10;
-        const HT: u8 = 0o11;
-
-        const LF: u8 = 0o12;
-        const VT: u8 = 0o13;
-        const FF: u8 = 0o14;
-
-        const CR: u8 = 0o15;
-        const SO: u8 = 0o16;
-        const SI: u8 = 0o17;
-
-        match (*ictx).ch as u8 {
+        match ictx.ch as u8 {
             NUL | BEL => {
                 if !wp.is_null() {
                     alerts_queue(NonNull::new(window_pane_window(wp)).unwrap(), window_flag::BELL);
@@ -1423,61 +1419,64 @@ unsafe fn input_c0_dispatch(ictx: *mut input_ctx) -> i32 {
                     }
                 }
             }
-
             LF | VT | FF => {
-                screen_write_linefeed(sctx, false, (*ictx).cell.cell.bg as u32);
+                screen_write_linefeed(sctx, false, ictx.cell.cell.bg as u32);
                 if (*s).mode.intersects(mode_flag::MODE_CRLF) {
                     screen_write_carriagereturn(sctx);
                 }
             }
             CR => screen_write_carriagereturn(sctx),
-            SO => (*ictx).cell.set = 1,
-            SI => (*ictx).cell.set = 0,
-            _ => log_debug!("{}: unknown '{}'", func, (*ictx).ch),
+            SO => ictx.cell.set = 1,
+            SI => ictx.cell.set = 0,
+            _ => log_debug!("{}: unknown '{}'", func, ictx.ch),
         }
-
-        (*ictx).flags &= !input_flags::INPUT_LAST;
-        0
     }
+
+    ictx.flags &= !input_flags::INPUT_LAST;
+    0
 }
 
 /// Execute escape sequence.
-unsafe fn input_esc_dispatch(ictx: *mut input_ctx) -> i32 {
+fn input_esc_dispatch(ictx: &mut input_ctx) -> i32 {
     let __func__ = "input_esc_dispatch";
+    if ictx.flags.intersects(input_flags::INPUT_DISCARD) {
+        return 0;
+    }
+    // SAFETY: most of this body is screen_write_* / colour_palette_clear /
+    // table comparison work that uses raw pointers under the hood; field
+    // accesses on `ictx` are safe but the FFI calls aren't.
     unsafe {
-        let sctx = &raw mut (*ictx).ctx;
+        let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
         let s = (*sctx).s;
 
-        if (*ictx).flags.intersects(input_flags::INPUT_DISCARD) {
-            return 0;
-        }
         log_debug!(
             "{}: '{}', {}",
             __func__,
-            (*ictx).ch as u8 as char,
-            _s((*ictx).interm_buf.as_ptr().cast::<u8>())
+            ictx.ch as u8 as char,
+            _s(ictx.interm_buf.as_ptr().cast::<u8>())
         );
 
+        let ictx_ptr: *mut input_ctx = ictx;
         let Ok(entry) =
-            INPUT_ESC_TABLE.binary_search_by(|e| input_table_compare(ictx, e).reverse())
+            INPUT_ESC_TABLE.binary_search_by(|e| input_table_compare(ictx_ptr, e).reverse())
         else {
-            log_debug!("{}: unknown '{}'", __func__, (*ictx).ch);
+            log_debug!("{}: unknown '{}'", __func__, ictx.ch);
             return 0;
         };
 
         match input_esc_type::try_from((INPUT_ESC_TABLE[entry]).type_) {
             Ok(input_esc_type::INPUT_ESC_RIS) => {
-                colour_palette_clear(NonNull::new((*ictx).palette).map(|e| &mut *e.as_ptr()));
+                colour_palette_clear(NonNull::new(ictx.palette).map(|e| &mut *e.as_ptr()));
                 input_reset_cell(ictx);
                 screen_write_reset(sctx);
                 screen_write_fullredraw(sctx);
             }
             Ok(input_esc_type::INPUT_ESC_IND) => {
-                screen_write_linefeed(sctx, false, (*ictx).cell.cell.bg as u32);
+                screen_write_linefeed(sctx, false, ictx.cell.cell.bg as u32);
             }
             Ok(input_esc_type::INPUT_ESC_NEL) => {
                 screen_write_carriagereturn(sctx);
-                screen_write_linefeed(sctx, false, (*ictx).cell.cell.bg as u32);
+                screen_write_linefeed(sctx, false, ictx.cell.cell.bg as u32);
             }
             Ok(input_esc_type::INPUT_ESC_HTS) => {
                 if (*s).cx < screen_size_x(s) {
@@ -1485,7 +1484,7 @@ unsafe fn input_esc_dispatch(ictx: *mut input_ctx) -> i32 {
                 }
             }
             Ok(input_esc_type::INPUT_ESC_RI) => {
-                screen_write_reverseindex(sctx, (*ictx).cell.cell.bg as u32);
+                screen_write_reverseindex(sctx, ictx.cell.cell.bg as u32);
             }
             Ok(input_esc_type::INPUT_ESC_DECKPAM) => {
                 screen_write_mode_set(sctx, mode_flag::MODE_KKEYPAD);
@@ -1496,22 +1495,22 @@ unsafe fn input_esc_dispatch(ictx: *mut input_ctx) -> i32 {
             Ok(input_esc_type::INPUT_ESC_DECSC) => input_save_state(ictx),
             Ok(input_esc_type::INPUT_ESC_DECRC) => input_restore_state(ictx),
             Ok(input_esc_type::INPUT_ESC_DECALN) => screen_write_alignmenttest(sctx),
-            Ok(input_esc_type::INPUT_ESC_SCSG0_ON) => (*ictx).cell.g0set = 1,
-            Ok(input_esc_type::INPUT_ESC_SCSG0_OFF) => (*ictx).cell.g0set = 0,
-            Ok(input_esc_type::INPUT_ESC_SCSG1_ON) => (*ictx).cell.g1set = 1,
-            Ok(input_esc_type::INPUT_ESC_SCSG1_OFF) => (*ictx).cell.g1set = 0,
+            Ok(input_esc_type::INPUT_ESC_SCSG0_ON) => ictx.cell.g0set = 1,
+            Ok(input_esc_type::INPUT_ESC_SCSG0_OFF) => ictx.cell.g0set = 0,
+            Ok(input_esc_type::INPUT_ESC_SCSG1_ON) => ictx.cell.g1set = 1,
+            Ok(input_esc_type::INPUT_ESC_SCSG1_OFF) => ictx.cell.g1set = 0,
             Ok(input_esc_type::INPUT_ESC_ST) => (),
             // ST terminates OSC but the state transition already did it.
             Err(_) => (),
         }
-
-        (*ictx).flags &= !input_flags::INPUT_LAST;
-        0
     }
+
+    ictx.flags &= !input_flags::INPUT_LAST;
+    0
 }
 
 /// Execute control sequence.
-unsafe fn input_csi_dispatch(ictx: *mut input_ctx) -> i32 {
+fn input_csi_dispatch(ictx: &mut input_ctx) -> i32 {
     let __func__ = "input_csi_dispatch";
     unsafe {
         let sctx = &raw mut (*ictx).ctx;
@@ -1536,10 +1535,11 @@ unsafe fn input_csi_dispatch(ictx: *mut input_ctx) -> i32 {
             return 0;
         }
 
+        let ictx_ptr: *mut input_ctx = ictx;
         let Ok(entry) =
-            INPUT_CSI_TABLE.binary_search_by(|e| input_table_compare(ictx.cast(), e).reverse())
+            INPUT_CSI_TABLE.binary_search_by(|e| input_table_compare(ictx_ptr, e).reverse())
         else {
-            log_debug!("{}: unknown '{}'", __func__, (*ictx).ch);
+            log_debug!("{}: unknown '{}'", __func__, ictx.ch);
             return 0;
         };
 
@@ -1805,7 +1805,7 @@ unsafe fn input_csi_dispatch(ictx: *mut input_ctx) -> i32 {
 }
 
 /// Handle CSI RM.
-unsafe fn input_csi_dispatch_rm(ictx: *mut input_ctx) {
+fn input_csi_dispatch_rm(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut (*ictx).ctx;
 
@@ -1824,7 +1824,7 @@ unsafe fn input_csi_dispatch_rm(ictx: *mut input_ctx) {
 }
 
 /// Handle CSI private RM.
-unsafe fn input_csi_dispatch_rm_private(ictx: *mut input_ctx) {
+fn input_csi_dispatch_rm_private(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut (*ictx).ctx;
         let gc = &raw mut (*ictx).cell.cell;
@@ -1868,7 +1868,7 @@ unsafe fn input_csi_dispatch_rm_private(ictx: *mut input_ctx) {
 }
 
 /// Handle CSI SM.
-unsafe fn input_csi_dispatch_sm(ictx: *mut input_ctx) {
+fn input_csi_dispatch_sm(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut (*ictx).ctx;
 
@@ -1888,7 +1888,7 @@ unsafe fn input_csi_dispatch_sm(ictx: *mut input_ctx) {
 }
 
 /// Handle CSI private SM.
-unsafe fn input_csi_dispatch_sm_private(ictx: *mut input_ctx) {
+fn input_csi_dispatch_sm_private(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut (*ictx).ctx;
         let gc = &raw mut (*ictx).cell.cell;
@@ -1942,12 +1942,12 @@ unsafe fn input_csi_dispatch_sm_private(ictx: *mut input_ctx) {
 }
 
 /// Handle CSI graphics SM.
-unsafe fn input_csi_dispatch_sm_graphics(ictx: *mut input_ctx) {
+fn input_csi_dispatch_sm_graphics(ictx: &mut input_ctx) {
     #[cfg(feature = "sixel")]
-    unsafe {
+    {
         use crate::image_sixel::SIXEL_COLOUR_REGISTERS;
 
-        if (*ictx).param_list.len() > 3 {
+        if ictx.param_list.len() > 3 {
             return;
         }
         let n = input_get(ictx, 0, 0, 0);
@@ -1963,11 +1963,15 @@ unsafe fn input_csi_dispatch_sm_graphics(ictx: *mut input_ctx) {
 }
 
 /// Handle CSI window operations.
-unsafe fn input_csi_dispatch_winops(ictx: *mut input_ctx) {
+fn input_csi_dispatch_winops(ictx: &mut input_ctx) {
+    // SAFETY: `s` is set by screen_write_start*, `wp`/`w` come from
+    // registry lookups, and the screen_* / input_reply! / notify_* /
+    // server_* functions all expect raw pointers from the surrounding C
+    // tmux model.
+    let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
     unsafe {
-        let sctx = &(*ictx).ctx;
-        let s = sctx.s;
-        let wp = pane_ptr_from_id((*ictx).wp);
+        let s = (*sctx).s;
+        let wp = pane_ptr_from_id(ictx.wp);
         let mut w: *mut window = null_mut();
         let x: u32 = screen_size_x(s);
         let y: u32 = screen_size_y(s);
@@ -2022,7 +2026,7 @@ unsafe fn input_csi_dispatch_winops(ictx: *mut input_ctx) {
                     m += 1;
                     match input_get(ictx, m as u32, 0, -1) {
                         -1 => return,
-                        0 | 2 => screen_push_title(sctx.s),
+                        0 | 2 => screen_push_title(s),
                         _ => (),
                     }
                 }
@@ -2031,7 +2035,7 @@ unsafe fn input_csi_dispatch_winops(ictx: *mut input_ctx) {
                     match input_get(ictx, m as u32, 0, -1) {
                         -1 => return,
                         0 | 2 => {
-                            screen_pop_title(sctx.s);
+                            screen_pop_title(s);
                             if !wp.is_null() {
                                 notify_pane(c"pane-title-changed", wp);
                                 server_redraw_window_borders(w);
@@ -2044,7 +2048,7 @@ unsafe fn input_csi_dispatch_winops(ictx: *mut input_ctx) {
                 _ => log_debug!(
                     "{}: unknown '{}'",
                     "input_csi_dispatch_winops",
-                    (*ictx).ch as u8 as char
+                    ictx.ch as u8 as char
                 ),
             }
             m += 1;
@@ -2053,7 +2057,7 @@ unsafe fn input_csi_dispatch_winops(ictx: *mut input_ctx) {
 }
 
 /// Helper for 256 colour SGR.
-unsafe fn input_csi_dispatch_sgr_256_do(ictx: *mut input_ctx, fgbg: i32, c: i32) -> i32 {
+fn input_csi_dispatch_sgr_256_do(ictx: &mut input_ctx, fgbg: i32, c: i32) -> i32 {
     unsafe {
         let gc = &raw mut (*ictx).cell.cell;
 
@@ -2077,17 +2081,15 @@ unsafe fn input_csi_dispatch_sgr_256_do(ictx: *mut input_ctx, fgbg: i32, c: i32)
 }
 
 /// Handle CSI SGR for 256 colours.
-unsafe fn input_csi_dispatch_sgr_256(ictx: *mut input_ctx, fgbg: i32, i: *mut u32) {
-    unsafe {
-        let c = input_get(ictx, (*i) + 1, 0, -1);
-        if input_csi_dispatch_sgr_256_do(ictx, fgbg, c) != 0 {
-            (*i) += 1;
-        }
+fn input_csi_dispatch_sgr_256(ictx: &mut input_ctx, fgbg: i32, i: &mut u32) {
+    let c = input_get(ictx, *i + 1, 0, -1);
+    if input_csi_dispatch_sgr_256_do(ictx, fgbg, c) != 0 {
+        *i += 1;
     }
 }
 
 /// Helper for RGB colour SGR.
-unsafe fn input_csi_dispatch_sgr_rgb_do(
+fn input_csi_dispatch_sgr_rgb_do(
     ictx: *mut input_ctx,
     fgbg: i32,
     r: i32,
@@ -2113,19 +2115,17 @@ unsafe fn input_csi_dispatch_sgr_rgb_do(
 }
 
 /// Handle CSI SGR for RGB colours.
-unsafe fn input_csi_dispatch_sgr_rgb(ictx: *mut input_ctx, fgbg: i32, i: *mut u32) {
-    unsafe {
-        let r = input_get(ictx, (*i) + 1, 0, -1);
-        let g = input_get(ictx, (*i) + 2, 0, -1);
-        let b = input_get(ictx, (*i) + 3, 0, -1);
-        if input_csi_dispatch_sgr_rgb_do(ictx, fgbg, r, g, b) != 0 {
-            (*i) += 3;
-        }
+fn input_csi_dispatch_sgr_rgb(ictx: &mut input_ctx, fgbg: i32, i: &mut u32) {
+    let r = input_get(ictx, *i + 1, 0, -1);
+    let g = input_get(ictx, *i + 2, 0, -1);
+    let b = input_get(ictx, *i + 3, 0, -1);
+    if input_csi_dispatch_sgr_rgb_do(ictx, fgbg, r, g, b) != 0 {
+        *i += 3;
     }
 }
 
 /// Handle CSI SGR with a ISO parameter.
-unsafe fn input_csi_dispatch_sgr_colon(ictx: *mut input_ctx, idx: u32) {
+fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, idx: u32) {
     let __func__ = "input_csi_dispatch_sgr_colon";
     unsafe {
         let gc = &raw mut (*ictx).cell.cell;
@@ -2220,7 +2220,7 @@ unsafe fn input_csi_dispatch_sgr_colon(ictx: *mut input_ctx, idx: u32) {
 }
 
 /// Handle CSI SGR.
-unsafe fn input_csi_dispatch_sgr(ictx: *mut input_ctx) {
+fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
     unsafe {
         let gc = &raw mut (*ictx).cell.cell;
 
@@ -2247,8 +2247,8 @@ unsafe fn input_csi_dispatch_sgr(ictx: *mut input_ctx) {
             if n == 38 || n == 48 || n == 58 {
                 i += 1;
                 match input_get(ictx, i, 0, -1) {
-                    2 => input_csi_dispatch_sgr_rgb(ictx, n, &raw mut i),
-                    5 => input_csi_dispatch_sgr_256(ictx, n, &raw mut i),
+                    2 => input_csi_dispatch_sgr_rgb(ictx, n, &mut i),
+                    5 => input_csi_dispatch_sgr_256(ictx, n, &mut i),
                     _ => (),
                 }
                 i += 1;
@@ -2300,29 +2300,22 @@ unsafe fn input_csi_dispatch_sgr(ictx: *mut input_ctx) {
 }
 
 /// End of input with BEL.
-unsafe fn input_end_bel(ictx: *mut input_ctx) -> i32 {
+fn input_end_bel(ictx: &mut input_ctx) -> i32 {
     log_debug!("input_end_bel");
-
-    unsafe {
-        (*ictx).input_end = input_end_type::INPUT_END_BEL;
-    }
-
+    ictx.input_end = input_end_type::INPUT_END_BEL;
     0
 }
 
 /// DCS string started.
-unsafe fn input_enter_dcs(ictx: *mut input_ctx) {
-    unsafe {
-        log_debug!("input_enter_dcs");
-
-        input_clear(ictx);
-        input_start_timer(ictx);
-        (*ictx).flags &= !input_flags::INPUT_LAST;
-    }
+fn input_enter_dcs(ictx: &mut input_ctx) {
+    log_debug!("input_enter_dcs");
+    input_clear(ictx);
+    input_start_timer(ictx);
+    ictx.flags &= !input_flags::INPUT_LAST;
 }
 
 /// DCS terminator (ST) received.
-unsafe fn input_dcs_dispatch(ictx: *mut input_ctx) -> i32 {
+fn input_dcs_dispatch(ictx: &mut input_ctx) -> i32 {
     unsafe {
         let func = "input_dcs_dispatch";
 
@@ -2378,18 +2371,15 @@ unsafe fn input_dcs_dispatch(ictx: *mut input_ctx) -> i32 {
 }
 
 /// OSC string started.
-unsafe fn input_enter_osc(ictx: *mut input_ctx) {
-    unsafe {
-        log_debug!("input_enter_osc");
-
-        input_clear(ictx);
-        input_start_timer(ictx);
-        (*ictx).flags &= !input_flags::INPUT_LAST;
-    }
+fn input_enter_osc(ictx: &mut input_ctx) {
+    log_debug!("input_enter_osc");
+    input_clear(ictx);
+    input_start_timer(ictx);
+    ictx.flags &= !input_flags::INPUT_LAST;
 }
 
 /// OSC terminator (ST) received.
-unsafe fn input_exit_osc(ictx: *mut input_ctx) {
+fn input_exit_osc(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut (*ictx).ctx;
         let wp = pane_ptr_from_id((*ictx).wp);
@@ -2462,18 +2452,15 @@ unsafe fn input_exit_osc(ictx: *mut input_ctx) {
 }
 
 /// APC string started.
-unsafe fn input_enter_apc(ictx: *mut input_ctx) {
-    unsafe {
-        log_debug!("input_enter_apc");
-
-        input_clear(ictx);
-        input_start_timer(ictx);
-        (*ictx).flags &= !input_flags::INPUT_LAST;
-    }
+fn input_enter_apc(ictx: &mut input_ctx) {
+    log_debug!("input_enter_apc");
+    input_clear(ictx);
+    input_start_timer(ictx);
+    ictx.flags &= !input_flags::INPUT_LAST;
 }
 
 /// APC terminator (ST) received.
-unsafe fn input_exit_apc(ictx: *mut input_ctx) {
+fn input_exit_apc(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut (*ictx).ctx;
         let wp = pane_ptr_from_id((*ictx).wp);
@@ -2492,18 +2479,15 @@ unsafe fn input_exit_apc(ictx: *mut input_ctx) {
 }
 
 /// Rename string started.
-unsafe fn input_enter_rename(ictx: *mut input_ctx) {
-    unsafe {
-        log_debug!("input_enter_rename");
-
-        input_clear(ictx);
-        input_start_timer(ictx);
-        (*ictx).flags &= !input_flags::INPUT_LAST;
-    }
+fn input_enter_rename(ictx: &mut input_ctx) {
+    log_debug!("input_enter_rename");
+    input_clear(ictx);
+    input_start_timer(ictx);
+    ictx.flags &= !input_flags::INPUT_LAST;
 }
 
 /// Rename terminator (ST) received.
-unsafe fn input_exit_rename(ictx: *mut input_ctx) {
+fn input_exit_rename(ictx: &mut input_ctx) {
     unsafe {
         let wp = pane_ptr_from_id((*ictx).wp);
 
@@ -2544,7 +2528,7 @@ unsafe fn input_exit_rename(ictx: *mut input_ctx) {
 }
 
 /// Open UTF-8 character.
-unsafe fn input_top_bit_set(ictx: *mut input_ctx) -> i32 {
+fn input_top_bit_set(ictx: &mut input_ctx) -> i32 {
     unsafe {
         let sctx = &raw mut (*ictx).ctx;
         let ud = &mut (*ictx).utf8data;
@@ -2580,7 +2564,7 @@ unsafe fn input_top_bit_set(ictx: *mut input_ctx) -> i32 {
 }
 
 /// Reply to a colour request.
-unsafe fn input_osc_colour_reply(ictx: *mut input_ctx, n: u32, mut c: i32) {
+fn input_osc_colour_reply(ictx: &mut input_ctx, n: u32, mut c: i32) {
     unsafe {
         if c != -1 {
             c = colour_force_rgb(c);
@@ -2612,7 +2596,7 @@ unsafe fn input_osc_colour_reply(ictx: *mut input_ctx, n: u32, mut c: i32) {
 }
 
 /// Handle the OSC 4 sequence for setting (multiple) palette entries.
-unsafe fn input_osc_4(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_4(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         // char *copy, *s, *next = NULL;
         // long idx;
@@ -2667,7 +2651,7 @@ unsafe fn input_osc_4(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 8 sequence for embedding hyperlinks.
-unsafe fn input_osc_8(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_8(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let hl: *mut hyperlinks = (*(*ictx).ctx.s).hyperlinks.unwrap_or(null_mut());
         let gc = &raw mut (*ictx).cell.cell;
@@ -2797,7 +2781,7 @@ unsafe fn input_get_fg_control_client(wp: *mut window_pane) -> i32 {
 }
 
 /// Handle the OSC 10 sequence for setting and querying foreground colour.
-unsafe fn input_osc_10(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_10(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id((*ictx).wp);
         let mut defaults: GridCell = zeroed();
@@ -2836,7 +2820,7 @@ unsafe fn input_osc_10(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 110 sequence for resetting foreground colour.
-unsafe fn input_osc_110(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_110(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id((*ictx).wp);
 
@@ -2855,7 +2839,7 @@ unsafe fn input_osc_110(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 11 sequence for setting and querying background colour.
-unsafe fn input_osc_11(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_11(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id((*ictx).wp);
         let mut defaults: GridCell = zeroed();
@@ -2895,7 +2879,7 @@ unsafe fn input_osc_11(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 111 sequence for resetting background colour.
-unsafe fn input_osc_111(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_111(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id((*ictx).wp);
 
@@ -2913,7 +2897,7 @@ unsafe fn input_osc_111(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 12 sequence for setting and querying cursor colour.
-unsafe fn input_osc_12(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_12(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id((*ictx).wp);
         let mut c;
@@ -2939,7 +2923,7 @@ unsafe fn input_osc_12(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 112 sequence for resetting cursor colour.
-unsafe fn input_osc_112(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_112(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         if *p == b'\0' {
             // no arguments allowed
@@ -2949,7 +2933,7 @@ unsafe fn input_osc_112(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 133 sequence.
-unsafe fn input_osc_133(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_133(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let gd: *mut Grid = &raw mut *(*(*ictx).ctx.s).grid;
         let line = (*(*ictx).ctx.s).cy + (*gd).hsize;
@@ -2968,7 +2952,7 @@ unsafe fn input_osc_133(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 52 sequence for setting the clipboard.
-unsafe fn input_osc_52(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_52(ictx: &mut input_ctx, p: *const u8) {
     let __func__ = "input_osc_52";
 
     unsafe {
@@ -3051,7 +3035,7 @@ unsafe fn input_osc_52(ictx: *mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 104 sequence for unsetting (multiple) palette entries.
-unsafe fn input_osc_104(ictx: *mut input_ctx, p: *const u8) {
+fn input_osc_104(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let mut bad = false;
         let mut redraw = false;
@@ -3249,7 +3233,7 @@ mod tests {
 
             // param_len == 0 means no parameters to split.
             (*ictx).param_len = 0;
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!((*ictx).param_list.is_empty());
 
@@ -3272,7 +3256,7 @@ mod tests {
             (*ictx).param_buf[2] = 0;
             (*ictx).param_len = 2;
 
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!(matches!(&(*ictx).param_list[..], [InputParam::Number(42)]));
 
@@ -3294,7 +3278,7 @@ mod tests {
             (*ictx).param_buf[..params.len()].copy_from_slice(params);
             (*ictx).param_len = 3;
 
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!(matches!(
                 &(*ictx).param_list[..],
@@ -3319,7 +3303,7 @@ mod tests {
             (*ictx).param_buf[..params.len()].copy_from_slice(params);
             (*ictx).param_len = 2;
 
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!(matches!(
                 &(*ictx).param_list[..],
@@ -3344,7 +3328,7 @@ mod tests {
             (*ictx).param_buf[..params.len()].copy_from_slice(params);
             (*ictx).param_len = 3;
 
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             match &(*ictx).param_list[..] {
                 [InputParam::String(s)] => assert_eq!(s, b"2:5"),
@@ -3369,7 +3353,7 @@ mod tests {
             (*ictx).param_buf[..params.len()].copy_from_slice(params);
             (*ictx).param_len = 2;
 
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!(matches!(
                 &(*ictx).param_list[..],
@@ -3393,7 +3377,7 @@ mod tests {
             assert!((*ictx).param_list.is_empty());
 
             // Asking for index 0 with no params should return the default.
-            let val = input_get(ictx, 0, 0, 99);
+            let val = input_get(&*ictx, 0, 0, 99);
             assert_eq!(val, 99);
 
             input_free(ictx);
@@ -3407,7 +3391,7 @@ mod tests {
 
             (*ictx).param_list.push(InputParam::Number(42));
 
-            let val = input_get(ictx, 0, 0, 0);
+            let val = input_get(&*ictx, 0, 0, 0);
             assert_eq!(val, 42);
 
             input_free(ictx);
@@ -3422,7 +3406,7 @@ mod tests {
             // Value 3, but minimum is 10.
             (*ictx).param_list.push(InputParam::Number(3));
 
-            let val = input_get(ictx, 0, 10, 0);
+            let val = input_get(&*ictx, 0, 10, 0);
             assert_eq!(val, 10);
 
             input_free(ictx);
@@ -3436,7 +3420,7 @@ mod tests {
 
             (*ictx).param_list.push(InputParam::Missing);
 
-            let val = input_get(ictx, 0, 0, 55);
+            let val = input_get(&*ictx, 0, 0, 55);
             assert_eq!(val, 55);
 
             input_free(ictx);
@@ -3450,7 +3434,7 @@ mod tests {
 
             (*ictx).param_list.push(InputParam::String(b"hello".to_vec()));
 
-            let val = input_get(ictx, 0, 0, 0);
+            let val = input_get(&*ictx, 0, 0, 0);
             assert_eq!(val, -1);
 
             input_free(ictx);
@@ -3560,14 +3544,14 @@ mod tests {
             (*ictx).param_buf[..params.len()].copy_from_slice(params);
             (*ictx).param_len = 3;
 
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
 
             // Row 1, col 2.
-            assert_eq!(input_get(ictx, 0, 1, 1), 1);
-            assert_eq!(input_get(ictx, 1, 1, 1), 2);
+            assert_eq!(input_get(&*ictx, 0, 1, 1), 1);
+            assert_eq!(input_get(&*ictx, 1, 1, 1), 2);
             // Index 2 out of range -> default.
-            assert_eq!(input_get(ictx, 2, 1, 1), 1);
+            assert_eq!(input_get(&*ictx, 2, 1, 1), 1);
 
             input_free(ictx);
         }
@@ -3587,7 +3571,7 @@ mod tests {
             (*ictx).param_buf[..params.len()].copy_from_slice(params);
             (*ictx).param_len = params.len() - 1; // exclude NUL
 
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!(matches!(
                 &(*ictx).param_list[..],
@@ -3617,7 +3601,7 @@ mod tests {
             let params1 = b"1:2\0";
             (*ictx).param_buf[..params1.len()].copy_from_slice(params1);
             (*ictx).param_len = params1.len() - 1;
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!(matches!(&(*ictx).param_list[..], [InputParam::String(_)]));
 
@@ -3625,7 +3609,7 @@ mod tests {
             let params2 = b"99\0";
             (*ictx).param_buf[..params2.len()].copy_from_slice(params2);
             (*ictx).param_len = params2.len() - 1;
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!(matches!(&(*ictx).param_list[..], [InputParam::Number(99)]));
 
@@ -3851,7 +3835,7 @@ mod tests {
             (*ictx).param_buf[..params.len()].copy_from_slice(params);
             (*ictx).param_len = 1;
 
-            let ret = input_split(ictx);
+            let ret = input_split(&mut *ictx);
             assert_eq!(ret, 0);
             assert!(matches!(&(*ictx).param_list[..], [InputParam::Number(0)]));
 
@@ -3872,11 +3856,11 @@ mod tests {
             (*ictx).param_list.push(InputParam::Number(20));
             (*ictx).param_list.push(InputParam::Number(30));
 
-            assert_eq!(input_get(ictx, 0, 0, 0), 10);
-            assert_eq!(input_get(ictx, 1, 0, 0), 20);
-            assert_eq!(input_get(ictx, 2, 0, 0), 30);
+            assert_eq!(input_get(&*ictx, 0, 0, 0), 10);
+            assert_eq!(input_get(&*ictx, 1, 0, 0), 20);
+            assert_eq!(input_get(&*ictx, 2, 0, 0), 30);
             // Out of range.
-            assert_eq!(input_get(ictx, 3, 0, 77), 77);
+            assert_eq!(input_get(&*ictx, 3, 0, 77), 77);
 
             input_free(ictx);
         }
