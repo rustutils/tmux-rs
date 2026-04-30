@@ -2,6 +2,23 @@
 
 ## main
 
+- Cross-platform: build now succeeds on macOS x86_64 (libevent backend
+  shim) and Linux aarch64 (`c_char` and `wchar_t` signedness differ from
+  x86_64 — hardcoded casts replaced with platform-correct inference).
+- `input.rs` (terminal escape sequence parser) taken vertical to safe
+  Rust:
+  - 32 byte-in/screen-state-out unit tests added as a regression net.
+  - `input_ctx` ownership cleanup: `state` → `&'static input_state`,
+    `input_buf` → `Vec<u8>`, `since_ground` → owned `Evbuffer`,
+    `param_list` → `Vec<InputParam>` (replacing a fixed array of C
+    union + manual type tag).
+  - All ~50 internal handlers and helpers converted from
+    `unsafe fn(*mut input_ctx)` to `fn(&mut input_ctx)`. Function
+    pointer dispatch is now a safe call.
+- Unrelated test-isolation fixes: parallel test races on `static mut`
+  buffers in `key_string_lookup_key` and `style_tostring` exposed by
+  the new test load; both now serialized with a mutex.
+
 ## 0.0.3
 
 - Add sixel support
