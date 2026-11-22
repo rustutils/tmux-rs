@@ -481,3 +481,46 @@ fn output_of_exited_pane_is_read_to_the_end() {
         out.lines().rev().find(|l| !l.is_empty()).unwrap_or("")
     );
 }
+
+/// kill-pane -a kills every pane but the target, however many there are.
+/// It used to remove panes from the list it was iterating, which skipped
+/// panes and used freed ones once a window had four or more.
+#[test]
+fn kill_pane_all_but_target() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["-s", "test", "-x", "120", "-y", "60", "sleep 1000"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    for _ in 0..5 {
+        tmux.cmd()
+            .args(["split-window", "-t", "test", "sleep 1000"])
+            .run()
+            .assert_success();
+        tmux.cmd()
+            .args(["select-layout", "-t", "test", "tiled"])
+            .run()
+            .assert_success();
+    }
+    let panes = tmux
+        .cmd()
+        .args(["list-panes", "-t", "test", "-F", "#{pane_id}"])
+        .run()
+        .stdout_trimmed();
+    let panes: Vec<&str> = panes.lines().collect();
+    assert_eq!(panes.len(), 6);
+    let keep = panes[2];
+
+    tmux.cmd()
+        .args(["kill-pane", "-a", "-t", keep])
+        .run()
+        .assert_success();
+
+    let left = tmux
+        .cmd()
+        .args(["list-panes", "-t", "test", "-F", "#{pane_id}"])
+        .run()
+        .stdout_trimmed();
+    assert_eq!(left, keep);
+}
