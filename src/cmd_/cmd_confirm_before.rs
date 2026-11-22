@@ -63,7 +63,8 @@ unsafe fn cmd_confirm_before_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
                 cdata.confirm_key = *confirm_key as _;
             } else {
                 cmdq_error!(item, "invalid confirm key");
-                // free_(cdata);
+                // Drop the command list too, cdata itself is a Box (upstream 55722a7e).
+                cmd_list_free(cdata.cmdlist);
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         } else {

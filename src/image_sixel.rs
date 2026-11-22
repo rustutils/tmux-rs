@@ -337,7 +337,8 @@ pub unsafe fn sixel_parse(
             }
             return si;
         } // 'bad:
-        free_(si);
+        // Free the lines and colours as well as the struct (upstream 6c2dd193).
+        sixel_free(si);
 
         null_mut()
     }

@@ -4383,7 +4383,8 @@ pub unsafe fn format_replace(
         let cp: *const u8;
         let mut marker: *const u8 = null();
 
-        let mut time_format: *const u8 = null();
+        // Owned copy from format_strip, freed on both exit paths (upstream 94bafa5a).
+        let mut time_format: *mut u8 = null_mut();
 
         let copy0: *mut u8;
         let condition: *mut u8;
@@ -4495,6 +4496,9 @@ pub unsafe fn format_replace(
                                     } else if (*fm).argc >= 2
                                         && !strchr(*(*fm).argv, b'f' as i32).is_null()
                                     {
+                                        // A later t/f/ replaces an earlier one, so free the
+                                        // old copy first (upstream a97cfe51).
+                                        free_(time_format);
                                         time_format = format_strip(*(*fm).argv.add(1));
                                     }
                                 }
@@ -4809,7 +4813,10 @@ pub unsafe fn format_replace(
                 new = format_trim_left(value, limit as u32);
                 value = if !marker.is_null() && strcmp(new, value) != 0 {
                     free_(value);
-                    format_nul!("{}{}", _s(new), _s(marker))
+                    let marked = format_nul!("{}{}", _s(new), _s(marker));
+                    // The trimmed string was copied, so free it (upstream c95d3412).
+                    free_(new);
+                    marked
                 } else {
                     free_(value);
                     new
@@ -4825,7 +4832,10 @@ pub unsafe fn format_replace(
                 new = format_trim_right(value, (-limit) as u32);
                 value = if !marker.is_null() && strcmp(new, value) != 0 {
                     free_(value);
-                    format_nul!("{}{}", _s(marker), _s(new))
+                    let marked = format_nul!("{}{}", _s(marker), _s(new));
+                    // The trimmed string was copied, so free it (upstream c95d3412).
+                    free_(new);
+                    marked
                 } else {
                     free_(value);
                     new
@@ -4899,6 +4909,7 @@ pub unsafe fn format_replace(
             free_(sub);
             format_free_modifiers(list, count);
             free_(copy0);
+            free_(time_format);
             return 0;
         }
 
@@ -4908,6 +4919,7 @@ pub unsafe fn format_replace(
         free_(sub);
         format_free_modifiers(list, count);
         free_(copy0);
+        free_(time_format);
         -1
     }
 }

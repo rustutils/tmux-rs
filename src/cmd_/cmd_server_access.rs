@@ -76,6 +76,8 @@ unsafe fn cmd_server_access_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         }
         if pw.is_null() {
             cmdq_error!(item, "unknown user: {}", _s(name));
+            // Free the name on this error path too (upstream a76e6eca).
+            free_(name);
             return cmd_retval::CMD_RETURN_ERROR;
         }
         free_(name);

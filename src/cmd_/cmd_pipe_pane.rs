@@ -114,6 +114,9 @@ pub unsafe fn cmd_pipe_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
                 sigprocmask(SIG_SETMASK, &raw const oldset, null_mut());
                 cmdq_error!(item, "fork error: {}", strerror(errno!()));
 
+                // Close the socketpair so it does not leak (upstream 763dec88).
+                close(pipe_fd[0]);
+                close(pipe_fd[1]);
                 free_(cmd);
                 cmd_retval::CMD_RETURN_ERROR
             }

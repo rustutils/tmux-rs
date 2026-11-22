@@ -400,7 +400,8 @@ pub unsafe fn file_read(
         let msglen: usize;
         let mut fd: i32 = -1;
         let stream: u32 = FILE_NEXT_STREAM.fetch_add(1, atomic::Ordering::Relaxed) as u32;
-        let f: *mut FILE;
+        // Closed at done so error paths do not leak it (upstream 4ce893eb).
+        let mut f: *mut FILE = null_mut();
         let mut size: usize;
         let mut buffer = MaybeUninit::<[u8; BUFSIZ as usize]>::uninit();
         'done: {
@@ -443,7 +444,6 @@ pub unsafe fn file_read(
                         (*cf).error = EIO;
                         break 'done;
                     }
-                    fclose(f);
                     break 'done;
                 }
             }
@@ -472,6 +472,9 @@ pub unsafe fn file_read(
         }
 
         // done:
+        if !f.is_null() {
+            fclose(f);
+        }
         file_fire_done(cf);
         null_mut()
     }

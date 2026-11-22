@@ -325,7 +325,7 @@ unsafe fn cmd_display_menu_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
         let style = args_get_(args, 's');
         let border_style = args_get_(args, 'S');
         let selected_style = args_get_(args, 'H');
-        let lines = box_lines::BOX_LINES_DEFAULT;
+        let mut lines = box_lines::BOX_LINES_DEFAULT;
 
         let mut flags = menu_flags::empty();
         let mut starting_choice: i32 = 0;
@@ -411,9 +411,15 @@ unsafe fn cmd_display_menu_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
         let value = args_get_(args, 'b');
         if !value.is_null() {
             let oe = options_get(&mut *o, "menu-border-lines");
-            if let Err(cause) = options_find_choice(options_table_entry(oe), value) {
-                cmdq_error!(item, "menu-border-lines {}", cause.to_str().unwrap());
-                return cmd_retval::CMD_RETURN_ERROR;
+            // Use the parsed value as the menu border lines, as C tmux does.
+            match options_find_choice(options_table_entry(oe), value) {
+                Ok(v) => lines = box_lines::try_from(v).unwrap_or(box_lines::BOX_LINES_DEFAULT),
+                Err(cause) => {
+                    cmdq_error!(item, "menu-border-lines {}", cause.to_str().unwrap());
+                    // Free the menu on an invalid value (upstream 8c7278b5).
+                    menu_free(menu);
+                    return cmd_retval::CMD_RETURN_ERROR;
+                }
             }
         }
 
@@ -440,6 +446,9 @@ unsafe fn cmd_display_menu_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
             null_mut(),
         ) != 0
         {
+            // menu_display does not take the menu when it fails, for example
+            // when the client is too small (upstream 91b5108e).
+            menu_free(menu);
             return cmd_retval::CMD_RETURN_NORMAL;
         }
         cmd_retval::CMD_RETURN_WAIT

@@ -941,6 +941,8 @@ unsafe fn window_customize_draw_option(
                         _s(expanded),
                     )
                 {
+                    // Free the expansion when the text does not fit (upstream d8370864).
+                    free_(expanded);
                     break 'out;
                 }
                 free_(expanded);

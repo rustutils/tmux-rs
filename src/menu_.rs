@@ -96,6 +96,8 @@ pub unsafe fn menu_add_item(
         };
 
         if *s0 == b'\0' {
+            // Free the empty expanded name (upstream 9e804202).
+            free_(s0);
             (*menu).items.pop();
             return;
         }

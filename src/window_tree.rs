@@ -725,6 +725,8 @@ unsafe fn window_tree_draw_session(
 
             label = format_nul!(" {}:{} ", (*wl).idx, (*w).name.as_deref().unwrap_or(""));
             if strlen(label) > width as usize {
+                // Free the long label before making the short one (upstream e6d275b3).
+                free_(label);
                 label = format_nul!(" {} ", (*wl).idx);
             }
             window_tree_draw_label(ctx, cx + offset, cy, width, sy, &raw mut gc, label);

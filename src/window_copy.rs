@@ -400,6 +400,10 @@ pub unsafe fn window_copy_init(
         (*data).hide_position = args_has(args, 'H');
 
         if let Some(hl) = (*base).hyperlinks {
+            // Free the set screen_init made before replacing it (upstream 314f0ae9).
+            if let Some(old) = (*data).screen.hyperlinks {
+                hyperlinks_free(old);
+            }
             (*data).screen.hyperlinks = Some(hyperlinks_copy(hl));
         }
         (*data).screen.cx = (*data).cx;
@@ -5535,7 +5539,9 @@ pub unsafe fn window_copy_pipe(wme: *mut window_mode_entry, s: *mut session, cmd
     unsafe {
         let mut len: usize = 0;
 
-        window_copy_pipe_run(wme, s, cmd, &raw mut len);
+        // The selection is only piped, so free it here (upstream 05b2893b).
+        let buf = window_copy_pipe_run(wme, s, cmd, &raw mut len);
+        free_(buf);
     }
 }
 
