@@ -288,10 +288,12 @@ impl<'a> TmuxCommandBuilder<'a> {
     pub fn run(self) -> TmuxResult {
         let mut cmd = Command::new(&self.bin);
         cmd.args(["-S", &self.harness.socket_path]);
+        // Never load the user's own config when this command starts a
+        // server. Each -f adds a file, so a test can still pass its own.
+        cmd.arg("-f/dev/null");
         cmd.args(&self.extra_args);
         cmd.env("TERM", "screen");
-        // Ensure hermetic test environment: prevent user config,
-        // nesting detection, and custom socket paths from leaking in.
+        // Keep nesting detection and custom socket paths from leaking in.
         cmd.env_remove("TMUX");
         cmd.env_remove("TMUX_CONF");
         cmd.env_remove("TMUX_TMPDIR");
@@ -442,7 +444,7 @@ impl PtyClient {
 
         let bin = client_bin();
         let child = Command::new(&bin)
-            .args(["-S", harness.socket_path()])
+            .args(["-S", harness.socket_path(), "-f/dev/null"])
             .args(args)
             .env("TERM", "screen")
             .env_remove("TMUX")
