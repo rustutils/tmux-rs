@@ -26,6 +26,16 @@ Why not? This a fun hobby project for me. It's been my gardening for the past ye
 Why not just use [zellij](https://zellij.dev/)? I like tmux. I want tmux,
 not something else.
 
+## Compatibility
+
+tmux-rs aims to behave like tmux 3.8. It started as a port of tmux 3.5a and
+is being brought up to 3.8. It already speaks the tmux 3.8 protocol, so a
+tmux-rs client works with a tmux 3.8 server and the other way around. Most
+commands, options and formats added after 3.5a are not available yet.
+
+The integration tests run with tmux-rs on both sides and with C tmux as the
+client, the server or both, see [TESTING.md](TESTING.md).
+
 ## Installation
 
 ### Linux

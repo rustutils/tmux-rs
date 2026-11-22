@@ -26,6 +26,19 @@ memory leaks are expected at the moment, these will be addressed later)
 
     ASAN_OPTIONS=detect_leaks=0 RUSTFLAGS="-Zsanitizer=address" cargo +nightly test --target x86_64-unknown-linux-gnu
 
+## Compatibility with C tmux
+
+The integration tests can run against C tmux to check that tmux-rs behaves
+the same and speaks the same protocol. The target is tmux 3.8. Point the
+tests at a C tmux binary for the client, the server or both:
+
+    TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests
+    TMUX_SERVER_BIN=/usr/bin/tmux cargo nextest run --tests
+    TMUX_SERVER_BIN=/usr/bin/tmux TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests
+
+`just test` runs the unit tests and all of these combinations, and fails if
+a tmux-rs server panicked during the run.
+
 ## Running the code
 
 You can run the tool under Valgrind. This will catch some classes of
