@@ -16,12 +16,17 @@ fn regress_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("regress")
 }
 
+/// The cursor position and character, then the numbered pane lines, like
+/// the regress scripts build them with display and capture-pane piped
+/// through awk. Output is used untrimmed, since trailing spaces and empty
+/// lines are part of the reference.
 fn snapshot(tmux: &TmuxTestHarness) -> String {
-    let mut s = String::new();
-    let line = tmux.query("#{cursor_x} #{cursor_y} #{cursor_character}");
-    s.push_str(&line);
-    s.push('\n');
-    let cap = tmux.capture_pane();
+    let mut s = tmux
+        .cmd()
+        .args(["display", "-p", "#{cursor_x} #{cursor_y} #{cursor_character}"])
+        .run()
+        .stdout_str();
+    let cap = tmux.cmd().args(["capture-pane", "-p"]).run().stdout_str();
     for (i, l) in cap.lines().enumerate() {
         s.push_str(&format!("{} {}\n", i, l));
     }
@@ -58,7 +63,6 @@ fn run_cursor_test(spawn_cmd: &str, x: u16, y: u16, resizes: &[u16], result_file
 
 // Ported from regress/cursor-test1.sh
 #[test]
-#[ignore = "depends on byte-for-byte capture matching C tmux reference"]
 fn cursor_test1() {
     let txt = regress_dir().join("cursor-test.txt");
     let cmd = format!("cat {}; printf '\\e[9;15H'; cat", txt.display());
@@ -67,7 +71,6 @@ fn cursor_test1() {
 
 // Ported from regress/cursor-test2.sh
 #[test]
-#[ignore = "depends on byte-for-byte capture matching C tmux reference"]
 fn cursor_test2() {
     let txt = regress_dir().join("cursor-test.txt");
     let cmd = format!("cat {}; printf '\\e[8;10H'; cat", txt.display());
@@ -83,7 +86,6 @@ fn cursor_test3() {
 
 // Ported from regress/cursor-test4.sh
 #[test]
-#[ignore = "depends on byte-for-byte capture matching C tmux reference"]
 fn cursor_test4() {
     let cmd = "printf 'abcdef\\n'; cat".to_string();
     run_cursor_test(&cmd, 10, 3, &[20, 3, 10], "cursor-test4.result");
