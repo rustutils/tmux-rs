@@ -437,7 +437,6 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
                 let msg = format!("fork failed: {}", strerror(errno!()));
                 (*new_wp).fd = -1;
                 if !(*sc).flags.intersects(SPAWN_RESPAWN) {
-                    server_client_remove_pane(new_wp);
                     layout_close_pane(new_wp);
                     window_remove_pane(w, new_wp);
                 }

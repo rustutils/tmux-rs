@@ -143,7 +143,6 @@ unsafe fn cmd_split_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
         if input {
             match window_pane_start_input(new_wp, item) {
                 Err(cause) => {
-                    server_client_remove_pane(new_wp);
                     layout_close_pane(new_wp);
                     window_remove_pane(window_pane_window(wp), new_wp);
                     cmdq_error!(item, "{}", cause);

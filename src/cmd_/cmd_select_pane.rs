@@ -76,7 +76,6 @@ pub unsafe fn cmd_select_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
         let entry = cmd_get_entry(self_);
         let current = cmdq_get_current(item);
         let target = cmdq_get_target(item);
-        let c = cmdq_get_client(item);
         let wl = (*target).wl;
         let w = winlink_window(wl);
         let s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
@@ -216,27 +215,14 @@ pub unsafe fn cmd_select_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
-        let activewp = if !c.is_null()
-            && !client_get_session(c).is_null()
-            && ((*c).flags.intersects(client_flag::ACTIVEPANE))
-        {
-            server_client_get_pane(c)
-        } else {
-            window_active_pane(w)
-        };
-        if wp == activewp {
+        if wp == window_active_pane(w) {
             return cmd_retval::CMD_RETURN_NORMAL;
         }
         if window_push_zoom(w, false, args_has(args, 'Z')) {
             server_redraw_window(w);
         }
         window_redraw_active_switch(w, wp);
-        if !c.is_null()
-            && !client_get_session(c).is_null()
-            && ((*c).flags.intersects(client_flag::ACTIVEPANE))
-        {
-            server_client_set_pane(c, wp);
-        } else if window_set_active_pane(w, wp, 1) != 0 {
+        if window_set_active_pane(w, wp, 1) != 0 {
             cmd_find_from_winlink_pane(current, wl, wp, cmd_find_flags::empty());
         }
         cmdq_insert_hook!(s, item, current, "after-select-pane");

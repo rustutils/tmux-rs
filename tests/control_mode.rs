@@ -493,3 +493,18 @@ fn refresh_client_sets_client_flags() {
     assert!(!cleared.contains("ignore-size") && !cleared.contains("no-output"), "{cleared:?}");
     assert!(cleared.contains("read-only"), "read-only should stay set: {cleared:?}");
 }
+
+/// tmux 3.8 removed the active-pane client flag, so it is ignored.
+#[test]
+fn active_pane_client_flag_is_ignored() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    let out = tmux.control_mode(
+        "refresh-client -f active-pane\ndisplay-message -p 'flags:#{client_flags}'\n",
+    );
+    let stdout = out.stdout_str();
+    let flags = stdout.lines().find(|l| l.starts_with("flags:")).expect("flags line");
+    assert!(!flags.contains("active-pane"), "{flags:?}");
+}

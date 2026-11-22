@@ -71,9 +71,6 @@ unsafe fn cmd_swap_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
                 break 'out;
             }
 
-            server_client_remove_pane(src_wp);
-            server_client_remove_pane(dst_wp);
-
             let mut tmp_wp = window_pane_prev_in_list(dst_wp);
             (*dst_w).panes.retain(|&p| p != dst_wp);
             let src_pos = (*src_w).panes.iter().position(|&p| p == src_wp).unwrap();

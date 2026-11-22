@@ -2281,8 +2281,6 @@ type client_files = BTreeMap<i32, Box<client_file>>;
 
 // Client window.
 struct client_window {
-    pane: Option<PaneId>,
-
     sx: u32,
     sy: u32,
 }
@@ -2362,7 +2360,6 @@ bitflags::bitflags! {
         // flags. They are only used inside the server, so they live on
         // unused bits until the code using them is brought up to 3.8.
         const REDRAWPANES        = 0x1000000000000u64;
-        const ACTIVEPANE         = 0x2000000000000u64;
         const CLIPBOARDBUFFER    = 0x4000000000000u64;
     }
 }

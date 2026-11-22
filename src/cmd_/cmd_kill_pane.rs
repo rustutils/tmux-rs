@@ -41,7 +41,6 @@ unsafe fn cmd_kill_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
                 if loopwp == wp {
                     continue;
                 }
-                server_client_remove_pane(loopwp);
                 layout_close_pane(loopwp);
                 window_remove_pane(winlink_window(wl), loopwp);
             }

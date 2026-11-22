@@ -88,7 +88,6 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         }
 
         (*w).panes.retain(|&p| p != wp);
-        server_client_remove_pane(wp);
         window_lost_pane(w, wp);
         layout_close_pane(wp);
 

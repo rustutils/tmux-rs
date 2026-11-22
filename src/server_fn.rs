@@ -177,7 +177,6 @@ pub unsafe fn server_kill_pane(wp: *mut window_pane) {
             recalculate_sizes();
         } else {
             server_unzoom_window(w);
-            server_client_remove_pane(wp);
             layout_close_pane(wp);
             window_remove_pane(w, wp);
             server_redraw_window(w);
@@ -375,7 +374,6 @@ pub unsafe fn server_destroy_pane(wp: *mut window_pane, notify: i32) {
         }
 
         server_unzoom_window(w);
-        server_client_remove_pane(wp);
         layout_close_pane(wp);
         window_remove_pane(w, wp);
 

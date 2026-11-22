@@ -133,7 +133,6 @@ unsafe fn cmd_join_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
 
         layout_close_pane(src_wp);
 
-        server_client_remove_pane(src_wp);
         window_lost_pane(src_w, src_wp);
         (*src_w).panes.retain(|&p| p != src_wp);
 

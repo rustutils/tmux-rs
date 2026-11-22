@@ -3449,8 +3449,6 @@ pub unsafe fn server_client_set_flags(c: *mut client, flags: *const u8) {
                 flag = client_flag::READONLY;
             } else if streq_(next, "ignore-size") {
                 flag = client_flag::IGNORESIZE;
-            } else if streq_(next, "active-pane") {
-                flag = client_flag::ACTIVEPANE;
             }
             if flag == client_flag::empty() {
                 continue;
@@ -3519,9 +3517,6 @@ pub unsafe fn server_client_get_flags(c: *mut client) -> *const u8 {
         if (*c).flags.intersects(client_flag::READONLY) {
             strlcat((&raw mut S).cast(), c!("read-only,"), SIZEOF_S);
         }
-        if (*c).flags.intersects(client_flag::ACTIVEPANE) {
-            strlcat((&raw mut S).cast(), c!("active-pane,"), SIZEOF_S);
-        }
         if (*c).flags.intersects(client_flag::SUSPENDED) {
             strlcat((&raw mut S).cast(), c!("suspended,"), SIZEOF_S);
         }
@@ -3547,61 +3542,22 @@ pub unsafe fn server_client_get_client_window(c: *mut client, id: u32) -> *mut c
 /// Add client window.
 pub unsafe fn server_client_add_client_window(c: *mut client, id: u32) -> NonNull<client_window> {
     unsafe {
-        let cw = (*c).windows.entry(id).or_insert(client_window {
-            pane: None,
-            sx: 0,
-            sy: 0,
-        });
+        let cw = (*c).windows.entry(id).or_insert(client_window { sx: 0, sy: 0 });
         NonNull::new(cw as *mut client_window).unwrap()
     }
 }
 
-/// Get client active pane.
+/// Get the pane a client is looking at: the active pane of its session's
+/// current window, or null without a session. tmux 3.5a could give each
+/// client its own active pane (the active-pane client flag), 3.8 removed
+/// that again.
 pub unsafe fn server_client_get_pane(c: *mut client) -> *mut window_pane {
     unsafe {
         let s = client_get_session(c);
-
         if s.is_null() {
             return null_mut();
         }
-
-        if !(*c).flags.intersects(client_flag::ACTIVEPANE) {
-            return window_active_pane(winlink_window((*s).curw));
-        }
-        let cw = server_client_get_client_window(c, (*winlink_window((*s).curw)).id);
-        if cw.is_null() {
-            return window_active_pane(winlink_window((*s).curw));
-        }
-        pane_ptr_from_id((*cw).pane)
-    }
-}
-
-// Set client active pane.
-pub unsafe fn server_client_set_pane(c: *mut client, wp: *mut window_pane) {
-    unsafe {
-        let s = client_get_session(c);
-
-        if s.is_null() {
-            return;
-        }
-
-        let cw = server_client_add_client_window(c, (*winlink_window((*s).curw)).id).as_ptr();
-        (*cw).pane = pane_id_from_ptr(wp);
-        // log_debug("%s pane now %%%u", (*c).name, (*wp).id);
-    }
-}
-
-/// Remove pane from client lists.
-pub unsafe fn server_client_remove_pane(wp: *mut window_pane) {
-    unsafe {
-        let w = window_pane_window(wp);
-
-        for c in clients_iter() {
-            if let Some(cw) = (*c).windows.get(&(*w).id)
-                && pane_ptr_from_id(cw.pane) == wp {
-                    (*c).windows.remove(&(*w).id);
-                }
-        }
+        window_active_pane(winlink_window((*s).curw))
     }
 }
 
