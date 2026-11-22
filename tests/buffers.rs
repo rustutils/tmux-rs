@@ -242,6 +242,31 @@ fn save_buffer_to_file() {
     assert_eq!(contents, "save this");
 }
 
+/// A write error on the client side must reach the server as a command
+/// error. Since tmux 3.8 the client reports it with MSG_WRITE_DONE.
+#[test]
+fn save_buffer_write_error_is_reported() {
+    if !std::path::Path::new("/dev/full").exists() {
+        return;
+    }
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    tmux.cmd()
+        .args(["set-buffer", "cannot save this"])
+        .run()
+        .assert_success();
+
+    let result = tmux.cmd().args(["save-buffer", "/dev/full"]).run();
+    result.assert_failure();
+    let stderr = result.stderr_str();
+    assert!(
+        stderr.contains("No space left on device") && stderr.contains("/dev/full"),
+        "expected the write error in stderr, got: {stderr:?}"
+    );
+}
+
 #[test]
 fn save_buffer_named_to_file() {
     let mut tmux = TmuxTestHarness::new();

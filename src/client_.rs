@@ -257,7 +257,9 @@ pub unsafe extern "C-unwind" fn client_main(
         CLIENT_PROC = proc_start(c"client");
         proc_set_signals(CLIENT_PROC, Some(client_signal));
 
-        CLIENT_FLAGS = flags;
+        // Like tmux 3.8, ask the server to wait for MSG_WRITE_DONE before it
+        // treats a file write as finished, so write errors reach it.
+        CLIENT_FLAGS = flags | client_flag::WRITE_ACK;
         log_debug!(
             "flags are {:#x}",
             (*&raw mut CLIENT_FLAGS).bits() as c_ulonglong

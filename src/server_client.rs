@@ -2998,6 +2998,12 @@ pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
                 server_client_dispatch_shell(c);
             }
             msgtype::MSG_WRITE_READY => file_write_ready(&raw mut (*c).files, imsg),
+            msgtype::MSG_WRITE_DONE => {
+                if file_write_done(&raw mut (*c).files, imsg) != 0 {
+                    log_debug!("client {:p} invalid message type {}", c, (*imsg).hdr.type_);
+                    proc_kill_peer((*c).peer);
+                }
+            }
             msgtype::MSG_READ => file_read_data(&raw mut (*c).files, imsg),
             msgtype::MSG_READ_DONE => file_read_done(&raw mut (*c).files, imsg),
             _ => (),

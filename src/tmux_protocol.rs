@@ -7,5 +7,5 @@
 
 pub use tmux_protocol::{
     PROTOCOL_VERSION, msg_command, msg_read_cancel, msg_read_data, msg_read_done, msg_read_open,
-    msg_write_close, msg_write_data, msg_write_open, msg_write_ready, msgtype,
+    msg_write_close, msg_write_data, msg_write_done, msg_write_open, msg_write_ready, msgtype,
 };

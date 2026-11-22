@@ -563,7 +563,11 @@ pub unsafe fn file_push(cf: *mut client_file) {
                 &raw const close as *const c_void,
                 size_of::<msg_write_close>(),
             );
-            file_fire_done(cf);
+            // A client with WRITE_ACK reports completion (and any write
+            // error) with MSG_WRITE_DONE, see file_write_done.
+            if (*cf).c.is_null() || !(*(*cf).c).flags.intersects(client_flag::WRITE_ACK) {
+                file_fire_done(cf);
+            }
         }
     }
 }
@@ -588,23 +592,61 @@ pub unsafe fn file_write_left(files: *mut client_files) -> c_int {
     (waiting != 0) as i32
 }
 
-/// Write callback: drains `event_buf` to the file fd.
-/// When buffer is fully drained, notifies the user callback
-/// and frees the file if it has been closed.
+/// Finish a write stream on the client: close the fd, report completion
+/// and any error to the server with MSG_WRITE_DONE, call the callback and
+/// free the file.
+unsafe fn file_write_finished(cf: *mut client_file) {
+    unsafe {
+        (*cf).event_io = None;
+        if (*cf).fd != -1 {
+            if close((*cf).fd) != 0 && (*cf).error == 0 {
+                (*cf).error = errno!();
+            }
+            (*cf).fd = -1;
+        }
+
+        let msg = msg_write_done {
+            stream: (*cf).stream,
+            error: (*cf).error,
+        };
+        proc_send(
+            (*cf).peer,
+            msgtype::MSG_WRITE_DONE,
+            -1,
+            &raw const msg as *const c_void,
+            size_of::<msg_write_done>(),
+        );
+
+        if let Some(cb) = (*cf).cb {
+            cb(null_mut(), null_mut(), 0, -1, null_mut(), (*cf).data);
+        }
+        file_free(cf);
+    }
+}
+
+/// Write callback on the client: drains `event_buf` to the file fd. Once
+/// the server has closed the stream and everything is written, or on a
+/// write error, the stream is finished with file_write_finished.
 unsafe fn file_write_fire(cf: *mut client_file) {
     unsafe {
         if !(*cf).event_buf.is_empty() {
             let n = (*cf).event_buf.write_to_fd((*cf).fd);
             if n < 0 {
-                if std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::WouldBlock {
                     return;
                 }
-                // Write error.
                 log_debug!("write error file {}", (*cf).stream);
+                (*cf).error = match err.raw_os_error() {
+                    Some(e) if e != 0 => e,
+                    _ => EIO,
+                };
                 (*cf).event_io = None;
                 close((*cf).fd);
                 (*cf).fd = -1;
-                if let Some(cb) = (*cf).cb {
+                if (*cf).closed != 0 {
+                    file_write_finished(cf);
+                } else if let Some(cb) = (*cf).cb {
                     cb(null_mut(), null_mut(), 0, -1, null_mut(), (*cf).data);
                 }
                 return;
@@ -612,17 +654,14 @@ unsafe fn file_write_fire(cf: *mut client_file) {
         }
 
         if (*cf).event_buf.is_empty() {
-            // Output fully drained — drop the write IoHandle.
+            // Everything written, so stop waiting for the fd to be writable.
             (*cf).event_io = None;
 
             log_debug!("write check file {}", (*cf).stream);
-            if let Some(cb) = (*cf).cb {
-                cb(null_mut(), null_mut(), 0, -1, null_mut(), (*cf).data);
-            }
-
             if (*cf).closed != 0 {
-                close((*cf).fd);
-                file_free(cf);
+                file_write_finished(cf);
+            } else if let Some(cb) = (*cf).cb {
+                cb(null_mut(), null_mut(), 0, -1, null_mut(), (*cf).data);
             }
         }
     }
@@ -756,13 +795,10 @@ pub unsafe fn file_write_close(files: *mut client_files, imsg: *mut imsg) {
             fatalx("unknown stream number");
         }
         log_debug!("close file {}", (*cf).stream);
+        (*cf).closed = 1;
 
         if (*cf).event_io.is_none() || (*cf).event_buf.is_empty() {
-            (*cf).event_io = None;
-            if (*cf).fd != -1 {
-                close((*cf).fd);
-            }
-            file_free(cf);
+            file_write_finished(cf);
         }
     }
 }
@@ -946,6 +982,32 @@ pub unsafe fn file_read_cancel(files: *mut client_files, imsg: *mut imsg) {
         log_debug!("cancel file {}", (*cf).stream);
 
         file_read_error_fire(cf);
+    }
+}
+
+/// Handle MSG_WRITE_DONE from a client (server side). The client sends it
+/// once a stream is fully written and closed. If the client set WRITE_ACK,
+/// file_push left the stream open waiting for this, so finish it now with
+/// the error the client reported. Returns -1 for a malformed message.
+pub unsafe fn file_write_done(files: *mut client_files, imsg: *mut imsg) -> i32 {
+    unsafe {
+        let msglen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
+        if msglen != size_of::<msg_write_done>() {
+            return -1;
+        }
+        let msg = (*imsg).data as *const msg_write_done;
+        let Some(cf) = (*files).get_mut(&(*msg).stream) else {
+            return 0;
+        };
+        let cf: *mut client_file = &mut **cf;
+        if (*cf).c.is_null() || !(*(*cf).c).flags.intersects(client_flag::WRITE_ACK) {
+            return 0;
+        }
+
+        log_debug!("file {} write done", (*cf).stream);
+        (*cf).error = (*msg).error;
+        file_fire_done(cf);
+        0
     }
 }
 
