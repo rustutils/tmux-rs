@@ -340,3 +340,156 @@ fn control_mode_display_message() {
     cleanup(stdin, child);
     drop(tmux);
 }
+
+/// Wait up to `timeout` for a child to exit. Returns whether it did.
+fn wait_for_exit(child: &mut std::process::Child, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if child.try_wait().expect("try_wait").is_some() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+/// With the wait-exit flag a control client prints %exit and then waits
+/// for an empty line before it exits.
+#[test]
+fn control_mode_wait_exit_waits_for_empty_line() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    let mut child = spawn_control_client(&tmux);
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+
+    stdin.write_all(b"refresh-client -f wait-exit\ndetach-client\n").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let line = rx.recv_timeout(left).expect("no %exit from control client");
+        if line.starts_with("%exit") {
+            break;
+        }
+    }
+    assert!(
+        !wait_for_exit(&mut child, Duration::from_millis(500)),
+        "control client exited without waiting for an empty line"
+    );
+    stdin.write_all(b"\n").unwrap();
+    assert!(wait_for_exit(&mut child, Duration::from_secs(5)), "control client did not exit");
+}
+
+/// Toggling no-output while a pane produces output used to leave queued
+/// output blocks behind, so the client never finished exiting (upstream
+/// issue 5049).
+#[test]
+fn control_mode_exits_after_toggling_no_output() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["sh -c 'while :; do echo 0123456789abcdef; done'"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    let mut child = spawn_control_client(&tmux);
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+
+    // Do not read yet: the pipe fills up and pane output queues up as
+    // blocks in the server. Then toggle no-output, which resets the panes.
+    std::thread::sleep(Duration::from_millis(500));
+    stdin.write_all(b"refresh-client -f no-output\n").unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    stdin.write_all(b"refresh-client -f !no-output\n").unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    std::thread::spawn(move || {
+        let mut sink = Vec::new();
+        let _ = std::io::Read::read_to_end(&mut BufReader::new(stdout), &mut sink);
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    drop(stdin);
+
+    let exited = wait_for_exit(&mut child, Duration::from_secs(5));
+    if !exited {
+        let _ = child.kill();
+    }
+    tmux.kill_server();
+    assert!(exited, "control client did not exit after its input closed");
+}
+
+/// A control client that never reads its output must not keep the server
+/// alive forever. tmux 3.8 gives up on it after 10 seconds.
+#[test]
+fn server_exits_despite_stuck_control_client() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["sh -c 'while :; do echo 0123456789abcdef; done'"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    let pid: i32 = tmux.query("#{pid}").parse().expect("server pid");
+
+    // Keep stdout open but never read it, so the pipe fills up.
+    let mut child = spawn_control_client(&tmux);
+    let _stdout = child.stdout.take().unwrap();
+    std::thread::sleep(Duration::from_secs(1));
+
+    // A server that is shutting down refuses new clients, so watch the
+    // process itself rather than asking it with has-session.
+    tmux.cmd().args(["kill-server"]).run();
+    let start = Instant::now();
+    let mut gone = false;
+    while start.elapsed() < Duration::from_secs(25) {
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            gone = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let _ = child.kill();
+    assert!(gone, "server still running 25 seconds after kill-server");
+}
+
+/// refresh-client -f sets and clears client flags. The flag parser used to
+/// never run its loop, so every flag was silently ignored.
+#[test]
+fn refresh_client_sets_client_flags() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    let out = tmux.control_mode(
+        "refresh-client -f ignore-size,no-output,read-only\n\
+         display-message -p 'set:#{client_flags}'\n\
+         refresh-client -f !ignore-size,!no-output\n\
+         display-message -p 'cleared:#{client_flags}'\n",
+    );
+    let stdout = out.stdout_str();
+    let line = |prefix: &str| {
+        stdout
+            .lines()
+            .find(|l| l.starts_with(prefix))
+            .unwrap_or_else(|| panic!("no {prefix} line in {stdout:?}"))
+            .to_string()
+    };
+    let set = line("set:");
+    for flag in ["ignore-size", "no-output", "read-only"] {
+        assert!(set.contains(flag), "{flag} missing in {set:?}");
+    }
+    let cleared = line("cleared:");
+    assert!(!cleared.contains("ignore-size") && !cleared.contains("no-output"), "{cleared:?}");
+    assert!(cleared.contains("read-only"), "read-only should stay set: {cleared:?}");
+}

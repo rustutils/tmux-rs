@@ -306,6 +306,7 @@ pub unsafe fn server_client_create(fd: i32) -> *mut client {
 
         std::ptr::write(&raw mut (*c).repeat_timer, None);
         std::ptr::write(&raw mut (*c).click_timer, None);
+        std::ptr::write(&raw mut (*c).exit_timer, None);
         std::ptr::write(&raw mut (*c).message_timer, None);
         std::ptr::write(&raw mut (*c).overlay_timer, None);
 
@@ -482,6 +483,7 @@ pub unsafe fn server_client_lost(c: *mut client) {
 
         (*c).repeat_timer = None;
         (*c).click_timer = None;
+        (*c).exit_timer = None;
 
         key_bindings_unref_table((*c).keytable);
 
@@ -2207,7 +2209,7 @@ pub unsafe fn server_client_loop() {
 
         // Check clients.
         for c in clients_iter() {
-            server_client_check_exit(c);
+            server_client_check_exit(c, false);
             if !client_get_session(c).is_null() {
                 server_client_check_modes(c);
                 server_client_check_redraw(c);
@@ -2611,8 +2613,47 @@ unsafe fn server_client_click_timer_fire(cid: ClientId) {
     }
 }
 
+/// Start the exit timer unless it is already running. If the client has
+/// not finished exiting when it fires, `server_client_exit_timer_fire`
+/// stops waiting for it.
+unsafe fn server_client_start_exit_timer(c: *mut client) {
+    unsafe {
+        if (*c).exit_timer.is_some() {
+            return;
+        }
+        let cid = (*c).id;
+        (*c).exit_timer = timer_add(
+            Duration::from_secs(10),
+            Box::new(move || server_client_exit_timer_fire(cid)),
+        );
+    }
+}
+
+/// The exit timer fired. A client that was sent its exit message but did
+/// not go away is dropped. A client that is still flushing output has
+/// that output discarded and is sent its exit message.
+unsafe fn server_client_exit_timer_fire(cid: ClientId) {
+    unsafe {
+        let Some(c) = client_from_id(cid) else { return };
+        (*c).exit_timer = None;
+        if (*c).flags.intersects(client_flag::DEAD | client_flag::SUSPENDED) {
+            return;
+        }
+        if (*c).flags.intersects(client_flag::EXITED) {
+            log_debug!("client {:?} took too long to exit", cid);
+            server_client_lost(c);
+        } else if (*c).flags.intersects(client_flag::EXIT) {
+            log_debug!("client {:?} took too long to flush", cid);
+            server_client_check_exit(c, true);
+        }
+    }
+}
+
 /// Check if client should be exited.
-pub unsafe fn server_client_check_exit(c: *mut client) {
+/// Send the exit message to a client that should exit, once its output
+/// has been written. If that takes too long the exit timer forces it:
+/// with `force` set, pending output is discarded.
+pub unsafe fn server_client_check_exit(c: *mut client, force: bool) {
     unsafe {
         if (*c)
             .flags
@@ -2625,17 +2666,29 @@ pub unsafe fn server_client_check_exit(c: *mut client) {
         }
 
         if (*c).flags.intersects(client_flag::CONTROL) {
-            control_discard(c);
-            if control_all_done(c) == 0 {
-                return;
+            if force {
+                control_discard_all(c);
+            } else {
+                control_discard(c);
+                if control_all_done(c) == 0 {
+                    server_client_start_exit_timer(c);
+                    return;
+                }
             }
         }
-        for cf in (*c).files.values() {
-            if EVBUFFER_LENGTH(cf.buffer) != 0 {
-                return;
+        if !force {
+            for cf in (*c).files.values() {
+                if EVBUFFER_LENGTH(cf.buffer) != 0 {
+                    server_client_start_exit_timer(c);
+                    return;
+                }
             }
         }
         (*c).flags |= client_flag::EXITED;
+
+        // Restart the timer: now wait for the client to go away.
+        (*c).exit_timer = None;
+        server_client_start_exit_timer(c);
 
         match (*c).exit_type {
             exit_type::CLIENT_EXIT_RETURN => {

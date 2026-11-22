@@ -220,6 +220,14 @@ pub unsafe fn control_reset_offsets(c: *mut client) {
         let Some(cs_box) = (*c).control_state.as_mut() else { return; };
         let cs = &raw mut **cs_box;
 
+        // Free each pane's queued blocks first, or they stay in all_blocks
+        // and control_all_done never becomes true (a hang on exit after
+        // toggling no-output, upstream issue 5049).
+        let panes: Vec<*mut control_pane> =
+            (*cs).panes.values_mut().map(|cp| &mut **cp as *mut control_pane).collect();
+        for cp in panes {
+            control_discard_pane(c, cp);
+        }
         (*cs).panes.clear();
 
         (*cs).pending_list.clear();
@@ -833,6 +841,24 @@ pub unsafe fn control_ready(c: *mut client) {
                 Box::new(move |_fd, _events| control_read_fire(cid)),
             );
         }
+    }
+}
+
+/// Discard all queued output blocks of a control client and stop writing
+/// to it. Used when the client takes too long to exit.
+pub unsafe fn control_discard_all(c: *mut client) {
+    unsafe {
+        control_discard(c);
+        let Some(cs_box) = (*c).control_state.as_mut() else { return; };
+        let cs = &raw mut **cs_box;
+        for cb in (*cs).all_blocks.clone() {
+            control_free_block(cs, cb);
+        }
+        for cp in (*cs).panes.values_mut() {
+            cp.blocks.clear();
+        }
+        // Stop writing. What is left in the buffer is freed with the client.
+        (*cs).write_io = None;
     }
 }
 

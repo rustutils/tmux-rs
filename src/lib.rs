@@ -2443,6 +2443,9 @@ struct client {
 
     click_timer: Option<TimerHandle>,
     click_button: c_uint,
+    /// Gives up on a client that does not finish exiting, see
+    /// `server_client_check_exit`.
+    exit_timer: Option<TimerHandle>,
     click_event: mouse_event,
 
     status: status_line,
