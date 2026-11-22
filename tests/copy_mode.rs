@@ -1129,7 +1129,7 @@ fn search_backward_positions_cursor_vi() {
 /// tmux 3.8 keeps tabs in the grid, so copying a line with a tab gives the
 /// tab back instead of spaces.
 #[test]
-#[ignore = "tmux 3.8 keeps tabs when copying, not ported yet"]
+#[ignore = "tabs kept as tabs is a 3.8 copy mode addition (upstream fdbc6cde and follow-ups, Track 3: copy mode additions)"]
 fn copy_mode_keeps_tabs() {
     let mut tmux = TmuxTestHarness::new();
     tmux.new_session()
