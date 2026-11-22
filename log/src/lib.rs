@@ -265,7 +265,9 @@ mod tests {
 
     impl LogCapture {
         fn new() -> Self {
-            let guard = TEST_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let guard = TEST_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let tempfile = tempfile::NamedTempFile::new().unwrap();
             let file_clone = tempfile.reopen().unwrap();
             *LOG_FILE.lock().unwrap() = Some(LineWriter::new(file_clone));

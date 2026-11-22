@@ -844,10 +844,6 @@ dependencies = [
 [[package]]
 name = "tmux-types"
 version = "0.0.1"
-dependencies = [
- "bitflags",
- "libc",
-]
 
 [[package]]
 name = "tmux-utf8"
@@ -855,7 +851,6 @@ version = "0.0.1"
 dependencies = [
  "libc",
  "log",
- "tmux-types",
  "unicode-width",
 ]
 

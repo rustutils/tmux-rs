@@ -87,9 +87,7 @@ fn if_shell_unknown_command_in_config() {
         .stdin("")
         .run();
     let stdout = result.stdout_str();
-    let needle = format!(
-        "%config-error {tmp_path}:1: {tmp_path}:1: unknown command: wibble"
-    );
+    let needle = format!("%config-error {tmp_path}:1: {tmp_path}:1: unknown command: wibble");
     assert!(
         stdout.contains(&needle),
         "expected {needle:?} in control output, got: {stdout:?}"

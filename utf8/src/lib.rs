@@ -64,8 +64,6 @@ use std::mem::MaybeUninit;
 use std::ptr::{null, null_mut};
 use std::slice;
 
-use unicode_width::UnicodeWidthChar;
-
 mod data;
 
 pub use data::{UTF8_SIZE, Utf8Char, Utf8Data};
@@ -908,10 +906,10 @@ impl Utf8Data {
     /// Decode `self` (raw bytes) into a wide character. Returns `None`
     /// if the byte sequence is not a valid codepoint under the current
     /// locale.
-    pub fn to_wchar(&self) -> Option<wchar_t> {
+    pub fn to_wchar(self) -> Option<wchar_t> {
         let mut wc: wchar_t = 0;
-        // SAFETY: `self` is a valid reference; `wc` is a stack local.
-        let state = unsafe { utf8_towc(self as *const Utf8Data, &raw mut wc) };
+        // SAFETY: `self` is a local copy and `wc` is a stack local.
+        let state = unsafe { utf8_towc(&raw const self, &raw mut wc) };
         match state {
             Utf8State::Done => Some(wc),
             _ => None,

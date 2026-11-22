@@ -23,7 +23,8 @@ static SERVER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// The C tmux 3.8 binary to compare against, or None to skip.
 fn reference_bin() -> Option<PathBuf> {
-    let bin = std::env::var_os("TMUX_REFERENCE_BIN").map_or_else(|| PathBuf::from("/usr/bin/tmux"), PathBuf::from);
+    let bin = std::env::var_os("TMUX_REFERENCE_BIN")
+        .map_or_else(|| PathBuf::from("/usr/bin/tmux"), PathBuf::from);
     let out = Command::new(&bin).arg("-V").output().ok()?;
     let version = String::from_utf8_lossy(&out.stdout);
     if version.trim() == "tmux 3.8" {

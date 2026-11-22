@@ -66,6 +66,10 @@ pub fn attributes_tostring(attr: GridAttr) -> Cow<'static, str> {
 /// Returns `Err(())` if the string is empty, starts/ends with a delimiter,
 /// or contains an unrecognized attribute name.
 /// Note: `"bold"` is an alias for `"bright"`.
+#[expect(
+    clippy::result_unit_err,
+    reason = "callers only need to know that parsing failed, like the -1 return in C"
+)]
 pub fn attributes_fromstring(str: &str) -> Result<GridAttr, ()> {
     struct TableEntry {
         name: &'static str,

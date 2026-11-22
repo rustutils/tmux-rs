@@ -9,4 +9,3 @@ description  = "UTF-8 cell codec, interning, and width lookup for tmux-rs."
 libc           = { version = "0.2.174" }
 log            = { version = "0.4" }
 unicode-width  = { version = "0.2" }
-tmux-types     = { path = "../types" }

@@ -135,7 +135,7 @@ fn ntop<'out>(src: &'_ [u8], dst: &'out mut [MaybeUninit<u8>]) -> Result<&'out m
     }
 
     let mut i = 0;
-    let mut it = src.chunks_exact(3);
+    let (chunks, remainder) = src.as_chunks::<3>();
 
     macro_rules! enc {
         ($e:expr) => {
@@ -143,7 +143,7 @@ fn ntop<'out>(src: &'_ [u8], dst: &'out mut [MaybeUninit<u8>]) -> Result<&'out m
         }
     }
 
-    for chunk in &mut it {
+    for chunk in chunks {
         dst[i] = enc!(chunk[0] >> 2);
         dst[i + 1] = enc!(chunk[0] << 4 | chunk[1] >> 4);
         dst[i + 2] = enc!(chunk[1] << 2 | chunk[2] >> 6);
@@ -151,7 +151,7 @@ fn ntop<'out>(src: &'_ [u8], dst: &'out mut [MaybeUninit<u8>]) -> Result<&'out m
         i += 4;
     }
 
-    let chunk = it.remainder();
+    let chunk = remainder;
     match chunk.len() {
         0 => (),
         1 => {
