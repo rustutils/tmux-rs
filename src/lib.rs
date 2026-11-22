@@ -717,12 +717,8 @@ enum cell_type {
 }
 
 /// Cell borders.
-const CELL_BORDERS: [u8; 13] = [
-    b' ', b'x', b'q', b'l', b'k', b'm', b'j', b'w', b'v', b't', b'u', b'n', b'~',
-];
-const SIMPLE_BORDERS: [u8; 13] = [
-    b' ', b'|', b'-', b'+', b'+', b'+', b'+', b'+', b'+', b'+', b'+', b'+', b'.',
-];
+const CELL_BORDERS: [u8; 13] = *b" xqlkmjwvtun~";
+const SIMPLE_BORDERS: [u8; 13] = *b" |-+++++++++.";
 const PADDED_BORDERS: [u8; 13] = [b' '; 13];
 
 // All Grid* types — the Grid struct, GridReader, the per-cell and
@@ -964,16 +960,16 @@ struct screen_redraw_ctx {
 }
 
 unsafe fn screen_size_x(s: *const screen) -> u32 {
-    unsafe { (*(*s).grid).sx }
+    unsafe { (*s).grid.sx }
 }
 unsafe fn screen_size_y(s: *const screen) -> u32 {
-    unsafe { (*(*s).grid).sy }
+    unsafe { (*s).grid.sy }
 }
 unsafe fn screen_hsize(s: *const screen) -> u32 {
-    unsafe { (*(*s).grid).hsize }
+    unsafe { (*s).grid.hsize }
 }
 unsafe fn screen_hlimit(s: *const screen) -> u32 {
-    unsafe { (*(*s).grid).hlimit }
+    unsafe { (*s).grid.hlimit }
 }
 
 /// Menu.

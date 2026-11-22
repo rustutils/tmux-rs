@@ -1,10 +1,10 @@
 //! UTF-8 cell types, encoding, width lookup, and intern table.
 //!
-//! This crate owns the `Utf8Data` / `Utf8Char` pair plus everything
+//! This crate owns the `Utf8Data` and `Utf8Char` pair and everything
 //! needed to translate between them: a process-local intern table for
-//! >3-byte sequences, a unicode-width lookup for display columns, and
-//! the streaming-decode helpers (`utf8_open` / `utf8_append`) used by
-//! the input parser.
+//! sequences longer than 3 bytes, a unicode-width lookup for display
+//! columns, and the streaming decode helpers (`utf8_open` and
+//! `utf8_append`) used by the input parser.
 //!
 //! ## Safe API
 //!
@@ -561,7 +561,7 @@ pub unsafe fn utf8_width(ud: *mut Utf8Data, width: *mut i32) -> Utf8State {
         // `utf8proc_wcwidth` / libc `wcwidth` path. Returns None for
         // control chars — we map those to 0 (C1) or 1 (other) to
         // preserve the historical behavior.
-        let columns = char::from_u32(wc as u32).and_then(|c| c.width());
+        let columns = char::from_u32(wc as u32).and_then(unicode_width::UnicodeWidthChar::width);
         *width = match columns {
             Some(w) => w as i32,
             None => {
@@ -612,7 +612,7 @@ pub unsafe fn utf8_fromwc(wc: wchar_t, ud: *mut Utf8Data) -> Utf8State {
         let mut width: i32 = 0;
         let size = wctomb((*ud).data.as_mut_ptr().cast(), wc);
         if size < 0 {
-            log::debug!("wctomb failed on {}", wc);
+            log::debug!("wctomb failed on {wc}");
             wctomb(null_mut(), 0);
             return Utf8State::Error;
         }
@@ -1009,7 +1009,7 @@ mod tests {
     #[test]
     fn from_data_to_data_roundtrip_ascii() {
         // 1-byte ASCII 'Z'
-        let ud = Utf8Data::new([b'Z'], 1, 1, 1);
+        let ud = Utf8Data::new(*b"Z", 1, 1, 1);
         let mut uc: Utf8Char = 0;
         let state = unsafe { utf8_from_data(&ud, &mut uc) };
         assert_eq!(state, Utf8State::Done);
@@ -1019,7 +1019,7 @@ mod tests {
         let back = utf8_to_data(uc);
         assert_eq!(back.size, 1);
         assert_eq!(back.width, 1);
-        assert_eq!(&back.data[..1], &[b'Z']);
+        assert_eq!(&back.data[..1], b"Z");
     }
 
     #[test]
@@ -1097,13 +1097,13 @@ mod tests {
 
     #[test]
     fn utf8_data_new_and_slice() {
-        let ud = Utf8Data::new([b'x', b'y', b'z'], 3, 3, 1);
+        let ud = Utf8Data::new(*b"xyz", 3, 3, 1);
         assert_eq!(ud.initialized_slice(), b"xyz");
     }
 
     #[test]
     fn utf8_data_new_pads_with_zeroes() {
-        let ud = Utf8Data::new([b'a'], 1, 1, 1);
+        let ud = Utf8Data::new(*b"a", 1, 1, 1);
         // Bytes beyond size should be zero
         assert_eq!(ud.data[1], 0);
         assert_eq!(ud.data[UTF8_SIZE - 1], 0);

@@ -86,7 +86,7 @@ pub struct imsgbuf {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 /// Message header, 16 bytes on the wire. `len` includes the header. When
-/// a message has been read, `len` no longer carries IMSG_FD_MARK.
+/// a message has been read, `len` no longer carries `IMSG_FD_MARK`.
 pub struct imsg_hdr {
     pub type_: u32,
     pub len: u32,

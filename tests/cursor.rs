@@ -2,7 +2,7 @@
 //!
 //! Ported from regress/cursor-test{1,2,3,4}.sh. The original scripts compare
 //! captured pane output byte-for-byte against .result files. We do the same:
-//! build up a string of "cursor_x cursor_y cursor_character\n<numbered lines>"
+//! build up a string of "`cursor_x` `cursor_y` `cursor_character\n`<numbered lines>"
 //! and compare against the reference.
 
 use std::path::PathBuf;
@@ -32,7 +32,7 @@ fn snapshot(tmux: &TmuxTestHarness) -> String {
         .stdout_str();
     let cap = tmux.cmd().args(["capture-pane", "-p"]).run().stdout_str();
     for (i, l) in cap.lines().enumerate() {
-        s.push_str(&format!("{} {}\n", i, l));
+        s.push_str(&format!("{i} {l}\n"));
     }
     s
 }

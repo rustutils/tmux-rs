@@ -3,13 +3,13 @@
 //! Each test starts a fresh tmux-rs server and a fresh C tmux server, runs
 //! the same command on both and compares the output. Differences that are
 //! known and not fixed yet are listed in the `known` tables in
-//! parity_known.rs, each with the roadmap item that will remove it. The
+//! `parity_known.rs`, each with the roadmap item that will remove it. The
 //! tests fail on any difference that is not listed, and also on a listed
 //! difference that has gone away, so the tables only ever shrink.
 //!
-//! The C binary is /usr/bin/tmux, or TMUX_REFERENCE_BIN if set. The tests
+//! The C binary is /usr/bin/tmux, or `TMUX_REFERENCE_BIN` if set. The tests
 //! are skipped when it is missing or not tmux 3.8. They always use the
-//! cargo-built tmux-rs, whatever TMUX_SERVER_BIN and TMUX_CLIENT_BIN say.
+//! cargo-built tmux-rs, whatever `TMUX_SERVER_BIN` and `TMUX_CLIENT_BIN` say.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -23,9 +23,7 @@ static SERVER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// The C tmux 3.8 binary to compare against, or None to skip.
 fn reference_bin() -> Option<PathBuf> {
-    let bin = std::env::var_os("TMUX_REFERENCE_BIN")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/usr/bin/tmux"));
+    let bin = std::env::var_os("TMUX_REFERENCE_BIN").map_or_else(|| PathBuf::from("/usr/bin/tmux"), PathBuf::from);
     let out = Command::new(&bin).arg("-V").output().ok()?;
     let version = String::from_utf8_lossy(&out.stdout);
     if version.trim() == "tmux 3.8" {

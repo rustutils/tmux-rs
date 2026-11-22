@@ -15,7 +15,7 @@ use crate::{GridCellEntry, GridExtdEntry, GridLineFlag};
 /// prefix `0..hsize` and the visible screen is `hsize..hsize+sy`.
 pub struct GridLine {
     pub celldata: Vec<GridCellEntry>,
-    /// Number of cells actually written (0..=celldata.len()). Trailing
+    /// Number of cells actually written (`0..=celldata.len()`). Trailing
     /// default cells are implicit. Used to trim output in
     /// `string_cells` when `GRID_STRING_EMPTY_CELLS` is not set.
     pub cellused: u32,

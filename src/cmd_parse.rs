@@ -1466,21 +1466,21 @@ mod tests {
     #[test]
     fn empty_string() {
         unsafe {
-            assert_eq!(parse(""), Ok("".into()));
+            assert_eq!(parse(""), Ok(String::new()));
         }
     }
 
     #[test]
     fn whitespace_only() {
         unsafe {
-            assert_eq!(parse("   "), Ok("".into()));
+            assert_eq!(parse("   "), Ok(String::new()));
         }
     }
 
     #[test]
     fn comment_line() {
         unsafe {
-            assert_eq!(parse("# this is a comment"), Ok("".into()));
+            assert_eq!(parse("# this is a comment"), Ok(String::new()));
         }
     }
 
@@ -1489,7 +1489,7 @@ mod tests {
         unsafe {
             // tmux treats # as comment start (outside quotes)
             let result = parse("set -g status off # comment");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1501,9 +1501,9 @@ mod tests {
     fn two_commands_semicolon() {
         unsafe {
             let result = parse("set -g status off ; set -g prefix C-a");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
             let s = result.unwrap();
-            assert!(s.contains("set-option"), "expected set-option in: {}", s);
+            assert!(s.contains("set-option"), "expected set-option in: {s}");
         }
     }
 
@@ -1511,7 +1511,7 @@ mod tests {
     fn multiple_commands() {
         unsafe {
             let result = parse("new-session ; new-window ; split-window");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1544,7 +1544,7 @@ mod tests {
         unsafe {
             // \; should be a literal semicolon, not a command separator
             let result = parse(r"display-message 'hello \; world'");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1552,7 +1552,7 @@ mod tests {
     fn escaped_quotes_in_double_quotes() {
         unsafe {
             let result = parse(r#"display-message "hello \"world\"""#);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1564,9 +1564,9 @@ mod tests {
     fn unknown_command() {
         unsafe {
             let result = parse("this-command-does-not-exist");
-            assert!(result.is_err(), "expected Err, got: {:?}", result);
+            assert!(result.is_err(), "expected Err, got: {result:?}");
             let err = result.unwrap_err();
-            assert!(err.contains("unknown command"), "unexpected error: {}", err);
+            assert!(err.contains("unknown command"), "unexpected error: {err}");
         }
     }
 
@@ -1575,9 +1575,9 @@ mod tests {
         unsafe {
             // "se" could be set-option, select-pane, select-window, etc.
             let result = parse("se");
-            assert!(result.is_err(), "expected Err, got: {:?}", result);
+            assert!(result.is_err(), "expected Err, got: {result:?}");
             let err = result.unwrap_err();
-            assert!(err.contains("ambiguous"), "unexpected error: {}", err);
+            assert!(err.contains("ambiguous"), "unexpected error: {err}");
         }
     }
 
@@ -1607,8 +1607,8 @@ mod tests {
             let printed = cmd_list_print(&*cmdlist, 0);
             let s = cstr_to_str(printed).to_string();
             free_(printed);
-            assert!(s.contains("set-option"), "expected set-option in: {}", s);
-            assert!(s.contains("status"), "expected status in: {}", s);
+            assert!(s.contains("set-option"), "expected set-option in: {s}");
+            assert!(s.contains("status"), "expected status in: {s}");
             cmd_list_free(cmdlist);
         }
     }
@@ -1621,7 +1621,7 @@ mod tests {
     fn if_shell_simple() {
         unsafe {
             let result = parse("if-shell 'true' 'set -g status off'");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1629,7 +1629,7 @@ mod tests {
     fn if_shell_with_else() {
         unsafe {
             let result = parse("if-shell 'true' 'set -g status on' 'set -g status off'");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1637,7 +1637,7 @@ mod tests {
     // Braces (command blocks)
     // ---------------------------------------------------------------
 
-    /// Helper for tests that use cmd_parse_from_buffer directly.
+    /// Helper for tests that use `cmd_parse_from_buffer` directly.
     unsafe fn parse_buffer(input: &[u8]) -> Result<String, String> {
         unsafe {
             init_globals();
@@ -1660,7 +1660,7 @@ mod tests {
     fn command_block_braces() {
         unsafe {
             let result = parse_buffer(b"if-shell 'true' {\n  set -g status off\n}\n");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1669,7 +1669,7 @@ mod tests {
         unsafe {
             let result =
                 parse_buffer(b"if-shell 'true' {\n  set -g status on\n} {\n  set -g status off\n}\n");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1681,7 +1681,7 @@ mod tests {
     fn format_string_in_argument() {
         unsafe {
             let result = parse("display-message '#{session_name}'");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1693,7 +1693,7 @@ mod tests {
     fn trailing_semicolon() {
         unsafe {
             let result = parse("set -g status off ;");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1702,7 +1702,7 @@ mod tests {
         unsafe {
             // Leading semicolon triggers a parse error
             let result = parse("; set -g status off");
-            assert!(result.is_err(), "expected Err, got: {:?}", result);
+            assert!(result.is_err(), "expected Err, got: {result:?}");
         }
     }
 
@@ -1711,7 +1711,7 @@ mod tests {
         unsafe {
             // ;; is a group separator in tmux
             let result = parse("set -g status off ;; new-session");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1719,7 +1719,7 @@ mod tests {
     fn newline_in_buffer_separates_commands() {
         unsafe {
             let result = parse_buffer(b"set -g status off\nnew-session\n");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1737,7 +1737,7 @@ mod tests {
     fn multiple_flags() {
         unsafe {
             let result = parse("split-window -h -l 50");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1745,7 +1745,7 @@ mod tests {
     fn bind_key_with_command() {
         unsafe {
             let result = parse("bind-key C-a set -g status off");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1758,9 +1758,9 @@ mod tests {
         unsafe {
             let input = b"%if 1\nset -g status on\n%endif\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
             let s = result.unwrap();
-            assert!(s.contains("set-option"), "expected set-option in: {}", s);
+            assert!(s.contains("set-option"), "expected set-option in: {s}");
         }
     }
 
@@ -1769,10 +1769,10 @@ mod tests {
         unsafe {
             let input = b"%if 0\nset -g status on\n%endif\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
             // The command should be skipped when condition is false
             let s = result.unwrap();
-            assert!(!s.contains("set-option"), "expected no set-option in: {}", s);
+            assert!(!s.contains("set-option"), "expected no set-option in: {s}");
         }
     }
 
@@ -1781,9 +1781,9 @@ mod tests {
         unsafe {
             let input = b"%if 0\nset -g status on\n%else\nset -g status off\n%endif\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
             let s = result.unwrap();
-            assert!(s.contains("status off"), "expected 'status off' in: {}", s);
+            assert!(s.contains("status off"), "expected 'status off' in: {s}");
         }
     }
 
@@ -1792,9 +1792,9 @@ mod tests {
         unsafe {
             let input = b"%if 0\nset -g status on\n%elif 1\nset -g status off\n%endif\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
             let s = result.unwrap();
-            assert!(s.contains("status off"), "expected 'status off' in: {}", s);
+            assert!(s.contains("status off"), "expected 'status off' in: {s}");
         }
     }
 
@@ -1814,9 +1814,9 @@ mod tests {
         unsafe {
             let input = b"%if 1\n%if 1\nset -g status on\n%endif\n%endif\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
             let s = result.unwrap();
-            assert!(s.contains("set-option"), "expected set-option in: {}", s);
+            assert!(s.contains("set-option"), "expected set-option in: {s}");
         }
     }
 
@@ -1829,7 +1829,7 @@ mod tests {
         unsafe {
             // \101 = 'A' in octal
             let result = parse(r#"display-message "\101""#);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1838,7 +1838,7 @@ mod tests {
         unsafe {
             // \n = newline, \t = tab, \r = carriage return, \e = escape
             let result = parse(r#"display-message "\n\t\r\e""#);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1846,7 +1846,7 @@ mod tests {
     fn escape_backslash() {
         unsafe {
             let result = parse(r#"display-message "hello\\world""#);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1856,7 +1856,7 @@ mod tests {
             // \u0041 = 'A' — all 4 hex digits must be consumed
             let result = parse(r#"display-message "\u0041""#);
             let printed = result.unwrap();
-            assert!(printed.contains('A'), "expected 'A' in output, got: {}", printed);
+            assert!(printed.contains('A'), "expected 'A' in output, got: {printed}");
         }
     }
 
@@ -1866,7 +1866,7 @@ mod tests {
             // \U00000041 = 'A' — all 8 hex digits must be consumed
             let result = parse(r#"display-message "\U00000041""#);
             let printed = result.unwrap();
-            assert!(printed.contains('A'), "expected 'A' in output, got: {}", printed);
+            assert!(printed.contains('A'), "expected 'A' in output, got: {printed}");
         }
     }
 
@@ -1878,12 +1878,12 @@ mod tests {
             // as \u004 = U+0004 (control char), not U+0042 ('B').
             let result = parse(r#"display-message "\u0042""#);
             let printed = result.unwrap();
-            assert!(printed.contains('B'), "expected 'B' in output, got: {}", printed);
+            assert!(printed.contains('B'), "expected 'B' in output, got: {printed}");
 
             // Similarly for \U: \U00000043 = 'C'
             let result = parse(r#"display-message "\U00000043""#);
             let printed = result.unwrap();
-            assert!(printed.contains('C'), "expected 'C' in output, got: {}", printed);
+            assert!(printed.contains('C'), "expected 'C' in output, got: {printed}");
         }
     }
 
@@ -1892,9 +1892,9 @@ mod tests {
         unsafe {
             // \4xx is invalid (octal must start with 0-3)
             let result = parse(r#"display-message "\4""#);
-            assert!(result.is_err(), "expected Err, got: {:?}", result);
+            assert!(result.is_err(), "expected Err, got: {result:?}");
             let err = result.unwrap_err();
-            assert!(err.contains("invalid octal escape"), "unexpected error: {}", err);
+            assert!(err.contains("invalid octal escape"), "unexpected error: {err}");
         }
     }
 
@@ -1903,7 +1903,7 @@ mod tests {
         unsafe {
             // \a = bell, \f = formfeed, \s = space, \v = vtab, \b = backspace
             let result = parse(r#"display-message "\a\b\f\s\v""#);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1917,7 +1917,7 @@ mod tests {
             // %if #{...} triggers yylex_format in a condition context
             let input = b"%if #{session_name}\nset -g status on\n%endif\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1928,7 +1928,7 @@ mod tests {
             // Use a simpler nested format that doesn't need environ
             let input = b"%if #{==:1,1}\nset -g status on\n%endif\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1942,7 +1942,7 @@ mod tests {
             // \r\n should be treated as \n
             let input = b"set -g status off\r\nnew-session\r\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -1952,7 +1952,7 @@ mod tests {
             // bare \r (not followed by \n)
             let input = b"set -g status off\rnew-session\n";
             let result = parse_buffer(input);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -2023,9 +2023,9 @@ mod tests {
             if !o.is_null() {
                 let _ = options_array_set(o, 0, Some("myalias=set -g status off"), false);
                 let result = parse("myalias");
-                assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+                assert!(result.is_ok(), "expected Ok, got: {result:?}");
                 let s = result.unwrap();
-                assert!(s.contains("set-option"), "expected set-option in: {}", s);
+                assert!(s.contains("set-option"), "expected set-option in: {s}");
             }
         }
     }
@@ -2039,7 +2039,7 @@ mod tests {
         unsafe {
             // tmux treats unterminated quotes at EOF as implicitly closed
             let result = parse("display-message 'hello");
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -2047,7 +2047,7 @@ mod tests {
     fn unterminated_double_quote() {
         unsafe {
             let result = parse(r#"display-message "hello"#);
-            assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+            assert!(result.is_ok(), "expected Ok, got: {result:?}");
         }
     }
 
@@ -2055,7 +2055,7 @@ mod tests {
     fn unmatched_endif() {
         unsafe {
             let result = parse_buffer(b"%endif\n");
-            assert!(result.is_err(), "expected Err, got: {:?}", result);
+            assert!(result.is_err(), "expected Err, got: {result:?}");
         }
     }
 
@@ -2063,7 +2063,7 @@ mod tests {
     fn unmatched_else() {
         unsafe {
             let result = parse_buffer(b"%else\n");
-            assert!(result.is_err(), "expected Err, got: {:?}", result);
+            assert!(result.is_err(), "expected Err, got: {result:?}");
         }
     }
 
@@ -2071,7 +2071,7 @@ mod tests {
     fn missing_endif() {
         unsafe {
             let result = parse_buffer(b"%if 1\nset -g status on\n");
-            assert!(result.is_err(), "expected Err, got: {:?}", result);
+            assert!(result.is_err(), "expected Err, got: {result:?}");
         }
     }
 

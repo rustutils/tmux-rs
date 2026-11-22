@@ -403,21 +403,21 @@ mod tests {
 
     #[test]
     fn to_string_ascii() {
-        let h = Utf8Data::new([b'H'], 1, 1, 1);
-        let i = Utf8Data::new([b'i'], 1, 1, 1);
+        let h = Utf8Data::new(*b"H", 1, 1, 1);
+        let i = Utf8Data::new(*b"i", 1, 1, 1);
         assert_eq!(utf8_to_string(&[h, i]), "Hi");
     }
 
     #[test]
     fn to_string_sentinel_stops() {
-        let a = Utf8Data::new([b'A'], 1, 1, 1);
+        let a = Utf8Data::new(*b"A", 1, 1, 1);
         let sentinel = Utf8Data {
             data: [0; UTF8_SIZE],
             have: 0,
             size: 0,
             width: 0,
         };
-        let b = Utf8Data::new([b'B'], 1, 1, 1);
+        let b = Utf8Data::new(*b"B", 1, 1, 1);
         assert_eq!(utf8_to_string(&[a, sentinel, b]), "A");
     }
 

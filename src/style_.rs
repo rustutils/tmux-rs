@@ -38,7 +38,7 @@ use crate::options_::*;
 
 pub static mut STYLE_DEFAULT: style = style {
     gc: GridCell::new(
-        Utf8Data::new([b' '], 0, 1, 1),
+        Utf8Data::new(*b" ", 0, 1, 1),
         GridAttr::empty(),
         GridFlag::empty(),
         8,
@@ -559,10 +559,10 @@ mod tests {
     use super::*;
     use crate::GRID_DEFAULT_CELL;
 
-    /// Mutex to serialize tests that use style_tostring's static buffer.
+    /// Mutex to serialize tests that use `style_tostring`'s static buffer.
     static STYLE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    /// Parse a style string starting from STYLE_DEFAULT with GRID_DEFAULT_CELL as base.
+    /// Parse a style string starting from `STYLE_DEFAULT` with `GRID_DEFAULT_CELL` as base.
     /// Returns the parsed style on success, or None on error.
     unsafe fn parse(input: &str) -> Option<style> {
         unsafe {
@@ -573,7 +573,7 @@ mod tests {
         }
     }
 
-    /// Format a style to string. Caller must hold STYLE_LOCK.
+    /// Format a style to string. Caller must hold `STYLE_LOCK`.
     unsafe fn tostring(sy: &style) -> String {
         unsafe {
             let ptr = style_tostring(sy as *const style);
@@ -619,7 +619,7 @@ mod tests {
     #[test]
     fn parse_fg_color() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let _lock = STYLE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let sy = parse("fg=red").unwrap();
             assert_eq!(sy.gc.fg, 1); // red = colour index 1
             assert_eq!(tostring(&sy), "fg=red");
@@ -629,7 +629,7 @@ mod tests {
     #[test]
     fn parse_bg_color() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let _lock = STYLE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let sy = parse("bg=blue").unwrap();
             assert_eq!(sy.gc.bg, 4); // blue = colour index 4
             assert!(tostring(&sy).contains("bg=blue"));
@@ -648,7 +648,7 @@ mod tests {
     #[test]
     fn parse_us_color() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let _lock = STYLE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let sy = parse("us=green").unwrap();
             assert_eq!(sy.gc.us, 2); // green = 2
             assert!(tostring(&sy).contains("us=green"));
@@ -658,7 +658,7 @@ mod tests {
     #[test]
     fn parse_fill_color() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let _lock = STYLE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let sy = parse("fill=yellow").unwrap();
             assert_eq!(sy.fill, 3); // yellow = 3
             assert!(tostring(&sy).contains("fill=yellow"));
@@ -1007,8 +1007,8 @@ mod tests {
         }
     }
 
-    /// Regression: style_parse panicked on non-UTF-8 input because cstr_to_str
-    /// was used instead of the fallible cstr_to_str_. Now returns -1.
+    /// Regression: `style_parse` panicked on non-UTF-8 input because `cstr_to_str`
+    /// was used instead of the fallible `cstr_to_str_`. Now returns -1.
     #[test]
     fn non_utf8_returns_error() {
         unsafe {

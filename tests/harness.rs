@@ -34,7 +34,7 @@ fn cargo_bin() -> PathBuf {
     env!("CARGO_BIN_EXE_tmux-rs").into()
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 /// A test harness that manages a tmux server with an isolated socket.
 ///
 /// Each instance gets a unique socket path so tests can run in parallel
@@ -48,7 +48,7 @@ pub struct TmuxTestHarness {
     server_started: bool,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 impl TmuxTestHarness {
     /// Create a new harness with a unique socket path. Does not start a server yet.
     pub fn new() -> Self {
@@ -73,7 +73,7 @@ impl TmuxTestHarness {
     /// Run a tmux command using the *client* binary against this harness's server.
     ///
     /// A command that starts the server, because nothing listens on the
-    /// socket yet, uses the server binary instead, so TMUX_SERVER_BIN also
+    /// socket yet, uses the server binary instead, so `TMUX_SERVER_BIN` also
     /// applies to tests that start their server this way.
     pub fn cmd(&self) -> TmuxCommandBuilder<'_> {
         if std::path::Path::new(&self.socket_path).exists() {
@@ -111,7 +111,7 @@ impl TmuxTestHarness {
     /// `args` can include flags like `-t <target>` or `-X <command>`.
     pub fn send_keys(&self, args: &[&str]) -> TmuxResult {
         let mut all_args = vec!["send-keys".to_string()];
-        all_args.extend(args.iter().map(|s| s.to_string()));
+        all_args.extend(args.iter().map(std::string::ToString::to_string));
         self.cmd().args(all_args).run()
     }
 
@@ -250,7 +250,7 @@ impl Drop for TmuxTestHarness {
     }
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 /// Builder for a tmux command invocation.
 pub struct TmuxCommandBuilder<'a> {
     harness: &'a TmuxTestHarness,
@@ -260,7 +260,7 @@ pub struct TmuxCommandBuilder<'a> {
     stdin_data: Option<String>,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 impl<'a> TmuxCommandBuilder<'a> {
     pub fn args<I, S>(mut self, args: I) -> Self
     where
@@ -337,7 +337,7 @@ pub struct TmuxResult {
     pub output: Output,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 impl TmuxResult {
     pub fn success(&self) -> bool {
         self.output.status.success()
@@ -392,13 +392,13 @@ impl TmuxResult {
 ///                                      │ tmux server   │
 ///                                      └──────────────┘
 /// ```
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct PtyClient {
     master: OwnedFd,
     child: std::process::Child,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 impl PtyClient {
     /// Attach to an existing session on the given harness.
     ///
@@ -607,7 +607,7 @@ impl PtyClient {
 impl Drop for PtyClient {
     fn drop(&mut self) {
         // Send q to exit any mode, then detach
-        let _ = self.write(b"\x02d"); // C-b d (prefix + detach)
+        let () = self.write(b"\x02d"); // C-b d (prefix + detach)
         std::thread::sleep(Duration::from_millis(100));
         let _ = self.child.kill();
         let _ = self.child.wait();

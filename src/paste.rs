@@ -409,7 +409,7 @@ pub unsafe fn paste_make_sample(pb: *mut PasteBuffer) -> String {
 mod tests {
     use super::*;
 
-    /// Initialize global options needed by paste_add (reads "buffer-limit").
+    /// Initialize global options needed by `paste_add` (reads "buffer-limit").
     unsafe fn init_globals() {
         use std::sync::Once;
         static INIT: Once = Once::new();
@@ -450,7 +450,7 @@ mod tests {
     }
 
     /// Allocate a test data buffer with the given content.
-    /// Returns (pointer, size) suitable for paste_set/paste_add.
+    /// Returns (pointer, size) suitable for `paste_set` and `paste_add`.
     unsafe fn make_data(s: &[u8]) -> (*mut u8, usize) {
         unsafe {
             let ptr = crate::xmalloc::xmalloc(s.len()).as_ptr() as *mut u8;
@@ -459,7 +459,7 @@ mod tests {
         }
     }
 
-    /// Collect all buffer names from paste_walk in order (newest first).
+    /// Collect all buffer names from `paste_walk` in order (newest first).
     unsafe fn walk_names() -> Vec<String> {
         unsafe {
             let mut names = Vec::new();

@@ -170,7 +170,7 @@ pub unsafe fn server_client_overlay_range(
 /// Check if this client is inside this server.
 pub unsafe fn server_client_check_nested(c: *mut client) -> bool {
     unsafe {
-        let envent = environ_find_raw(&*(*c).environ, c!("TMUX"));
+        let envent = environ_find_raw(&(*c).environ, c!("TMUX"));
         let Some(envent) = envent else {
             return false;
         };
@@ -2288,7 +2288,7 @@ pub unsafe fn server_client_loop() {
 
         // Notify modes that pane styles may have changed.
         for w in windows_iter() {
-            for &wp in (*w).panes.clone().iter() {
+            for &wp in &(*w).panes.clone() {
                 if (*wp).flags.intersects(window_pane_flags::PANE_STYLECHANGED)
                     && let Some(wme) = (*wp).modes.first().copied().and_then(NonNull::new)
                     && let Some(style_changed) = (*wme.as_ptr()).mode.as_ref().unwrap().style_changed
@@ -3273,10 +3273,10 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) -
                 // log_debug("client %p IDENTIFY_LONGFLAGS %#llx", c, (unsigned long long)longflags);
             }
             msgtype::MSG_IDENTIFY_TERM => {
-                if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
+                if datalen == 0 || *data.cast::<u8>().add(datalen - 1) != b'\0' {
                     return -1;
                 }
-                let bytes = std::slice::from_raw_parts(data.cast::<u8>(), (datalen - 1) as usize);
+                let bytes = std::slice::from_raw_parts(data.cast::<u8>(), datalen - 1);
                 let name = if bytes.is_empty() {
                     "unknown".to_string()
                 } else {
@@ -3286,18 +3286,18 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) -
                 // log_debug("client %p IDENTIFY_TERM %s", c, data);
             }
             msgtype::MSG_IDENTIFY_TERMINFO => {
-                if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
+                if datalen == 0 || *data.cast::<u8>().add(datalen - 1) != b'\0' {
                     return -1;
                 }
                 (*c).term_caps.push(xstrdup(data.cast()).as_ptr());
                 // log_debug("client %p IDENTIFY_TERMINFO %s", c, data);
             }
             msgtype::MSG_IDENTIFY_TTYNAME => {
-                if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
+                if datalen == 0 || *data.cast::<u8>().add(datalen - 1) != b'\0' {
                     return -1;
                 }
                 // datalen includes trailing NUL
-                let bytes = std::slice::from_raw_parts(data.cast::<u8>(), (datalen - 1) as usize);
+                let bytes = std::slice::from_raw_parts(data.cast::<u8>(), datalen - 1);
                 std::ptr::write(
                     &raw mut (*c).ttyname,
                     Some(String::from_utf8_lossy(bytes).into_owned()),
@@ -3305,7 +3305,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) -
                 // log_debug("client %p IDENTIFY_TTYNAME %s", c, data);
             }
             msgtype::MSG_IDENTIFY_CWD => {
-                if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
+                if datalen == 0 || *data.cast::<u8>().add(datalen - 1) != b'\0' {
                     return -1;
                 }
                 if libc::access(data.cast(), libc::X_OK) == 0 {
@@ -3335,11 +3335,11 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) -
                 // log_debug("client %p IDENTIFY_STDOUT %d", c, (*c).out_fd);
             }
             msgtype::MSG_IDENTIFY_ENVIRON => {
-                if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
+                if datalen == 0 || *data.cast::<u8>().add(datalen - 1) != b'\0' {
                     return -1;
                 }
                 if !libc::strchr(data.cast(), b'=' as i32).is_null() {
-                    environ_put(&mut *(*c).environ, data.cast(), environ_flags::empty());
+                    environ_put(&mut (*c).environ, data.cast(), environ_flags::empty());
                 }
                 // log_debug("client %p IDENTIFY_ENVIRON %s", c, data);
             }

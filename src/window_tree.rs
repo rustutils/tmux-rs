@@ -600,7 +600,7 @@ unsafe fn window_tree_draw_session(
 
         let mut start: u32;
         let mut end: u32;
-        let remaining: u32;
+        
         let mut i: u32;
 
         let mut gc: GridCell = zeroed();
@@ -655,16 +655,16 @@ unsafe fn window_tree_draw_session(
             left = false;
             right = false;
         }
-        if left && right {
+        let remaining: u32 = if left && right {
             each = (sx - 6) / visible;
-            remaining = (sx - 6) - (visible * each);
+            (sx - 6) - (visible * each)
         } else if left || right {
             each = (sx - 3) / visible;
-            remaining = (sx - 3) - (visible * each);
+            (sx - 3) - (visible * each)
         } else {
             each = sx / visible;
-            remaining = sx - (visible * each);
-        }
+            sx - (visible * each)
+        };
         if each == 0 {
             return;
         }
@@ -810,17 +810,17 @@ unsafe fn window_tree_draw_window(
         }
 
         let each;
-        let remaining;
-        if left && right {
+        
+        let remaining = if left && right {
             each = (sx - 6) / visible;
-            remaining = (sx - 6) - (visible * each);
+            (sx - 6) - (visible * each)
         } else if left || right {
             each = (sx - 3) / visible;
-            remaining = (sx - 3) - (visible * each);
+            (sx - 3) - (visible * each)
         } else {
             each = sx / visible;
-            remaining = sx - (visible * each);
-        }
+            sx - (visible * each)
+        };
 
         if each == 0 {
             return;

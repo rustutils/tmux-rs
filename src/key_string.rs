@@ -575,7 +575,7 @@ mod tests {
     static LOOKUP_KEY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn lookup_lock() -> std::sync::MutexGuard<'static, ()> {
-        LOOKUP_KEY_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+        LOOKUP_KEY_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Helper to convert a `*const u8` C string to a Rust `&str`.
@@ -651,8 +651,7 @@ mod tests {
                 assert_ne!(
                     key & KEYC_MASK_KEY,
                     KEYC_NONE,
-                    "arrow key {:?} should resolve to a valid keycode",
-                    name
+                    "arrow key {name:?} should resolve to a valid keycode"
                 );
             }
         }
@@ -666,8 +665,7 @@ mod tests {
                 assert_ne!(
                     key & KEYC_MASK_KEY,
                     KEYC_NONE,
-                    "function key {:?} should resolve",
-                    name
+                    "function key {name:?} should resolve"
                 );
             }
         }
@@ -681,8 +679,7 @@ mod tests {
                 assert_ne!(
                     key & KEYC_MASK_KEY,
                     KEYC_NONE,
-                    "named key {:?} should resolve",
-                    name
+                    "named key {name:?} should resolve"
                 );
             }
         }

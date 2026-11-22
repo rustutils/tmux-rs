@@ -250,10 +250,10 @@ mod tests {
 
     use super::*;
 
-    /// Serialize tests — they mutate process-wide LOG_FILE and LOG_LEVEL.
+    /// Serialize tests — they mutate process-wide `LOG_FILE` and `LOG_LEVEL`.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    /// Swap LOG_FILE to a tempfile, raise LOG_LEVEL, return a guard that
+    /// Swap `LOG_FILE` to a tempfile, raise `LOG_LEVEL`, return a guard that
     /// restores both on drop. Returns the tempfile for inspection.
     struct LogCapture {
         tempfile: tempfile::NamedTempFile,
@@ -263,7 +263,7 @@ mod tests {
 
     impl LogCapture {
         fn new() -> Self {
-            let guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let guard = TEST_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let tempfile = tempfile::NamedTempFile::new().unwrap();
             let file_clone = tempfile.reopen().unwrap();
             *LOG_FILE.lock().unwrap() = Some(LineWriter::new(file_clone));

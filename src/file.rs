@@ -596,7 +596,7 @@ pub unsafe fn file_write_left(files: *mut client_files) -> c_int {
 }
 
 /// Finish a write stream on the client: close the fd, report completion
-/// and any error to the server with MSG_WRITE_DONE, call the callback and
+/// and any error to the server with `MSG_WRITE_DONE`, call the callback and
 /// free the file.
 unsafe fn file_write_finished(cf: *mut client_file) {
     unsafe {
@@ -629,7 +629,7 @@ unsafe fn file_write_finished(cf: *mut client_file) {
 
 /// Write callback on the client: drains `event_buf` to the file fd. Once
 /// the server has closed the stream and everything is written, or on a
-/// write error, the stream is finished with file_write_finished.
+/// write error, the stream is finished with `file_write_finished`.
 unsafe fn file_write_fire(cf: *mut client_file) {
     unsafe {
         if !(*cf).event_buf.is_empty() {
@@ -988,9 +988,9 @@ pub unsafe fn file_read_cancel(files: *mut client_files, imsg: *mut imsg) {
     }
 }
 
-/// Handle MSG_WRITE_DONE from a client (server side). The client sends it
-/// once a stream is fully written and closed. If the client set WRITE_ACK,
-/// file_push left the stream open waiting for this, so finish it now with
+/// Handle `MSG_WRITE_DONE` from a client (server side). The client sends it
+/// once a stream is fully written and closed. If the client set `WRITE_ACK`,
+/// `file_push` left the stream open waiting for this, so finish it now with
 /// the error the client reported. Returns -1 for a malformed message.
 pub unsafe fn file_write_done(files: *mut client_files, imsg: *mut imsg) -> i32 {
     unsafe {
@@ -1014,7 +1014,7 @@ pub unsafe fn file_write_done(files: *mut client_files, imsg: *mut imsg) -> i32 
     }
 }
 
-/// Handle MSG_WRITE_READY from a client (server side). Returns -1 for a
+/// Handle `MSG_WRITE_READY` from a client (server side). Returns -1 for a
 /// malformed message.
 pub unsafe fn file_write_ready(files: *mut client_files, imsg: *mut imsg) -> i32 {
     unsafe {
@@ -1040,7 +1040,7 @@ pub unsafe fn file_write_ready(files: *mut client_files, imsg: *mut imsg) -> i32
     }
 }
 
-/// Handle MSG_READ data from a client (server side). Returns -1 for a
+/// Handle `MSG_READ` data from a client (server side). Returns -1 for a
 /// malformed message.
 pub unsafe fn file_read_data(files: *mut client_files, imsg: *mut imsg) -> i32 {
     unsafe {
@@ -1072,7 +1072,7 @@ pub unsafe fn file_read_data(files: *mut client_files, imsg: *mut imsg) -> i32 {
     }
 }
 
-/// Handle MSG_READ_DONE from a client (server side). Returns -1 for a
+/// Handle `MSG_READ_DONE` from a client (server side). Returns -1 for a
 /// malformed message.
 pub unsafe fn file_read_done(files: *mut client_files, imsg: *mut imsg) -> i32 {
     unsafe {

@@ -894,8 +894,8 @@ pub unsafe fn format_cb_history_bytes(ft: &format_tree) -> format_table_type {
 
         for i in 0..((*gd).hsize + (*gd).sy) {
             let gl = (*gd).get_line(i);
-            size += (*gl).celldata.len() * std::mem::size_of::<GridCell>();
-            size += (*gl).extddata.len() * std::mem::size_of::<GridCell>();
+            size += gl.celldata.len() * std::mem::size_of::<GridCell>();
+            size += gl.extddata.len() * std::mem::size_of::<GridCell>();
         }
         size += ((*gd).hsize + (*gd).sy) as usize * std::mem::size_of::<GridLine>();
 
@@ -951,7 +951,7 @@ pub unsafe fn format_cb_pane_tabs(ft: &format_tree) -> format_table_type {
         }
 
         let mut first = true;
-        for i in 0..(*(*wp).base.grid).sx {
+        for i in 0..(*wp).base.grid.sx {
             if !(*wp).base.tabs.as_ref().unwrap().borrow().bit_test(i) {
                 continue;
             }
@@ -1267,17 +1267,15 @@ pub unsafe fn format_cb_mouse_status_range(ft: &format_tree) -> format_table_typ
             return format_table_type::None;
         }
 
-        let x;
-        let y;
-        if ft.m.statusat == 0 && ft.m.y < ft.m.statuslines {
-            x = ft.m.x;
-            y = ft.m.y;
+        
+        
+        let (x, y) = if ft.m.statusat == 0 && ft.m.y < ft.m.statuslines {
+            (ft.m.x, ft.m.y)
         } else if ft.m.statusat > 0 && ft.m.y >= ft.m.statusat as u32 {
-            x = ft.m.x;
-            y = ft.m.y - ft.m.statusat as u32;
+            (ft.m.x, ft.m.y - ft.m.statusat as u32)
         } else {
             return format_table_type::None;
-        }
+        };
 
         let sr = status_get_range(ft.c, x, y);
         if sr.is_null() {
@@ -1630,7 +1628,7 @@ pub unsafe fn format_cb_cursor_y(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_history_limit(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!("{}", (*(*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.grid).hlimit).into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.grid.hlimit).into();
         }
         format_table_type::None
     }
@@ -1640,7 +1638,7 @@ pub unsafe fn format_cb_history_limit(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_history_size(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!("{}", (*(*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.grid).hsize).into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.grid.hsize).into();
         }
         format_table_type::None
     }
@@ -3515,7 +3513,7 @@ fn format_find(
                 let mut envent = None;
                 let fts = (*ft).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
                 if !fts.is_null() {
-                    envent = environ_find_raw(&*(*fts).environ, key);
+                    envent = environ_find_raw(&(*fts).environ, key);
                 }
                 if envent.is_none() {
                     envent = environ_find_raw(&*GLOBAL_ENVIRON, key);
@@ -3759,7 +3757,7 @@ pub unsafe fn format_build_modifiers(
         let mut end: *const u8;
         let mut list: *mut format_modifier = null_mut();
 
-        let mut last: [u8; 4] = [b'X', b';', b':', b'\0'];
+        let mut last: [u8; 4] = *b"X;:\0";
         let last: *mut u8 = last.as_mut_ptr();
 
         // char c, last[] = "X;:", **argv, *value;
@@ -4220,30 +4218,30 @@ pub unsafe fn format_replace_expression(
                 LessThanEqual,
             }
 
-            let operator;
+            
 
-            if streq_(*(*mexp).argv, "+") {
-                operator = Operator::Add;
+            let operator = if streq_(*(*mexp).argv, "+") {
+                Operator::Add
             } else if streq_(*(*mexp).argv, "-") {
-                operator = Operator::Subtract;
+                Operator::Subtract
             } else if streq_(*(*mexp).argv, "*") {
-                operator = Operator::Multiply;
+                Operator::Multiply
             } else if streq_(*(*mexp).argv, "/") {
-                operator = Operator::Divide;
+                Operator::Divide
             } else if streq_(*(*mexp).argv, "%") || streq_(*(*mexp).argv, "m") {
-                operator = Operator::Modulus;
+                Operator::Modulus
             } else if streq_(*(*mexp).argv, "==") {
-                operator = Operator::Equal;
+                Operator::Equal
             } else if streq_(*(*mexp).argv, "!=") {
-                operator = Operator::NotEqual;
+                Operator::NotEqual
             } else if streq_(*(*mexp).argv, ">") {
-                operator = Operator::GreaterThan;
+                Operator::GreaterThan
             } else if streq_(*(*mexp).argv, "<") {
-                operator = Operator::LessThan;
+                Operator::LessThan
             } else if streq_(*(*mexp).argv, ">=") {
-                operator = Operator::GreaterThanEqual;
+                Operator::GreaterThanEqual
             } else if streq_(*(*mexp).argv, "<=") {
-                operator = Operator::LessThanEqual;
+                Operator::LessThanEqual
             } else {
                 format_log1!(
                     es,
@@ -4252,7 +4250,7 @@ pub unsafe fn format_replace_expression(
                     _s(*(*mexp).argv),
                 );
                 break 'fail;
-            }
+            };
 
             // The second argument may be flags.
             if argc >= 2 && !strchr(*(*mexp).argv.add(1), b'f' as i32).is_null() {

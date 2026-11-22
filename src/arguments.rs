@@ -1080,7 +1080,7 @@ mod tests {
     fn positional_args() {
         unsafe {
             let args = args_create();
-            (*args).values.push(args_value::new_string(xstrdup_(c"target").as_ptr()));
+            args.values.push(args_value::new_string(xstrdup_(c"target").as_ptr()));
 
             assert_eq!(args_count(args), 1);
             assert!(args_value(args, 0).is_some());

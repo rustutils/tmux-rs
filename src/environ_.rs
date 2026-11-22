@@ -405,7 +405,7 @@ pub unsafe fn environ_for_session(s: *mut session, no_term: c_int) -> *mut Envir
     unsafe {
         environ_copy(&*GLOBAL_ENVIRON, &mut *env);
         if !s.is_null() {
-            environ_copy(&*(*s).environ, &mut *env);
+            environ_copy(&(*s).environ, &mut *env);
         }
 
         if no_term == 0 {

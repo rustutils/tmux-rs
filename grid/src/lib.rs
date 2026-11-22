@@ -160,7 +160,7 @@ pub trait HyperlinkLookup {
 
 /// Default Grid cell data.
 pub static GRID_DEFAULT_CELL: GridCell = GridCell::new(
-    Utf8Data::new([b' '], 0, 1, 1),
+    Utf8Data::new(*b" ", 0, 1, 1),
     GridAttr::empty(),
     GridFlag::empty(),
     8,
@@ -172,7 +172,7 @@ pub static GRID_DEFAULT_CELL: GridCell = GridCell::new(
 /// Padding Grid cell data. Padding cells are the only zero width cell that
 /// appears in the Grid - because of this, they are always extended cells.
 pub static GRID_PADDING_CELL: GridCell = GridCell::new(
-    Utf8Data::new([b'!'], 0, 0, 0),
+    Utf8Data::new(*b"!", 0, 0, 0),
     GridAttr::empty(),
     GridFlag::PADDING,
     8,
@@ -183,7 +183,7 @@ pub static GRID_PADDING_CELL: GridCell = GridCell::new(
 
 /// Cleared Grid cell data.
 pub static GRID_CLEARED_CELL: GridCell = GridCell::new(
-    Utf8Data::new([b' '], 0, 1, 1),
+    Utf8Data::new(*b" ", 0, 1, 1),
     GridAttr::empty(),
     GridFlag::CLEARED,
     8,
@@ -888,7 +888,7 @@ impl Grid {
         // block the src range holds default (empty) grid_lines, and `staged`
         // owns the real data — which is why the overlap problem disappears.
         let mut staged: Vec<GridLine> = (py..py + ny)
-            .map(|yy| std::mem::replace(&mut self.linedata[yy as usize], GridLine::new()))
+            .map(|yy| std::mem::take(&mut self.linedata[yy as usize]))
             .collect();
 
         // Free any dst lines which will be overwritten and are NOT part of
@@ -911,12 +911,11 @@ impl Grid {
         // Init src lines that are outside the destination range (they are
         // currently placeholders from the stash step above).
         for yy in py..py + ny {
-            if yy < dy || yy >= dy + ny {
-                if !COLOUR_DEFAULT(bg as i32) {
+            if (yy < dy || yy >= dy + ny)
+                && !COLOUR_DEFAULT(bg as i32) {
                     let sx = self.sx;
                     grid_expand_line(self, yy, sx, bg);
                 }
-            }
         }
         if py != 0 && (py < dy || py >= dy + ny) {
             self.linedata[py as usize - 1].flags &= !GridLineFlag::WRAPPED;
@@ -1911,7 +1910,7 @@ mod tests {
 
     use super::*;
 
-    /// Helper: create a GridCell with a single ASCII character.
+    /// Helper: create a `GridCell` with a single ASCII character.
     /// Registers the test codec as a side effect so downstream Grid
     /// operations (extended cells, interning) don't panic on unset codec.
     fn make_cell(ch: u8, fg: i32, bg: i32) -> GridCell {
@@ -1963,8 +1962,8 @@ mod tests {
     fn grid_get_cell_on_fresh_grid_returns_default() {
         let gd = Grid::new(80, 24, 0);
         unsafe {
-            let gc: GridCell;
-            gc = gd.get_cell(0, 0);
+            
+            let gc: GridCell = gd.get_cell(0, 0);
             // Fresh Grid returns GRID_DEFAULT_CELL (space character).
             assert!(grid_cells_equal(&gc, &GRID_DEFAULT_CELL));
             drop(gd);
@@ -1978,8 +1977,8 @@ mod tests {
             let cell_in = make_cell(b'A', 8, 8);
             gd.set_cell(5, 3, &cell_in);
 
-            let cell_out: GridCell;
-            cell_out = gd.get_cell(5, 3);
+            
+            let cell_out: GridCell = gd.get_cell(5, 3);
 
             assert!(grid_cells_equal(&cell_in, &cell_out));
             drop(gd);
@@ -1996,10 +1995,10 @@ mod tests {
             gd.set_cell(0, 0, &cell_a);
             gd.set_cell(1, 0, &cell_b);
 
-            let out_a: GridCell;
-            let out_b: GridCell;
-            out_a = gd.get_cell(0, 0);
-            out_b = gd.get_cell(1, 0);
+            
+            
+            let out_a: GridCell = gd.get_cell(0, 0);
+            let out_b: GridCell = gd.get_cell(1, 0);
 
             assert!(grid_cells_equal(&cell_a, &out_a));
             assert!(grid_cells_equal(&cell_b, &out_b));
@@ -2065,7 +2064,7 @@ mod tests {
 
     #[test]
     fn grid_line_length_on_empty_line() {
-        let mut gd = Grid::new(80, 24, 0);
+        let gd = Grid::new(80, 24, 0);
         let len = gd.line_length(0);
         assert_eq!(len, 0);
         drop(gd);
@@ -2096,8 +2095,8 @@ mod tests {
             gd.empty_line(0, 8);
 
             // After emptying, get_cell should return default.
-            let gc: GridCell;
-            gc = gd.get_cell(0, 0);
+            
+            let gc: GridCell = gd.get_cell(0, 0);
             assert!(grid_cells_equal(&gc, &GRID_DEFAULT_CELL));
 
             let len = gd.line_length(0);
@@ -2330,7 +2329,7 @@ mod tests {
     // Extended cells (wide chars, RGB colors, attributes)
     // ---------------------------------------------------------------
 
-    /// Helper: create a GridCell with an RGB foreground color.
+    /// Helper: create a `GridCell` with an RGB foreground color.
     /// RGB colors force the EXTENDED code path in Grid storage.
     fn make_rgb_fg_cell(ch: u8, r: u8, g: u8, b: u8) -> GridCell {
         GridCell::new(
@@ -2344,7 +2343,7 @@ mod tests {
         )
     }
 
-    /// Helper: create a GridCell with an RGB background color.
+    /// Helper: create a `GridCell` with an RGB background color.
     fn make_rgb_bg_cell(ch: u8, r: u8, g: u8, b: u8) -> GridCell {
         GridCell::new(
             Utf8Data::new([ch], 0, 1, 1),
@@ -2391,8 +2390,8 @@ mod tests {
             let cell_in = make_rgb_fg_cell(b'R', 255, 0, 128);
             gd.set_cell(0, 0, &cell_in);
 
-            let cell_out: GridCell;
-            cell_out = gd.get_cell(0, 0);
+            
+            let cell_out: GridCell = gd.get_cell(0, 0);
 
             assert!(grid_cells_equal(&cell_in, &cell_out));
             // Verify the RGB value survived the extended storage round-trip.
@@ -2408,8 +2407,8 @@ mod tests {
             let cell_in = make_rgb_bg_cell(b'B', 0, 128, 255);
             gd.set_cell(3, 1, &cell_in);
 
-            let cell_out: GridCell;
-            cell_out = gd.get_cell(3, 1);
+            
+            let cell_out: GridCell = gd.get_cell(3, 1);
 
             assert!(grid_cells_equal(&cell_in, &cell_out));
             assert_eq!(cell_out.bg, colour_join_rgb(0, 128, 255));
@@ -2424,8 +2423,8 @@ mod tests {
             let cell_in = make_wide_cell();
             gd.set_cell(0, 0, &cell_in);
 
-            let cell_out: GridCell;
-            cell_out = gd.get_cell(0, 0);
+            
+            let cell_out: GridCell = gd.get_cell(0, 0);
 
             assert!(grid_cells_equal(&cell_in, &cell_out));
             assert_eq!(cell_out.data.width, 2);
@@ -2442,8 +2441,8 @@ mod tests {
             let cell_in = make_us_cell(b'U', COLOUR_FLAG_256 | 42);
             gd.set_cell(2, 0, &cell_in);
 
-            let cell_out: GridCell;
-            cell_out = gd.get_cell(2, 0);
+            
+            let cell_out: GridCell = gd.get_cell(2, 0);
 
             assert!(grid_cells_equal(&cell_in, &cell_out));
             assert_eq!(cell_out.us, COLOUR_FLAG_256 | 42);
@@ -2457,7 +2456,7 @@ mod tests {
         unsafe {
             // attr > 0xff forces EXTENDED path.
             let cell_in = GridCell::new(
-                Utf8Data::new([b'A'], 0, 1, 1),
+                Utf8Data::new(*b"A", 0, 1, 1),
                 GridAttr::GRID_ATTR_BRIGHT | GridAttr::GRID_ATTR_UNDERSCORE_2,
                 GridFlag::empty(),
                 8,
@@ -2467,8 +2466,8 @@ mod tests {
             );
             gd.set_cell(0, 0, &cell_in);
 
-            let cell_out: GridCell;
-            cell_out = gd.get_cell(0, 0);
+            
+            let cell_out: GridCell = gd.get_cell(0, 0);
 
             assert!(grid_cells_equal(&cell_in, &cell_out));
             assert!(cell_out.attr.contains(GridAttr::GRID_ATTR_BRIGHT));
@@ -2495,8 +2494,8 @@ mod tests {
 
             // Verify all round-trip correctly.
             for x in 0..10u32 {
-                let gc: GridCell;
-                gc = gd.get_cell(x, 0);
+                
+                let gc: GridCell = gd.get_cell(x, 0);
                 if x % 2 == 0 {
                     assert!(grid_cells_equal(&gc, &simple), "mismatch at x={x}");
                 } else {
@@ -2518,8 +2517,8 @@ mod tests {
             gd.set_cell(0, 0, &simple);
             gd.set_cell(0, 0, &extended);
 
-            let gc: GridCell;
-            gc = gd.get_cell(0, 0);
+            
+            let gc: GridCell = gd.get_cell(0, 0);
             assert!(grid_cells_equal(&gc, &extended));
             drop(gd);
         }
@@ -2536,8 +2535,8 @@ mod tests {
             gd.set_cell(0, 0, &extended);
             gd.set_cell(0, 0, &simple);
 
-            let gc: GridCell;
-            gc = gd.get_cell(0, 0);
+            
+            let gc: GridCell = gd.get_cell(0, 0);
             assert!(grid_cells_equal(&gc, &simple));
             drop(gd);
         }
@@ -2550,8 +2549,8 @@ mod tests {
         gd.set_cell(0, 0, &wide);
         gd.set_padding(1, 0);
 
-        let gc: GridCell;
-        gc = gd.get_cell(1, 0);
+        
+        let gc: GridCell = gd.get_cell(1, 0);
         assert!(gc.flags.intersects(GridFlag::PADDING));
         drop(gd);
     }
@@ -2588,15 +2587,15 @@ mod tests {
     fn grid_expand_line_grows_cellsize() {
         let mut gd = Grid::new(80, 5, 0);
         let gl = gd.get_line(0);
-        assert_eq!((*gl).celldata.len() as u32, 0);
+        assert_eq!(gl.celldata.len() as u32, 0);
 
         // Setting a cell at position 10 should expand the line.
         let cell = make_cell(b'X', 8, 8);
         gd.set_cell(10, 0, &cell);
 
         let gl = gd.get_line(0);
-        assert!((*gl).celldata.len() as u32 >= 11);
-        assert_eq!((*gl).cellused, 11);
+        assert!(gl.celldata.len() as u32 >= 11);
+        assert_eq!(gl.cellused, 11);
         drop(gd);
     }
 
@@ -2610,9 +2609,9 @@ mod tests {
 
         let gl = gd.get_line(0);
         assert!(
-            (*gl).celldata.len() as u32 >= 20,
+            gl.celldata.len() as u32 >= 20,
             "cellsize {} should be >= sx/4 = 20",
-            (*gl).celldata.len() as u32
+            gl.celldata.len() as u32
         );
         drop(gd);
     }
@@ -2669,13 +2668,13 @@ mod tests {
             assert_eq!(gd.hscrolled, 1);
 
             // The old visible line 0 is now history line 0.
-            let gc: GridCell;
-            gc = gd.get_cell(0, 0);
+            
+            let gc: GridCell = gd.get_cell(0, 0);
             assert!(grid_cells_equal(&gc, &cell));
 
             // New visible line 0 (= line hsize) should be empty.
             let gl = gd.get_line(gd.hsize);
-            assert_eq!((*gl).cellused, 0);
+            assert_eq!(gl.cellused, 0);
 
             drop(gd);
         }
@@ -2719,8 +2718,8 @@ mod tests {
         assert_eq!(gd.hsize, 1);
 
         // History line 0 should be line that had 'B'.
-        let gc: GridCell;
-        gc = gd.get_cell(0, 0);
+        
+        let gc: GridCell = gd.get_cell(0, 0);
         assert_eq!(gc.data.data[0], b'B');
 
         drop(gd);
@@ -2774,8 +2773,8 @@ mod tests {
         assert_eq!(gd.hsize, 1);
 
         // Remaining history line should be the oldest ('0').
-        let gc: GridCell;
-        gc = gd.get_cell(0, 0);
+        
+        let gc: GridCell = gd.get_cell(0, 0);
         assert_eq!(gc.data.data[0], b'0');
         drop(gd);
     }
@@ -2850,21 +2849,21 @@ mod tests {
                 gd.set_cell(x, 0, &cell);
             }
             // Mark line as wrapped (as tmux does for long lines).
-            (*gd.get_line(0)).flags |= GridLineFlag::WRAPPED;
+            gd.get_line(0).flags |= GridLineFlag::WRAPPED;
             gd.scroll_history(8, 0);
             let hsize_before = gd.hsize;
 
             // Reflow to width 10 — the 20-char history line should split into 2.
             gd.reflow(10);
             assert!(
-                gd.hsize >= hsize_before + 1,
+                gd.hsize > hsize_before,
                 "hsize should grow when lines split: was {hsize_before}, now {}",
                 gd.hsize
             );
 
             // Content should be preserved.
-            let gc: GridCell;
-            gc = gd.get_cell(0, 0);
+            
+            let gc: GridCell = gd.get_cell(0, 0);
             assert_eq!(gc.data.data[0], b'.');
             drop(gd);
         }
@@ -2882,7 +2881,7 @@ mod tests {
                 gd.set_cell(x, 0, &cell);
             }
             for y in 0..3 {
-                (*gd.get_line(y)).flags |= GridLineFlag::WRAPPED;
+                gd.get_line(y).flags |= GridLineFlag::WRAPPED;
             }
             gd.reflow(40);
             assert_eq!(gd.get_cell(0, 0).data.data[0], b'x');
@@ -2898,7 +2897,7 @@ mod tests {
             for x in 0..10u32 {
                 gd.set_cell(x, 0, &cell);
             }
-            (*gd.get_line(0)).flags |= GridLineFlag::WRAPPED;
+            gd.get_line(0).flags |= GridLineFlag::WRAPPED;
             let cell_b = make_cell(b'B', 8, 8);
             for x in 0..5u32 {
                 gd.set_cell(x, 1, &cell_b);
@@ -2960,8 +2959,8 @@ mod tests {
             gd.reflow(80);
             assert_eq!(gd.hsize, hsize_before);
 
-            let gc: GridCell;
-            gc = gd.get_cell(0, 0);
+            
+            let gc: GridCell = gd.get_cell(0, 0);
             assert_eq!(gc.data.data[0], b'I');
             drop(gd);
         }
@@ -3021,8 +3020,8 @@ mod tests {
             gd.scroll_history(8, 0);
 
             // Extended cell should survive in history.
-            let gc: GridCell;
-            gc = gd.get_cell(0, 0);
+            
+            let gc: GridCell = gd.get_cell(0, 0);
             assert!(grid_cells_equal(&gc, &extended));
             assert_eq!(gc.fg, colour_join_rgb(0, 255, 0));
             drop(gd);
@@ -3041,8 +3040,8 @@ mod tests {
             let cell = make_cell(b'X', 8, 8);
             gd.set_cell(0, 0, &cell);
 
-            let gc: GridCell;
-            gc = gd.get_cell(50, 0);
+            
+            let gc: GridCell = gd.get_cell(50, 0);
             assert!(grid_cells_equal(&gc, &GRID_DEFAULT_CELL));
             drop(gd);
         }
@@ -3077,8 +3076,8 @@ mod tests {
         gd.clear(2, 0, 3, 1, bg);
 
         // Cleared cells should have a non-default bg.
-        let gc: GridCell;
-        gc = gd.get_cell(2, 0);
+        
+        let gc: GridCell = gd.get_cell(2, 0);
         assert!(gc.flags.intersects(GridFlag::CLEARED));
         drop(gd);
     }
@@ -3124,8 +3123,8 @@ mod tests {
     /// Helper: read back the character at view coordinates (px, py).
     unsafe fn read_view_char(gd: *mut Grid, px: u32, py: u32) -> u8 {
         unsafe {
-            let gc: GridCell;
-            gc = (*gd).view_get_cell(px, py);
+            
+            let gc: GridCell = (*gd).view_get_cell(px, py);
             gc.data.data[0]
         }
     }
@@ -3143,13 +3142,13 @@ mod tests {
             let gd_ptr = &raw mut gd;
 
             // With hsize=0, view y=0 maps to Grid y=0.
-            assert_eq!((*gd_ptr).hsize + 0, 0);
+            assert_eq!((*gd_ptr).hsize, 0);
             assert_eq!((*gd_ptr).hsize + 3, 3);
 
             // Simulate history by scrolling a line into history.
             (*gd_ptr).scroll_history(8, 0);
             assert_eq!(gd.hsize, 1);
-            assert_eq!((*gd_ptr).hsize + 0, 1);
+            assert_eq!((*gd_ptr).hsize, 1);
             assert_eq!((*gd_ptr).hsize + 3, 4);
 
             drop(gd);
@@ -3194,8 +3193,8 @@ mod tests {
             assert_eq!(read_view_char(gd_ptr, 0, 0), b'Y');
 
             // The old 'X' should still be in Grid row 0 (history).
-            let gc_read: GridCell;
-            gc_read = (*gd_ptr).get_cell(0, 0);
+            
+            let gc_read: GridCell = (*gd_ptr).get_cell(0, 0);
             assert_eq!(gc_read.data.data[0], b'X');
 
             drop(gd);

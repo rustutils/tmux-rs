@@ -359,7 +359,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             // myprogram" wouldn't work if myprogram isn't in the session's path.
             if !c.is_null() && client_get_session(c).is_null() {
                 // only unattached clients
-                if let Some(ee) = environ_find_raw(&*(*c).environ, c!("PATH"))
+                if let Some(ee) = environ_find_raw(&(*c).environ, c!("PATH"))
                     && let Some(ref value) = ee.value {
                         environ_set_(&mut *child, "PATH", environ_flags::empty(), value.clone());
                     }

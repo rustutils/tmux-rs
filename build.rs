@@ -10,7 +10,7 @@ fn main() {
 /// Choose the default for the default-terminal option, like the configure
 /// script of C tmux: the best of screen, screen-256color, tmux and
 /// tmux-256color that has a terminfo entry on the build machine. Setting
-/// TMUX_TERM in the environment overrides it.
+/// `TMUX_TERM` in the environment overrides it.
 fn default_term() {
     println!("cargo::rerun-if-env-changed=TMUX_TERM");
     if std::env::var_os("TMUX_TERM").is_some() {

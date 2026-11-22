@@ -937,7 +937,7 @@ pub unsafe fn screen_write_preview(ctx: *mut screen_write_ctx, src: *mut screen,
             py = 0;
         }
 
-        screen_write_fast_copy(ctx, src, px, (*(*src).grid).hsize + py, nx, ny);
+        screen_write_fast_copy(ctx, src, px, (*src).grid.hsize + py, nx, ny);
 
         if (*src).mode.intersects(mode_flag::MODE_CURSOR) {
             gc = (*src).grid.view_get_cell((*src).cx, (*src).cy);
@@ -1103,8 +1103,8 @@ pub unsafe fn screen_write_backspace(ctx: *mut screen_write_ctx) {
             if cy == 0 {
                 return;
             }
-            let gl = (*s).grid.get_line((*(*s).grid).hsize + cy - 1);
-            if (*gl).flags.intersects(GridLineFlag::WRAPPED) {
+            let gl = (*s).grid.get_line((*s).grid.hsize + cy - 1);
+            if gl.flags.intersects(GridLineFlag::WRAPPED) {
                 cy -= 1;
                 cx = screen_size_x(s) - 1;
             }
@@ -1396,8 +1396,8 @@ pub unsafe fn screen_write_clearline(ctx: *mut screen_write_ctx, bg: u32) {
         let sx = screen_size_x(s);
         let ci = (*ctx).item;
 
-        let gl = (*s).grid.get_line((*(*s).grid).hsize + (*s).cy);
-        if (*gl).celldata.is_empty() && COLOUR_DEFAULT(bg as i32) {
+        let gl = (*s).grid.get_line((*s).grid.hsize + (*s).cy);
+        if gl.celldata.is_empty() && COLOUR_DEFAULT(bg as i32) {
             return;
         }
 
@@ -1432,8 +1432,8 @@ pub unsafe fn screen_write_clearendofline(ctx: *mut screen_write_ctx, bg: u32) {
             return;
         }
 
-        let gl = (*s).grid.get_line((*(*s).grid).hsize + (*s).cy);
-        if (*s).cx > sx - 1 || ((*s).cx as usize >= (*gl).celldata.len() && COLOUR_DEFAULT(bg as i32)) {
+        let gl = (*s).grid.get_line((*s).grid.hsize + (*s).cy);
+        if (*s).cx > sx - 1 || ((*s).cx as usize >= gl.celldata.len() && COLOUR_DEFAULT(bg as i32)) {
             return;
         }
 
@@ -1600,7 +1600,7 @@ pub unsafe fn screen_write_linefeed(ctx: *mut screen_write_ctx, wrapped: bool, b
 
         let gl = (*gd).get_line((*gd).hsize + (*s).cy);
         if wrapped {
-            (*gl).flags |= GridLineFlag::WRAPPED;
+            gl.flags |= GridLineFlag::WRAPPED;
         }
 
         log_debug!(
@@ -1800,7 +1800,7 @@ pub unsafe fn screen_write_clearscreen(ctx: *mut screen_write_ctx, bg: u32) {
         ttyctx.bg = bg;
 
         // Scroll into history if it is enabled.
-        if (*(*s).grid).flags.contains(GridFlags::HISTORY)
+        if (*s).grid.flags.contains(GridFlags::HISTORY)
             && !ctx_wp(ctx).is_null()
             && options_get_number_((*ctx_wp(ctx)).options, "scroll-on-clear") != 0
         {
@@ -2192,7 +2192,7 @@ pub unsafe fn screen_write_cell(ctx: *mut screen_write_ctx, gc: *const GridCell)
         screen_write_initctx(ctx, &raw mut ttyctx, 0);
 
         // Handle overwriting of UTF-8 characters.
-        let gl: *mut GridLine = (*s).grid.get_line((*(*s).grid).hsize + (*s).cy);
+        let gl: *mut GridLine = (*s).grid.get_line((*s).grid.hsize + (*s).cy);
         if (*gl).flags.intersects(GridLineFlag::EXTENDED) {
             now_gc = (*gd).view_get_cell((*s).cx, (*s).cy);
             if screen_write_overwrite(ctx, &raw mut now_gc, width) != 0 {

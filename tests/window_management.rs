@@ -734,7 +734,7 @@ fn join_pane_from_another_window() {
 
     // Join the pane from the "source" window into this window
     tmux.cmd()
-        .args(["join-pane", "-s", &format!("{}", source_pane)])
+        .args(["join-pane", "-s", &source_pane.to_string()])
         .run()
         .assert_success();
 

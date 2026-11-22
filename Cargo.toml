@@ -97,6 +97,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
 # Enabled by Default: disabled
 too_many_arguments                  = "allow" # match upstream code
+deref_addrof                        = "allow" # (*(&raw mut STATIC)) is how statics are reached until Track 2 removes them
+missing_safety_doc                  = "allow" # most unsafe fns go away in Track 2, new ones need a Safety section
 
 # cargo = { level = "warn", priority = -1 }
 multiple_crate_versions             = "warn"

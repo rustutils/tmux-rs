@@ -28,7 +28,7 @@ pub enum screen_redraw_border_type {
     SCREEN_REDRAW_BORDER_TOP,
     SCREEN_REDRAW_BORDER_BOTTOM,
 }
-const BORDER_MARKERS: [u8; 6] = [b' ', b' ', b'+', b',', b'.', b'-'];
+const BORDER_MARKERS: [u8; 6] = *b"  +,.-";
 
 /// Get cell border character.
 pub unsafe fn screen_redraw_border_set(
@@ -423,11 +423,11 @@ pub unsafe fn screen_redraw_make_pane_status(
     unsafe {
         let w = window_pane_window(wp.as_ptr());
         let mut gc: GridCell = std::mem::zeroed();
-        let width: u32;
+        
         let mut px: u32;
         let mut py: u32;
         let mut ctx: MaybeUninit<screen_write_ctx> = MaybeUninit::uninit();
-        let old_grid: Box<Grid>;
+        
         let pane_status = (*rctx).pane_status;
 
         let ft = format_create(
@@ -453,15 +453,15 @@ pub unsafe fn screen_redraw_make_pane_status(
         let fmt = options_get_string_((*wp).options, "pane-border-format");
 
         let expanded = format_expand_time(ft, fmt);
-        if (*wp).sx < 4 {
+        let width: u32 = if (*wp).sx < 4 {
             (*wp).status_size = 0;
-            width = 0;
+            0
         } else {
             (*wp).status_size = (*wp).sx as usize - 4;
-            width = (*wp).sx - 4;
-        }
+            (*wp).sx - 4
+        };
 
-        old_grid = std::mem::replace(&mut (*wp).status_screen.grid, Box::new(Grid::new(0, 0, 0)));
+        let old_grid: Box<Grid> = std::mem::replace(&mut (*wp).status_screen.grid, Box::new(Grid::new(0, 0, 0)));
         screen_init(&raw mut (*wp).status_screen, width, 1, 0);
         (*wp).status_screen.mode = mode_flag::empty();
 

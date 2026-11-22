@@ -29,7 +29,7 @@ fn automatic_rename_updates_window_name() {
 }
 
 /// Verify that the automatic-rename timer rate-limits name updates.
-/// NAME_INTERVAL is 500ms, so rapid command changes should not cause
+/// `NAME_INTERVAL` is 500ms, so rapid command changes should not cause
 /// more than ~3 renames per second.
 #[test]
 fn automatic_rename_is_rate_limited() {
@@ -61,7 +61,7 @@ fn automatic_rename_is_rate_limited() {
     let mut names = Vec::new();
     for _ in 0..20 {
         let name = tmux.query("#{window_name}");
-        if names.last().map_or(true, |last: &String| last != &name) {
+        if names.last() != Some(&name) {
             names.push(name);
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -160,7 +160,7 @@ fn status_interval_refreshes_status() {
 }
 
 /// Verify that the session lock timer fires after `lock-after-time` seconds.
-/// Uses a PtyClient so the lock command's output is visible.
+/// Uses a `PtyClient` so the lock command's output is visible.
 #[test]
 fn session_lock_timer_fires() {
     let mut tmux = TmuxTestHarness::new();
@@ -267,8 +267,7 @@ fn run_shell_delay_timer() {
     let elapsed = start.elapsed();
     assert!(
         elapsed >= Duration::from_millis(1800),
-        "delay should be at least ~2s, was {:?}",
-        elapsed
+        "delay should be at least ~2s, was {elapsed:?}"
     );
 
     // Clean up.

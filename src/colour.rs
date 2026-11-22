@@ -1269,7 +1269,7 @@ mod tests {
         let c = 100 | COLOUR_FLAG_256;
         assert_eq!(colour_tostring(c), "colour100");
 
-        let c = 0 | COLOUR_FLAG_256;
+        let c = COLOUR_FLAG_256;
         assert_eq!(colour_tostring(c), "colour0");
 
         let c = 255 | COLOUR_FLAG_256;
@@ -1326,7 +1326,7 @@ mod tests {
         assert_eq!(c, 123 | COLOUR_FLAG_256);
 
         let c = colour_fromstring("colour0");
-        assert_eq!(c, 0 | COLOUR_FLAG_256);
+        assert_eq!(c, COLOUR_FLAG_256);
 
         let c = colour_fromstring("colour255");
         assert_eq!(c, 255 | COLOUR_FLAG_256);

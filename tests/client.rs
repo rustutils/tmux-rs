@@ -341,7 +341,7 @@ fn imsg_frame(msg_type: u32, payload: &[u8]) -> Vec<u8> {
 }
 
 /// A tmux 3.8 client sends identify flags the 3.5a protocol did not have
-/// (WRITE_ACK and others) and the new MSG_WRITE_DONE message. The server
+/// (`WRITE_ACK` and others) and the new `MSG_WRITE_DONE` message. The server
 /// must keep running, and it must also ignore message types it does not
 /// know, as C tmux does.
 #[test]
@@ -386,7 +386,7 @@ fn server_survives_newer_client_messages() {
 
 /// A malformed message from a client drops that client, as in tmux 3.8.
 /// Before, most of these killed the whole server with fatalx, and a short
-/// MSG_READ or a CWD without a terminating NUL read out of bounds.
+/// `MSG_READ` or a CWD without a terminating NUL read out of bounds.
 #[test]
 fn server_drops_client_on_malformed_message() {
     use std::io::{Read as _, Write as _};
@@ -481,7 +481,7 @@ fn server_drops_client_on_malformed_message() {
     }
 }
 
-/// MSG_COMMAND carries an argument count from the client. Bad counts must
+/// `MSG_COMMAND` carries an argument count from the client. Bad counts must
 /// not crash the server: a negative or huge count, more arguments claimed
 /// than sent (this used to free the argument list twice), and a count with
 /// no argument data at all.

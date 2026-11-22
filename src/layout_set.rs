@@ -212,8 +212,7 @@ pub unsafe fn layout_set_main_h(w: *mut window) {
         // Get the main pane height.
         let mut s = options_get_string_((*w).options, "main-pane-height");
         let mut mainh = args_string_percentage(s, 0, sy as i64, sy as i64)
-            .map(|v| v as u32)
-            .unwrap_or(24);
+            .map_or(24, |v| v as u32);
 
         let mut otherh: u32;
         // Work out the other pane height.
@@ -312,8 +311,7 @@ pub unsafe fn layout_set_main_h_mirrored(w: *mut window) {
         // Get the main pane height.
         let s = options_get_string_((*w).options, "main-pane-height");
         let mut mainh = args_string_percentage(s, 0, sy as i64, sy as i64)
-            .map(|v| v as u32)
-            .unwrap_or(24);
+            .map_or(24, |v| v as u32);
 
         // Work out the other pane height.
         if mainh + PANE_MINIMUM >= sy {
@@ -410,8 +408,7 @@ pub unsafe fn layout_set_main_v(w: *mut window) {
         // Get the main pane width.
         let s = options_get_string_((*w).options, "main-pane-width");
         let mut mainw: u32 = args_string_percentage(s, 0, sx as i64, sx as i64)
-            .map(|v| v as u32)
-            .unwrap_or(80);
+            .map_or(80, |v| v as u32);
 
         // Work out the other pane width.
         let mut otherw;
@@ -508,8 +505,7 @@ pub unsafe fn layout_set_main_v_mirrored(w: *mut window) {
         // Get the main pane width.
         let s = options_get_string_((*w).options, "main-pane-width");
         let mut mainw = args_string_percentage(s, 0, sx as i64, sx as i64)
-            .map(|v| v as u32)
-            .unwrap_or(80);
+            .map_or(80, |v| v as u32);
 
         // Work out the other pane width.
         let mut otherw: u32;

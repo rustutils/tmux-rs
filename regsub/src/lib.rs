@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn empty_text_returns_empty() {
-        assert_eq!(sub("foo", "bar", ""), Some("".into()));
+        assert_eq!(sub("foo", "bar", ""), Some(String::new()));
     }
 
     #[test]

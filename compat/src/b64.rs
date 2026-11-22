@@ -54,7 +54,7 @@ fn pton(src: &[u8], dst: &mut [u8]) -> Result<usize, ()> {
     let mut it = src.iter().copied();
     let mut pad = false;
 
-    while let Some(ch) = it.next() {
+    for ch in it.by_ref() {
         if is_space(ch) {
             continue;
         }

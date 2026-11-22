@@ -38,7 +38,7 @@ pub struct Utf8Data {
 
 impl Utf8Data {
     /// Const constructor: pad `data` to `UTF8_SIZE` bytes with zeros so
-    /// `Utf8Data` can appear in `static` initializers (e.g. GRID_DEFAULT_CELL).
+    /// `Utf8Data` can appear in `static` initializers (e.g. `GRID_DEFAULT_CELL`).
     /// Panics at compile time if `N >= UTF8_SIZE`.
     pub const fn new<const N: usize>(data: [u8; N], have: u8, size: u8, width: u8) -> Self {
         if N >= UTF8_SIZE {

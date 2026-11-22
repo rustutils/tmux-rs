@@ -23,7 +23,7 @@ fn spawn_control_client(tmux: &TmuxTestHarness) -> std::process::Child {
         .expect("failed to spawn control mode client")
 }
 
-/// Read lines from a BufReader until `predicate` returns true for a line,
+/// Read lines from a `BufReader` until `predicate` returns true for a line,
 /// or until `timeout` elapses. Returns all lines collected.
 fn read_until<R: std::io::Read>(
     reader: &mut BufReader<R>,
@@ -66,13 +66,13 @@ fn send_and_collect(
     timeout: Duration,
     predicate: impl Fn(&str) -> bool,
 ) -> Vec<String> {
-    writeln!(stdin, "{}", cmd).expect("failed to write command");
+    writeln!(stdin, "{cmd}").expect("failed to write command");
     stdin.flush().expect("failed to flush stdin");
     read_until(reader, timeout, predicate)
 }
 
 /// Helper to set up a harness with a detached session and a control mode client.
-/// Returns (harness, child, stdin, stdout_reader).
+/// Returns (harness, child, stdin, `stdout_reader`).
 fn setup_control() -> (
     TmuxTestHarness,
     std::process::Child,
@@ -131,14 +131,12 @@ fn control_mode_list_sessions() {
     let output = lines.join("\n");
     assert!(
         output.contains("%begin") && output.contains("%end"),
-        "expected %%begin/%%end framing in control mode output, got:\n{}",
-        output
+        "expected %%begin/%%end framing in control mode output, got:\n{output}"
     );
     // The session should appear in the output
     assert!(
         lines.iter().any(|l| !l.starts_with('%') && !l.is_empty()),
-        "expected session listing in output, got:\n{}",
-        output
+        "expected session listing in output, got:\n{output}"
     );
 
     cleanup(stdin, child);
@@ -167,8 +165,7 @@ fn control_mode_new_window_notification() {
     let output = lines.join("\n");
     assert!(
         lines.iter().any(|l| l.starts_with("%window-add")),
-        "expected %%window-add notification, got:\n{}",
-        output
+        "expected %%window-add notification, got:\n{output}"
     );
 
     cleanup(stdin, child);
@@ -197,8 +194,7 @@ fn control_mode_split_window_layout_change() {
     let output = lines.join("\n");
     assert!(
         lines.iter().any(|l| l.starts_with("%layout-change")),
-        "expected %%layout-change notification, got:\n{}",
-        output
+        "expected %%layout-change notification, got:\n{output}"
     );
 
     cleanup(stdin, child);
@@ -228,8 +224,7 @@ fn control_mode_rename_session() {
     let output = lines.join("\n");
     assert!(
         lines.iter().any(|l| l.contains("newname")),
-        "expected 'newname' in output, got:\n{}",
-        output
+        "expected 'newname' in output, got:\n{output}"
     );
 
     cleanup(stdin, child);
@@ -313,8 +308,7 @@ fn control_mode_display_message() {
     // Should have %begin/%end framing
     assert!(
         output.contains("%begin") && output.contains("%end"),
-        "expected %%begin/%%end framing, got:\n{}",
-        output
+        "expected %%begin/%%end framing, got:\n{output}"
     );
     // The session name should appear between %begin and %end.
     // Default session name is "0".
@@ -324,14 +318,12 @@ fn control_mode_display_message() {
         .collect();
     assert!(
         !data_lines.is_empty(),
-        "expected session name in output, got:\n{}",
-        output
+        "expected session name in output, got:\n{output}"
     );
     // The default session name is typically "0"
     assert!(
         data_lines.iter().any(|l| l.trim() == "0"),
-        "expected default session name '0', got data lines: {:?}",
-        data_lines
+        "expected default session name '0', got data lines: {data_lines:?}"
     );
 
     cleanup(stdin, child);

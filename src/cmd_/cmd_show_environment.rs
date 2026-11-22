@@ -93,7 +93,7 @@ unsafe fn cmd_show_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cm
     unsafe {
         let args = cmd_get_args(self_);
         let target = cmdq_get_target(item);
-        let env: *mut Environ;
+        
         let name = args_string(args, 0);
 
         let mut tflag = args_get_(args, 't');
@@ -102,8 +102,8 @@ unsafe fn cmd_show_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cm
             return cmd_retval::CMD_RETURN_ERROR;
         }
 
-        if args_has(args, 'g') {
-            env = GLOBAL_ENVIRON;
+        let env: *mut Environ = if args_has(args, 'g') {
+            GLOBAL_ENVIRON
         } else {
             if (*target).s.is_none() {
                 tflag = args_get_(args, 't');
@@ -114,8 +114,8 @@ unsafe fn cmd_show_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cm
                 }
                 return cmd_retval::CMD_RETURN_ERROR;
             }
-            env = &raw mut *(*(*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut())).environ;
-        }
+            &raw mut *(*(*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut())).environ
+        };
 
         if !name.is_null() {
             let Some(envent) = environ_find_raw(&*env, name) else {

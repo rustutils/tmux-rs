@@ -1415,7 +1415,7 @@ mod tests {
     static OPTIONS_LOCK: Mutex<()> = Mutex::new(());
 
     /// Create a standalone options tree with global options as parent.
-    /// Caller must hold OPTIONS_LOCK.
+    /// Caller must hold `OPTIONS_LOCK`.
     unsafe fn init_globals() {
         use std::sync::Once;
         static INIT: Once = Once::new();

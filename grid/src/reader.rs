@@ -525,7 +525,7 @@ mod tests {
         gd
     }
 
-    /// Helper: create a Utf8Data for a single ASCII character.
+    /// Helper: create a `Utf8Data` for a single ASCII character.
     fn make_utf8_char(ch: u8) -> Utf8Data {
         Utf8Data::new([ch], 0, 1, 1)
     }
@@ -792,12 +792,12 @@ mod tests {
 
             // Verify the Grid is set up correctly
             {
-                let mut gr = GridReader::new(&mut gd, 8, 0);
-                assert!(gr.in_set(WHITESPACE) == false, "col 8 should be 't'");
+                let gr = GridReader::new(&mut gd, 8, 0);
+                assert!(!gr.in_set(WHITESPACE), "col 8 should be 't'");
             }
             {
-                let mut gr = GridReader::new(&mut gd, 3, 0);
-                assert!(gr.in_set(WHITESPACE) == true, "col 3 should be space");
+                let gr = GridReader::new(&mut gd, 3, 0);
+                assert!(gr.in_set(WHITESPACE), "col 3 should be space");
             }
 
             let mut gr = GridReader::new(&mut gd, 8, 0);

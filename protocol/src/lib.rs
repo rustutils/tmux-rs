@@ -166,8 +166,8 @@ pub struct msg_command {
 }
 
 /// Payload of [`msgtype::MSG_READ_OPEN`]: open a read stream whose
-/// bytes the server will forward to the client via MSG_READ messages.
-/// `fd` carries the source descriptor via SCM_RIGHTS.
+/// bytes the server will forward to the client via `MSG_READ` messages.
+/// `fd` carries the source descriptor via `SCM_RIGHTS`.
 #[repr(C)]
 pub struct msg_read_open {
     pub stream: i32,
@@ -232,7 +232,7 @@ pub struct msg_write_close {
 /// Payload of [`msgtype::MSG_WRITE_DONE`], added in tmux 3.8. Sent by the
 /// client once a write stream is fully written and closed. `error` is 0 or
 /// the errno of the failed write or close. The server only waits for it
-/// when the client set the WRITE_ACK flag.
+/// when the client set the `WRITE_ACK` flag.
 #[repr(C)]
 pub struct msg_write_done {
     pub stream: i32,

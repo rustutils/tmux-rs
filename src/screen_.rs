@@ -305,7 +305,7 @@ pub unsafe fn screen_resize_cursor(
     let __func__ = "screen_resize_cursor";
     unsafe {
         let mut cx = (*s).cx;
-        let mut cy = (*(*s).grid).hsize + (*s).cy;
+        let mut cy = (*s).grid.hsize + (*s).cy;
 
         let had_write_list = (*s).write_list.is_some();
         if had_write_list {
@@ -329,7 +329,7 @@ pub unsafe fn screen_resize_cursor(
         let sy = if sy < 1 { 1 } else { sy };
 
         if sx != screen_size_x(s) {
-            (*(*s).grid).sx = sx;
+            (*s).grid.sx = sx;
             screen_reset_tabs(s);
         } else {
             reflow = 0;
@@ -346,9 +346,9 @@ pub unsafe fn screen_resize_cursor(
             screen_reflow(s, sx, &mut cx, &mut cy, cursor);
         }
 
-        if cy >= (*(*s).grid).hsize {
+        if cy >= (*s).grid.hsize {
             (*s).cx = cx;
-            (*s).cy = cy - (*(*s).grid).hsize;
+            (*s).cy = cy - (*s).grid.hsize;
         } else {
             (*s).cx = 0;
             (*s).cy = 0;
@@ -856,7 +856,7 @@ mod tests {
     use super::*;
     use std::mem::zeroed;
 
-    /// Initialize global options (required for screen_reinit which reads
+    /// Initialize global options (required for `screen_reinit` which reads
     /// the "extended-keys" option).
     unsafe fn init_globals() {
         use std::sync::Once;

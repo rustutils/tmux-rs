@@ -197,8 +197,7 @@ fn split_window_vertical_twice_layout() {
         .run()
         .stdout_trimmed();
     eprintln!(
-        "After first split (active={}): {}",
-        active_after_first, widths_first
+        "After first split (active={active_after_first}): {widths_first}"
     );
 
     // Second vertical split on the active (right) pane
@@ -218,8 +217,7 @@ fn split_window_vertical_twice_layout() {
         .run()
         .stdout_trimmed();
     eprintln!(
-        "After second split (active={}): {}",
-        active_after_second, widths_second
+        "After second split (active={active_after_second}): {widths_second}"
     );
 
     // Parse pane widths
@@ -278,7 +276,7 @@ fn split_window_fullsize_vertical_twice() {
         ])
         .run()
         .stdout_trimmed();
-    eprintln!("After first -fh split: {}", widths_first);
+    eprintln!("After first -fh split: {widths_first}");
 
     // Second full-size vertical split
     tmux.cmd()
@@ -295,7 +293,7 @@ fn split_window_fullsize_vertical_twice() {
         ])
         .run()
         .stdout_trimmed();
-    eprintln!("After second -fh split: {}", widths_second);
+    eprintln!("After second -fh split: {widths_second}");
 
     let panes: Vec<(u32, u32, bool)> = widths_second
         .lines()

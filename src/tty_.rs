@@ -260,7 +260,7 @@ unsafe fn tty_write_callback_fire(cid: ClientId) {
             return;
         }
 
-        if (*tty).out.len() != 0 {
+        if !(*tty).out.is_empty() {
             tty_arm_write(tty, cid);
         }
     }
@@ -1789,7 +1789,7 @@ pub unsafe fn tty_draw_line(
             nx = sx;
         }
 
-        let cellsize = (*(*gd).get_line((*gd).hsize + py)).celldata.len() as u32;
+        let cellsize = (*gd).get_line((*gd).hsize + py).celldata.len() as u32;
         if sx > cellsize {
             sx = cellsize;
         }

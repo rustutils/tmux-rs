@@ -308,24 +308,24 @@ unsafe fn cmd_display_panes_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         let args = cmd_get_args(self_);
         let tc = cmdq_get_target_client(item);
         let s = client_get_session(tc);
-        let delay: u32;
+        
         let wait = !args_has(args, 'b');
 
         if (*tc).overlay_draw.is_some() {
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
-        if args_has(args, 'd') {
-            delay = match args_strtonum(args, b'd', 0, u32::MAX as i64) {
+        let delay: u32 = if args_has(args, 'd') {
+            match args_strtonum(args, b'd', 0, u32::MAX as i64) {
                 Ok(v) => v as u32,
                 Err(cause) => {
                     cmdq_error!(item, "delay {}", cause);
                     return cmd_retval::CMD_RETURN_ERROR;
                 }
-            };
+            }
         } else {
-            delay = options_get_number___(&*(*s).options, "display-panes-time");
-        }
+            options_get_number___(&*(*s).options, "display-panes-time")
+        };
 
         let cdata = Box::into_raw(Box::new(cmd_display_panes_data {
             item: if wait { item } else { null_mut() },

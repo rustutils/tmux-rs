@@ -51,7 +51,7 @@ fn show_buffer(tmux: &TmuxTestHarness) -> String {
 /// Helper: fill the pane with some known text by echoing lines.
 fn fill_pane(client: &mut PtyClient, lines: &[&str]) {
     for line in lines {
-        client.write_str(&format!("echo '{}'\r", line));
+        client.write_str(&format!("echo '{line}'\r"));
         std::thread::sleep(Duration::from_millis(100));
     }
     std::thread::sleep(Duration::from_millis(300));

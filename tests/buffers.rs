@@ -249,7 +249,7 @@ fn save_buffer_to_file() {
 }
 
 /// A write error on the client side must reach the server as a command
-/// error. Since tmux 3.8 the client reports it with MSG_WRITE_DONE.
+/// error. Since tmux 3.8 the client reports it with `MSG_WRITE_DONE`.
 #[test]
 fn save_buffer_write_error_is_reported() {
     if !std::path::Path::new("/dev/full").exists() {

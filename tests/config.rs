@@ -83,13 +83,12 @@ fn if_shell_unknown_command_in_config() {
     // for any errors encountered while loading -f.
     let result = tmux
         .cmd()
-        .args([&format!("-f{}", tmp_path), "-C", "new"])
+        .args([&format!("-f{tmp_path}"), "-C", "new"])
         .stdin("")
         .run();
     let stdout = result.stdout_str();
     let needle = format!(
-        "%config-error {}:1: {}:1: unknown command: wibble",
-        tmp_path, tmp_path
+        "%config-error {tmp_path}:1: {tmp_path}:1: unknown command: wibble"
     );
     assert!(
         stdout.contains(&needle),
@@ -112,10 +111,10 @@ fn source_unknown_command_reports_error() {
     tmpfile.flush().unwrap();
     let tmp_path = tmpfile.path().display().to_string();
 
-    let input = format!("source {}\n", tmp_path);
+    let input = format!("source {tmp_path}\n");
     let result = tmux.cmd().args(["-C", "new"]).stdin(&input).run();
     let stdout = result.stdout_str();
-    let needle = format!("{}:1: unknown command: wibble", tmp_path);
+    let needle = format!("{tmp_path}:1: unknown command: wibble");
     assert!(
         stdout.contains(&needle),
         "expected {needle:?} in control output, got: {stdout:?}"

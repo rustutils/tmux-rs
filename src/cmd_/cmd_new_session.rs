@@ -298,7 +298,7 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             }
             env = environ_create().as_ptr();
             if !c.is_null() && !args_has(args, 'E') {
-                environ_update(GLOBAL_S_OPTIONS, &*(*c).environ, &mut *env);
+                environ_update(GLOBAL_S_OPTIONS, &(*c).environ, &mut *env);
             }
             for av in args_flag_values(args, b'e') {
                 if let args_value::String { string } = av {

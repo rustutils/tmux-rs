@@ -240,7 +240,7 @@ fn new_window_with_manual_window_size() {
     assert_eq!(tmux.query("#{window_width}x#{window_height}"), "100x30");
 }
 
-/// Window indexes at INT_MAX: new-window -a after the last possible index
+/// Window indexes at `INT_MAX`: new-window -a after the last possible index
 /// and renumbering up to it used to overflow (upstream c3bcda3f).
 #[test]
 fn window_index_at_int_max() {
@@ -283,7 +283,7 @@ fn window_index_at_int_max() {
     assert_eq!(out.stdout_trimmed(), "2147483646\n2147483647");
 }
 
-/// pane_current_path is never the server's directory straight after
+/// `pane_current_path` is never the server's directory straight after
 /// new-window -c. The child used to change directory after fork, so a
 /// format expanded at once could see the old one (upstream f58b8d0d). It
 /// can be empty, in C tmux too, until the child owns the terminal.
