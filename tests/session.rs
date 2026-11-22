@@ -253,3 +253,38 @@ fn detach_on_destroy_no_detached_with_only_attached_sessions() {
         "b=1"
     );
 }
+
+/// Killing the last window of a session group destroys every session in
+/// the group. The loop used to remove sessions from the group it was
+/// iterating, which skipped sessions and used the freed group.
+#[test]
+fn kill_last_window_of_session_group() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["-s", "keep", "sleep 1000"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd()
+        .args(["new-session", "-d", "-s", "a", "sleep 1000"])
+        .run()
+        .assert_success();
+    for name in ["b", "c", "d"] {
+        tmux.cmd()
+            .args(["new-session", "-d", "-t", "a", "-s", name])
+            .run()
+            .assert_success();
+    }
+
+    tmux.cmd()
+        .args(["kill-window", "-t", "a:0"])
+        .run()
+        .assert_success();
+
+    let left = tmux
+        .cmd()
+        .args(["list-sessions", "-F", "#{session_name}"])
+        .run()
+        .stdout_trimmed();
+    assert_eq!(left, "keep");
+}

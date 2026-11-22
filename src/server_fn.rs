@@ -400,7 +400,10 @@ pub unsafe fn server_destroy_session_group(sess: *mut session) {
             server_destroy_session(sess);
             session_destroy(sess, 1, c!("server_destroy_session_group"));
         } else {
-            for &s in &(*sg).sessions {
+            // Collect first: session_destroy removes the session from the
+            // group, and frees the group with its last session.
+            let sessions: Vec<*mut session> = (*sg).sessions.clone();
+            for s in sessions {
                 server_destroy_session(s);
                 session_destroy(s, 1, c!("server_destroy_session_group"));
             }
