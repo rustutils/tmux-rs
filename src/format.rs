@@ -86,6 +86,11 @@ bitflags::bitflags! {
 /// Limit on recursion.
 const FORMAT_LOOP_LIMIT: i32 = 100;
 
+/// Limit on the time one expansion may take, in milliseconds. Deeply
+/// nested formats can take exponential time and would make the server
+/// appear hung (upstream 303edb71).
+const FORMAT_TIME_LIMIT: u64 = 100;
+
 bitflags::bitflags! {
     /// Format expand flags.
     #[repr(transparent)]
@@ -137,6 +142,8 @@ pub struct format_tree {
 pub struct format_expand_state {
     pub ft: *mut format_tree,
     pub loop_: u32,
+    /// When the top-level expansion started, from `get_timer`.
+    pub start_time: u64,
     pub time: time_t,
     pub tm: tm,
     pub flags: format_expand_flags,
@@ -229,6 +236,7 @@ pub unsafe fn format_copy_state(
     unsafe {
         (*to).ft = (*from).ft;
         (*to).loop_ = (*from).loop_;
+        (*to).start_time = (*from).start_time;
         (*to).time = (*from).time;
         memcpy__(&raw mut (*to).tm, &raw const (*from).tm);
         (*to).flags = (*from).flags | flags;
@@ -4921,6 +4929,11 @@ pub unsafe fn format_expand1(es: *mut format_expand_state, mut fmt: *const u8) -
             return xstrdup(c!("")).as_ptr();
         }
 
+        let elapsed = get_timer().saturating_sub((*es).start_time);
+        if elapsed >= FORMAT_TIME_LIMIT {
+            format_log1!(es, c!("format_expand1"), "reached time limit ({})", elapsed);
+            return xstrdup(c!("")).as_ptr();
+        }
         if (*es).loop_ == FORMAT_LOOP_LIMIT as u32 {
             format_log1!(
                 es,
@@ -5147,6 +5160,7 @@ pub unsafe fn format_expand_time(ft: *mut format_tree, fmt: *const u8) -> *mut u
         memset0(es);
         (*es).ft = ft;
         (*es).flags = format_expand_flags::FORMAT_EXPAND_TIME;
+        (*es).start_time = get_timer();
         format_expand1(es, fmt)
     }
 }
@@ -5160,6 +5174,7 @@ pub unsafe fn format_expand(ft: *mut format_tree, fmt: *const u8) -> *mut u8 {
         memset0(es);
         (*es).ft = ft;
         (*es).flags = format_expand_flags::empty();
+        (*es).start_time = get_timer();
         format_expand1(es, fmt)
     }
 }

@@ -384,3 +384,24 @@ fn format_string_length() {
     // pane_width is "80", which has length 2
     assert_eq!(result, "2");
 }
+
+/// Formats that expand exponentially (each level expands the next twice)
+/// stop at a time limit instead of making the server appear hung
+/// (upstream 303edb71).
+#[test]
+fn exponential_format_is_cut_off() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    tmux.cmd().args(["set", "-g", "@a25", "x"]).run().assert_success();
+    for level in (0..25).rev() {
+        let next = level + 1;
+        let value = format!("#{{E:@a{next}}}#{{E:@a{next}}}");
+        tmux.cmd().args(["set", "-g", &format!("@a{level}"), &value]).run().assert_success();
+    }
+    let start = std::time::Instant::now();
+    tmux.cmd().args(["display-message", "-p", "#{E:@a0}"]).run().assert_success();
+    assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+    tmux.cmd().args(["has-session"]).run().assert_success();
+}
