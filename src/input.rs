@@ -1300,9 +1300,20 @@ fn input_ground(ictx: &mut input_ctx) {
     }
 }
 
+/// End an unfinished UTF-8 character. Like most terminals and tmux 3.8,
+/// the invalid bytes show as the replacement character U+FFFD instead of
+/// being dropped.
+fn input_stop_utf8(ictx: &mut input_ctx) {
+    if ictx.utf8started != 0 {
+        ictx.cell.cell.data = Utf8Data::new(*b"\xef\xbf\xbd", 3, 3, 1);
+        unsafe { screen_write_collect_add(&raw mut ictx.ctx, &raw mut ictx.cell.cell) };
+    }
+    ictx.utf8started = 0;
+}
+
 /// Output this character to the screen.
 fn input_print(ictx: &mut input_ctx) -> i32 {
-    ictx.utf8started = 0; /* can't be valid UTF-8 */
+    input_stop_utf8(ictx); // can't be valid UTF-8
 
     let set = if ictx.cell.set == 0 {
         ictx.cell.g0set
@@ -1379,7 +1390,7 @@ fn input_input(ictx: &mut input_ctx) -> i32 {
 /// Execute C0 control sequence.
 fn input_c0_dispatch(ictx: &mut input_ctx) -> i32 {
     let func = "input_c0_dispatch";
-    ictx.utf8started = 0; /* can't be valid UTF-8 */
+    input_stop_utf8(ictx); // can't be valid UTF-8
 
     log_debug!("{}: '{}'", "input_c0_dispatch", ictx.ch as u8 as char);
 
@@ -2536,17 +2547,17 @@ fn input_top_bit_set(ictx: &mut input_ctx) -> i32 {
         (*ictx).flags &= !input_flags::INPUT_LAST;
 
         if (*ictx).utf8started == 0 {
-            if ud.open((*ictx).ch as u8) != Utf8State::More {
-                return 0;
-            }
             (*ictx).utf8started = 1;
+            if ud.open((*ictx).ch as u8) != Utf8State::More {
+                input_stop_utf8(ictx);
+            }
             return 0;
         }
 
         match ud.append((*ictx).ch as u8) {
             Utf8State::More => return 0,
             Utf8State::Error => {
-                (*ictx).utf8started = 0;
+                input_stop_utf8(ictx);
                 return 0;
             }
             Utf8State::Done => (),

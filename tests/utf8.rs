@@ -13,7 +13,6 @@ fn regress_dir() -> PathBuf {
 // Plays UTF-8-test.txt into a pane via cat, then captures and compares
 // against utf8-test.result.
 #[test]
-#[ignore = "depends on exact escape-sequence capture matching C tmux output byte-for-byte"]
 fn utf8_capture_matches_reference() {
     let dir = regress_dir();
     let input = dir.join("UTF-8-test.txt");
