@@ -3,7 +3,7 @@ use super::harness;
 use std::io::Write;
 use std::time::Duration;
 
-use harness::TmuxTestHarness;
+use harness::{PtyClient, TmuxTestHarness};
 
 // Ported from regress/new-session-size.sh
 #[test]
@@ -203,4 +203,29 @@ fn new_session_environment_propagation() {
     assert!(contents.contains("PATH=1"), "got: {contents}");
     assert!(contents.contains("SHELL=/bin/sh"), "got: {contents}");
     assert!(contents.contains("TEST=test1"), "got: {contents}");
+}
+
+/// With detach-on-destroy no-detached, a client whose session is killed
+/// detaches when every other session is attached (upstream f5018171).
+/// tmux-rs used to move it to another session anyway.
+#[test]
+fn detach_on_destroy_no_detached_with_only_attached_sessions() {
+    let t = Duration::from_secs(5);
+    let mut tmux = TmuxTestHarness::new();
+    for name in ["a", "b"] {
+        tmux.new_session().args(["-s", name, "-x", "80", "-y", "24", "sleep 1000"]).run().assert_success();
+    }
+    tmux.wait_ready(t);
+    tmux.cmd().args(["set", "-g", "detach-on-destroy", "no-detached"]).run().assert_success();
+    let mut a = PtyClient::attach_to(&tmux, "a", 80, 24);
+    let _b = PtyClient::attach_to(&tmux, "b", 80, 24);
+    tmux.wait_for("#{session_attached}", |v| v == "1", t);
+    tmux.wait_for("#{S:#{session_attached}}", |v| v == "11", t);
+    tmux.cmd().args(["kill-session", "-t", "a"]).run().assert_success();
+    let start = std::time::Instant::now();
+    while a.is_alive() {
+        assert!(start.elapsed() < t, "client of the killed session did not detach");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(tmux.query("#{S:#{session_name}=#{session_attached} }"), "b=1");
 }

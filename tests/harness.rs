@@ -412,6 +412,11 @@ impl PtyClient {
         Self::spawn_with_args(harness, &["attach"], cols, rows)
     }
 
+    /// Attach to the session given by `target`.
+    pub fn attach_to(harness: &TmuxTestHarness, target: &str, cols: u16, rows: u16) -> Self {
+        Self::spawn_with_args(harness, &["attach", "-t", target], cols, rows)
+    }
+
     /// Create a new session and attach to it.
     pub fn new_session(harness: &TmuxTestHarness, cols: u16, rows: u16) -> Self {
         Self::spawn_with_args(harness, &["-f/dev/null", "new-session"], cols, rows)
