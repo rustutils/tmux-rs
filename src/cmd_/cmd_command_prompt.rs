@@ -225,9 +225,11 @@ unsafe fn cmd_command_prompt_callback(
             } else if item.is_null() {
                 let new_item = cmdq_get_command(cmdlist, null_mut());
                 cmdq_append(c, new_item);
+                cmd_list_free(cmdlist);
             } else {
                 let new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
                 cmdq_insert_after(item, new_item);
+                cmd_list_free(cmdlist);
             }
             cmd_free_argv(argc, argv);
 

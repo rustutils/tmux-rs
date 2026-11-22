@@ -657,8 +657,6 @@ pub unsafe fn args_make_commands_now(
         if cmdlist.is_null() {
             cmdq_error!(item, "{}", _s(error));
             free_(error);
-        } else {
-            (*cmdlist).references += 1;
         }
         args_make_commands_free(state);
         cmdlist
@@ -739,8 +737,10 @@ pub unsafe fn args_make_commands(
 ) -> *mut cmd_list {
     let __func__ = "args_make_commands";
     unsafe {
+        // The caller always gets its own reference to the list.
         if !(*state).cmdlist.is_null() {
             if argc == 0 {
+                (*(*state).cmdlist).references += 1;
                 return (*state).cmdlist;
             }
             return cmd_list_copy(&*(*state).cmdlist, argc, argv);

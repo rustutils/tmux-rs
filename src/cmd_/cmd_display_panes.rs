@@ -291,9 +291,11 @@ unsafe fn cmd_display_panes_key(c: *mut client, data: *mut c_void, event: *mut k
         } else if item.is_null() {
             let new_item = cmdq_get_command(cmdlist, null_mut());
             cmdq_append(c, new_item);
+            cmd_list_free(cmdlist);
         } else {
             let new_item = cmdq_get_command(cmdlist, cmdq_get_state(item));
             cmdq_insert_after(item, new_item);
+            cmd_list_free(cmdlist);
         }
 
         free_(expanded);
