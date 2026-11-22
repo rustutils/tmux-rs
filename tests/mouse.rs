@@ -65,3 +65,26 @@ fn click_on_border_selects_pane() {
     tmux.wait_for("#{pane_index}", |v| v == "0", TIMEOUT);
 }
 
+
+/// Two quick clicks in different panes are not a double click, two in
+/// the same pane are (upstream a4435312).
+#[test]
+fn double_click_needs_the_same_pane() {
+    let (tmux, mut pty) = mouse_setup();
+    tmux.cmd().args(["split-window", "-h", "sleep 1000"]).run().assert_success();
+    tmux.wait_for("#{window_panes}", |v| v == "2", TIMEOUT);
+    tmux.cmd()
+        .args(["bind", "-n", "DoubleClick1Pane", "set", "-g", "@double", "yes"])
+        .run()
+        .assert_success();
+
+    pty.click(10, 5);
+    pty.click(60, 5);
+    // The double click key comes after the click timeout (300 ms).
+    std::thread::sleep(Duration::from_millis(800));
+    assert_eq!(tmux.query("#{@double}"), "");
+
+    pty.click(10, 5);
+    pty.click(10, 5);
+    tmux.wait_for("#{@double}", |v| v == "yes", TIMEOUT);
+}

@@ -306,6 +306,7 @@ pub unsafe fn server_client_create(fd: i32) -> *mut client {
 
         std::ptr::write(&raw mut (*c).repeat_timer, None);
         std::ptr::write(&raw mut (*c).click_timer, None);
+        (*c).click_wp = -1;
         std::ptr::write(&raw mut (*c).exit_timer, None);
         std::ptr::write(&raw mut (*c).message_timer, None);
         std::ptr::write(&raw mut (*c).overlay_timer, None);
@@ -765,28 +766,27 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
                     }
                     log_debug!("up at {},{}", x, y);
                 } else {
+                    // Whether a second or third click continues the
+                    // sequence is checked below, once it is known where
+                    // the click landed.
                     if (*c).flags.intersects(client_flag::DOUBLECLICK) {
                         (*c).click_timer = None;
                         (*c).flags &= !client_flag::DOUBLECLICK;
-                        if (*m).b == (*c).click_button {
-                            type_ = type_::Second;
-                            x = (*m).x;
-                            y = (*m).y;
-                            b = (*m).b;
-                            log_debug!("second-click at {},{}", x, y);
-                            (*c).flags |= client_flag::TRIPLECLICK;
-                        }
+                        type_ = type_::Second;
+                        x = (*m).x;
+                        y = (*m).y;
+                        b = (*m).b;
+                        log_debug!("second-click at {},{}", x, y);
+                        (*c).flags |= client_flag::TRIPLECLICK;
                     } else if (*c).flags.intersects(client_flag::TRIPLECLICK) {
                         (*c).click_timer = None;
                         (*c).flags &= !client_flag::TRIPLECLICK;
-                        if (*m).b == (*c).click_button {
-                            type_ = type_::Triple;
-                            x = (*m).x;
-                            y = (*m).y;
-                            b = (*m).b;
-                            log_debug!("triple-click at {},{}", x, y);
-                            break 'have_event;
-                        }
+                        type_ = type_::Triple;
+                        x = (*m).x;
+                        y = (*m).y;
+                        b = (*m).b;
+                        log_debug!("triple-click at {},{}", x, y);
+                        break 'have_event;
                     }
 
                     // DOWN is the only remaining event type.
@@ -799,19 +799,6 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
                         (*c).flags |= client_flag::DOUBLECLICK;
                     }
 
-                    if KEYC_CLICK_TIMEOUT != 0 {
-                        memcpy__(&raw mut (*c).click_event, m);
-                        (*c).click_button = (*m).b;
-
-                        log_debug!("click timer started");
-                        (*c).click_timer = None;
-                        let cid = (*c).id;
-                        let timeout_ms = KEYC_CLICK_TIMEOUT as u64;
-                        (*c).click_timer = timer_add(
-                            Duration::from_millis(timeout_ms),
-                            Box::new(move || server_client_click_timer_fire(cid)),
-                        );
-                    }
                 }
             } // have_event:
             if type_ == type_::NoType {
@@ -948,6 +935,37 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
                 }
                 (*m).wp = (*wp).id as i32;
                 (*m).w = (*window_pane_window(wp)).id as i32;
+            }
+
+            // A second or third click with another button, somewhere else
+            // or on another pane starts a new sequence. Otherwise remember
+            // this click and start the timer for the next one.
+            if matches!(type_, type_::Down | type_::Second | type_::Triple) {
+                if type_ != type_::Down
+                    && ((*m).b != (*c).click_button
+                        || where_ as i32 != (*c).click_where
+                        || (*m).wp != (*c).click_wp)
+                {
+                    type_ = type_::Down;
+                    log_debug!("click sequence reset at {},{}", x, y);
+                    (*c).flags &= !client_flag::TRIPLECLICK;
+                    (*c).flags |= client_flag::DOUBLECLICK;
+                }
+
+                if type_ != type_::Triple && KEYC_CLICK_TIMEOUT != 0 {
+                    memcpy__(&raw mut (*c).click_event, m);
+                    (*c).click_button = (*m).b;
+                    (*c).click_where = where_ as i32;
+                    (*c).click_wp = (*m).wp;
+
+                    log_debug!("click timer started");
+                    let cid = (*c).id;
+                    let timeout_ms = KEYC_CLICK_TIMEOUT as u64;
+                    (*c).click_timer = timer_add(
+                        Duration::from_millis(timeout_ms),
+                        Box::new(move || server_client_click_timer_fire(cid)),
+                    );
+                }
             }
 
             // Stop dragging if needed.

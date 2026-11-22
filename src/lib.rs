@@ -2432,6 +2432,11 @@ struct client {
     repeat_timer: Option<TimerHandle>,
 
     click_timer: Option<TimerHandle>,
+    /// Where the last click of a double or triple click sequence was (the
+    /// mouse location type) and on which pane, so the sequence restarts
+    /// when the next click lands somewhere else.
+    click_where: i32,
+    click_wp: i32,
     click_button: c_uint,
     /// Gives up on a client that does not finish exiting, see
     /// `server_client_check_exit`.
