@@ -2289,6 +2289,11 @@ pub unsafe fn screen_write_combine(ctx: *mut screen_write_ctx, gc: *const GridCe
         let mut force_wide = 0;
         let mut zero_width = 0;
 
+        // Ignore U+3164 HANGUL FILLER entirely.
+        if utf8_is_hangul_filler(&*ud) {
+            return 1;
+        }
+
         // Is this character which makes no sense without being combined? If
         // this is true then flag it here and discard the character (return 1)
         // if we cannot combine it.

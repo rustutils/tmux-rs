@@ -85,3 +85,36 @@ sleep 5
         .stdout_str();
     assert_eq!(captured, expected);
 }
+
+/// Start a pane that prints `printf_arg` with printf and then waits.
+/// Returns once the pane has printed a trailing marker "|".
+fn print_in_pane(printf_arg: &str) -> TmuxTestHarness {
+    let t = Duration::from_secs(5);
+    let mut tmux = TmuxTestHarness::new();
+    let cmd = format!("printf '{printf_arg}|'; exec sleep 1000");
+    tmux.new_session().args(["-x", "40", "-y", "5", &cmd]).run().assert_success();
+    tmux.wait_ready(t);
+    tmux.wait_for("#{cursor_x}", |v| v != "0", t);
+    let start = std::time::Instant::now();
+    while !tmux.capture_pane().contains('|') {
+        assert!(start.elapsed() < t, "pane never printed its output");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    tmux
+}
+
+/// The Hangul filler U+3164 is ignored (upstream 3051076d).
+#[test]
+fn hangul_filler_is_ignored() {
+    let tmux = print_in_pane(r"a\343\205\244b");
+    assert_eq!(tmux.capture_pane().lines().next().unwrap(), "ab|");
+    assert_eq!(tmux.query("#{cursor_x}"), "3");
+}
+
+/// Variation selector 16 (U+FE0F) after a narrow emoji makes it wide.
+#[test]
+fn variation_selector_makes_emoji_wide() {
+    // U+2764 HEAVY BLACK HEART is narrow on its own.
+    let tmux = print_in_pane(r"\342\235\244\357\270\217");
+    assert_eq!(tmux.query("#{cursor_x}"), "3");
+}

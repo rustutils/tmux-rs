@@ -51,17 +51,16 @@ pub unsafe fn utf8_is_zwj(ud: *const Utf8Data) -> bool {
     }
 }
 
+/// Whether this is variation selector 16, U+FE0F, which asks for the
+/// emoji presentation of the character before it.
 pub unsafe fn utf8_is_vs(ud: *const Utf8Data) -> bool {
-    unsafe {
-        if (*ud).size != 3 {
-            return false;
-        }
-        memcmp(
-            &raw const (*ud).data as *const u8 as *const c_void,
-            b"\xef\xbf\x8f\x00" as *const u8 as *const c_void,
-            3,
-        ) == 0
-    }
+    // SAFETY: caller guarantees `ud` is valid for reads.
+    unsafe { (*ud).initialized_slice() == "\u{fe0f}".as_bytes() }
+}
+
+/// Whether this is the Hangul filler U+3164, which tmux ignores.
+pub fn utf8_is_hangul_filler(ud: &Utf8Data) -> bool {
+    ud.initialized_slice() == "\u{3164}".as_bytes()
 }
 
 pub unsafe fn utf8_is_modifier(ud: *const Utf8Data) -> bool {
@@ -70,5 +69,32 @@ pub unsafe fn utf8_is_modifier(ud: *const Utf8Data) -> bool {
     match ud_ref.to_wchar() {
         Some(wc) => utf8_in_table(wc, &UTF8_MODIFIER_TABLE),
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ud(s: &str) -> Utf8Data {
+        let mut ud = Utf8Data::new([0u8; 0], 0, 0, 0);
+        ud.data[..s.len()].copy_from_slice(s.as_bytes());
+        ud.size = s.len() as u8;
+        ud.have = ud.size;
+        ud
+    }
+
+    #[test]
+    fn variation_selector_16() {
+        assert!(unsafe { utf8_is_vs(&ud("\u{fe0f}")) });
+        assert!(!unsafe { utf8_is_vs(&ud("\u{ffcf}")) });
+        assert!(!unsafe { utf8_is_vs(&ud("\u{fe0e}")) });
+    }
+
+    #[test]
+    fn hangul_filler() {
+        assert!(utf8_is_hangul_filler(&ud("\u{3164}")));
+        assert!(!utf8_is_hangul_filler(&ud("\u{3163}")));
+        assert!(!utf8_is_hangul_filler(&ud("a")));
     }
 }
