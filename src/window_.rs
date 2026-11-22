@@ -1735,6 +1735,48 @@ unsafe fn window_pane_copy_key(wp: *mut window_pane, key: key_code) {
     }
 }
 
+/// Write pasted bytes to the other synchronized panes of the window.
+unsafe fn window_pane_copy_paste(wp: *mut window_pane, buf: &[u8]) {
+    unsafe {
+        for &loop_ in &(*window_pane_window(wp)).panes {
+            if loop_ != wp
+                && (*loop_).modes.is_empty()
+                && (*loop_).fd != -1
+                && !(*loop_).flags.intersects(window_pane_flags::PANE_INPUTOFF)
+                && window_pane_visible(loop_)
+                && options_get_number___::<i64>(&*(*loop_).options, "synchronize-panes") != 0
+            {
+                (*loop_).event_output.add(buf);
+            }
+        }
+    }
+}
+
+/// Write pasted bytes to the pane exactly as the terminal sent them,
+/// without key processing. The bracketed paste start and end sequences
+/// only go to a pane that turned bracketed paste on. Panes in a mode get
+/// nothing, like C tmux.
+pub unsafe fn window_pane_paste(wp: *mut window_pane, key: key_code, buf: &[u8]) {
+    unsafe {
+        if !(*wp).modes.is_empty() {
+            return;
+        }
+        if (*wp).fd == -1 || (*wp).flags.intersects(window_pane_flags::PANE_INPUTOFF) {
+            return;
+        }
+        let k = key & KEYC_MASK_KEY;
+        if (k == keyc::KEYC_PASTE_START as u64 || k == keyc::KEYC_PASTE_END as u64)
+            && !(*(*wp).screen).mode.intersects(mode_flag::MODE_BRACKETPASTE)
+        {
+            return;
+        }
+        (*wp).event_output.add(buf);
+        if options_get_number___::<i64>(&*(*wp).options, "synchronize-panes") != 0 {
+            window_pane_copy_paste(wp, buf);
+        }
+    }
+}
+
 pub unsafe fn window_pane_key(
     wp: *mut window_pane,
     c: *mut client,

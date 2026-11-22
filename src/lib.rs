@@ -1622,7 +1622,6 @@ struct session_group {
 }
 type session_groups = BTreeMap<String, Box<session_group>>;
 
-const SESSION_PASTING: i32 = 0x1;
 const SESSION_ALERTED: i32 = 0x2;
 
 /// Unique session identifier, wrapping the existing tmux session `id` field.
@@ -1654,7 +1653,6 @@ struct session {
     creation_time: timeval,
     last_attached_time: timeval,
     activity_time: timeval,
-    last_activity_time: timeval,
 
     lock_timer: Option<TimerHandle>,
 
@@ -1764,6 +1762,10 @@ struct key_event {
     client: *mut client,
     key: key_code,
     m: mouse_event,
+    /// The bytes the key was read from, so a paste can be written to the
+    /// pane unchanged. Null for keys that did not come from a terminal.
+    buf: *mut u8,
+    len: usize,
 }
 
 bitflags::bitflags! {
@@ -2416,6 +2418,9 @@ struct client {
 
     creation_time: timeval,
     activity_time: timeval,
+    /// The activity time before the latest key, to guess at pastes from
+    /// how quickly keys arrive.
+    last_activity_time: timeval,
 
     environ: Box<Environ>,
     jobs: Option<Box<format_job_tree>>,

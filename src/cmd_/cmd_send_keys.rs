@@ -67,6 +67,8 @@ pub unsafe fn cmd_send_keys_inject_key(
                 client: null_mut(),
                 key: key | KEYC_SENT,
                 m: zeroed(),
+                buf: null_mut(),
+                len: 0,
             })) as *mut key_event;
             // Queue the key after the previous one, so keys and the
             // commands they run happen in order (upstream b6be437b).
@@ -77,7 +79,7 @@ pub unsafe fn cmd_send_keys_inject_key(
             } else if let Some(new_after) = server_client_handle_key_after(tc, event, after) {
                 return new_after;
             }
-            free_(event);
+            key_event_free(event);
             return item;
         }
 

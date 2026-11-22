@@ -1813,55 +1813,58 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
     }
 }
 
-/// Is this a bracket paste key?
-pub unsafe fn server_client_is_bracket_pasting(c: *mut client, key: key_code) -> bool {
+/// Track bracketed paste. The start and end keys turn it on and off and
+/// are handled as ordinary keys. Returns whether `key` is inside a paste.
+pub unsafe fn server_client_is_bracket_paste(c: *mut client, key: key_code) -> bool {
     unsafe {
-        if key == keyc::KEYC_PASTE_START as u64 {
+        if key & KEYC_MASK_KEY == keyc::KEYC_PASTE_START as u64 {
             (*c).flags |= client_flag::BRACKETPASTING;
             log_debug!("{}: bracket paste on", _s((*c).name));
-            return true;
+            return false;
         }
 
-        if key == keyc::KEYC_PASTE_END as u64 {
+        if key & KEYC_MASK_KEY == keyc::KEYC_PASTE_END as u64 {
             (*c).flags &= !client_flag::BRACKETPASTING;
             log_debug!("{}: bracket paste off", _s((*c).name));
-            return true;
+            return false;
         }
 
         (*c).flags.intersects(client_flag::BRACKETPASTING)
     }
 }
 
-/// Is this fast enough to probably be a paste?
-pub unsafe fn server_client_assume_paste(s: *mut session) -> bool {
+/// Is this fast enough to probably be a paste? Keys that come quicker
+/// than assume-paste-time after the previous one are treated as pasted
+/// from the second one on. Not used when the terminal supports bracketed
+/// paste, which says exactly what is pasted.
+pub unsafe fn server_client_is_assume_paste(c: *mut client) -> bool {
     unsafe {
-        let mut tv: timeval = zeroed();
-        let t: i32 = options_get_number_((*s).options, "assume-paste-time") as i32;
-
+        let s = client_get_session(c);
+        if (*c).flags.intersects(client_flag::BRACKETPASTING) {
+            return false;
+        }
+        let t = options_get_number_((*s).options, "assume-paste-time");
         if t == 0 {
             return false;
         }
-
-        timersub(
-            &raw const (*s).activity_time,
-            &raw const (*s).last_activity_time,
-            &raw mut tv,
-        );
-        if tv.tv_sec == 0 && tv.tv_usec < t as libc::suseconds_t * 1000 {
-            log_debug!(
-                "session {} pasting (flag {})",
-                (*s).name,
-                ((*s).flags & SESSION_PASTING != 0) as i32
-            );
-            if (*s).flags & SESSION_PASTING != 0 {
-                return true;
-            }
-            (*s).flags |= SESSION_PASTING;
+        if tty_term_has((*c).tty.term, tty_code_code::TTYC_ENBP) {
             return false;
         }
-        log_debug!("session {} not pasting", (*s).name);
-        (*s).flags &= !SESSION_PASTING;
 
+        let mut tv: timeval = zeroed();
+        timersub(&raw const (*c).activity_time, &raw const (*c).last_activity_time, &raw mut tv);
+        if tv.tv_sec == 0 && (tv.tv_usec as i64) < t * 1000 {
+            if (*c).flags.intersects(client_flag::ASSUMEPASTING) {
+                return true;
+            }
+            (*c).flags |= client_flag::ASSUMEPASTING;
+            log_debug!("{}: assume paste on", _s((*c).name));
+            return false;
+        }
+        if (*c).flags.intersects(client_flag::ASSUMEPASTING) {
+            (*c).flags &= !client_flag::ASSUMEPASTING;
+            log_debug!("{}: assume paste off", _s((*c).name));
+        }
         false
     }
 }
@@ -1914,6 +1917,7 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
         let mut key0: key_code;
         let mut prefix: key_code;
         let mut prefix2: key_code;
+        let mut paste = false;
 
         'out: {
             'forward_key: {
@@ -1924,6 +1928,7 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                 wl = (*s).curw;
 
                 // Update the activity timer.
+                (*c).last_activity_time = (*c).activity_time;
                 if libc::gettimeofday(&raw mut (*c).activity_time, null_mut()) != 0 {
                     fatal("gettimeofday failed");
                 }
@@ -1965,13 +1970,19 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                     break 'forward_key;
                 }
 
-                // Forward if bracket pasting.
-                if server_client_is_bracket_pasting(c, key) {
+                // Write pasted text to the pane as it was received, without
+                // key processing, so it cannot be read as key sequences.
+                if server_client_is_bracket_paste(c, key) {
+                    paste = true;
                     break 'forward_key;
                 }
-
-                // Treat everything as a regular key when pasting is detected.
-                if !KEYC_IS_MOUSE(key) && (!key & KEYC_SENT) != 0 && server_client_assume_paste(s) {
+                if !KEYC_IS_MOUSE(key)
+                    && key != keyc::KEYC_FOCUS_IN as u64
+                    && key != keyc::KEYC_FOCUS_OUT as u64
+                    && (!key & KEYC_SENT) != 0
+                    && server_client_is_assume_paste(c)
+                {
+                    paste = true;
                     break 'forward_key;
                 }
 
@@ -2162,6 +2173,14 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
             if (*c).flags.intersects(client_flag::READONLY) {
                 break 'out;
             }
+            if paste {
+                if !(*event).buf.is_null() && !wp.is_null() {
+                    let buf = std::slice::from_raw_parts((*event).buf, (*event).len);
+                    window_pane_paste(wp, key, buf);
+                }
+                key = KEYC_NONE;
+                break 'out;
+            }
             if !wp.is_null() {
                 window_pane_key(wp, c, s, wl, key, m);
             }
@@ -2172,8 +2191,16 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
         if !ec.is_null() {
             server_client_unref(ec);
         }
-        free_(event);
+        key_event_free(event);
         cmd_retval::CMD_RETURN_NORMAL
+    }
+}
+
+/// Free a key event and the bytes it was read from.
+pub unsafe fn key_event_free(event: *mut key_event) {
+    unsafe {
+        free_((*event).buf);
+        free_(event);
     }
 }
 
@@ -2664,9 +2691,11 @@ unsafe fn server_client_click_timer_fire(cid: ClientId) {
                 client: null_mut(),
                 key: keyc::KEYC_DOUBLECLICK as u64,
                 m: (*c).click_event,
+                buf: null_mut(),
+                len: 0,
             })) as *mut key_event;
             if server_client_handle_key(c, event) == 0 {
-                free_(event);
+                key_event_free(event);
             }
         }
         (*c).flags &= !(client_flag::DOUBLECLICK | client_flag::TRIPLECLICK);

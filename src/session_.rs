@@ -312,9 +312,6 @@ pub unsafe fn session_check_name(name: *const u8) -> Option<String> {
 /// Update activity time.
 pub unsafe fn session_update_activity(s: *mut session, from: *mut timeval) {
     unsafe {
-        let last = &raw mut (*s).last_activity_time;
-
-        memcpy__(last, &raw mut (*s).activity_time);
         if from.is_null() {
             libc::gettimeofday(&raw mut (*s).activity_time, null_mut());
         } else {
@@ -322,13 +319,11 @@ pub unsafe fn session_update_activity(s: *mut session, from: *mut timeval) {
         }
 
         log_debug!(
-            "session ${} {} activity {}.{:06} (last {}.{:06})",
+            "session ${} {} activity {}.{:06}",
             (*s).id,
             (*s).name,
             (*s).activity_time.tv_sec,
             (*s).activity_time.tv_usec,
-            (*last).tv_sec,
-            (*last).tv_usec,
         );
 
         // Cancel any existing lock timer.

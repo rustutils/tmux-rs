@@ -1289,9 +1289,6 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
                     key = (key & KEYC_MASK_MODIFIERS) | keyc::KEYC_BSPACE as u64;
                 }
 
-                // Remove data from buffer.
-                (*tty).in_.drain(size);
-
                 // Remove key timer.
                 (*tty).key_timer = None;
                 (*tty).flags &= !tty_flags::TTY_TIMER;
@@ -1308,12 +1305,20 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
                 }
 
                 // Fire the key.
+                // The key keeps the bytes it was read from, so a paste can be
+                // written to the pane as it was received.
                 if key != KEYC_UNKNOWN {
-                    let event = Box::leak(Box::new(key_event { client: null_mut(), key, m })) as *mut key_event;
+                    let buf = xmalloc(size).as_ptr().cast::<u8>();
+                    std::ptr::copy_nonoverlapping((*tty).in_.as_slice().as_ptr(), buf, size);
+                    let event = Box::leak(Box::new(key_event { client: null_mut(), key, m, buf, len: size }))
+                        as *mut key_event;
                     if server_client_handle_key(c, event) == 0 {
-                        free_(event);
+                        key_event_free(event);
                     }
                 }
+
+                // Remove data from buffer.
+                (*tty).in_.drain(size);
 
                 return 1;
             }

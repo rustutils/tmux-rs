@@ -351,3 +351,31 @@ fn input_keys_ctrl_tab() {
     assert_key(&tmux, &window, "C-Tab", "^[[27;5;9~");
     assert_key(&tmux, &window, "C-S-Tab", "^[[27;6;9~");
 }
+
+/// A bracketed paste reaches the pane exactly as the terminal sent it,
+/// without key processing (upstream 17bab327). With cursor key mode on, a
+/// typed Up arrow becomes ESC O A, but a pasted ESC [ A must stay as it is.
+#[test]
+fn bracketed_paste_is_written_unchanged() {
+    let t = Duration::from_secs(5);
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["-x", "80", "-y", "24", "printf '\\033[?1h'; stty -icanon -echo; exec cat -v"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(t);
+    tmux.wait_for("#{pane_current_command}", |v| v == "cat", t);
+    let mut pty = harness::PtyClient::attach(&tmux, 80, 24);
+    tmux.wait_for("#{session_attached}", |v| v == "1", t);
+    pty.write(b"\x1b[200~a\x1b[Ab\x1b[201~");
+    let start = std::time::Instant::now();
+    loop {
+        let screen = tmux.capture_pane();
+        if screen.contains('b') {
+            assert_eq!(screen.lines().next().unwrap(), "a^[[Ab");
+            break;
+        }
+        assert!(start.elapsed() < t, "paste did not arrive:\n{screen}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
