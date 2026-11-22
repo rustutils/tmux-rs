@@ -2911,7 +2911,7 @@ pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
             return;
         }
 
-        let datalen = (*imsg).hdr.len - IMSG_HEADER_SIZE as u16;
+        let datalen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
 
         let Ok(msg_type) = msgtype::try_from((*imsg).hdr.type_) else {
             // Newer peers may send messages we do not know. C tmux ignores
@@ -3119,7 +3119,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
         }
 
         let data = (*imsg).data;
-        let datalen = (*imsg).hdr.len - IMSG_HEADER_SIZE as u16;
+        let datalen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
 
         let Ok(msg_type) = msgtype::try_from((*imsg).hdr.type_) else {
             log_debug!("unknown message type {}", (*imsg).hdr.type_);
@@ -3127,7 +3127,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
         };
         match msg_type {
             msgtype::MSG_IDENTIFY_FEATURES => {
-                if datalen != size_of::<i32>() as u16 {
+                if datalen != size_of::<i32>() {
                     fatalx("bad MSG_IDENTIFY_FEATURES size");
                 }
                 memcpy__(&raw mut feat, data.cast());
@@ -3135,7 +3135,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
                 // log_debug("client %p IDENTIFY_FEATURES %s", c, tty_get_features(feat));
             }
             msgtype::MSG_IDENTIFY_FLAGS => {
-                if datalen != size_of::<i32>() as u16 {
+                if datalen != size_of::<i32>() {
                     fatalx("bad MSG_IDENTIFY_FLAGS size");
                 }
                 memcpy__(&raw mut flags, data.cast());
@@ -3143,7 +3143,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
                 // log_debug("client %p IDENTIFY_FLAGS %#x", c, flags);
             }
             msgtype::MSG_IDENTIFY_LONGFLAGS => {
-                if datalen != size_of::<u64>() as u16 {
+                if datalen != size_of::<u64>() {
                     fatalx("bad MSG_IDENTIFY_LONGFLAGS size");
                 }
                 memcpy__(&raw mut longflags, data.cast());
@@ -3222,7 +3222,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
                 // log_debug("client %p IDENTIFY_ENVIRON %s", c, data);
             }
             msgtype::MSG_IDENTIFY_CLIENTPID => {
-                if datalen != size_of::<i32>() as u16 {
+                if datalen != size_of::<i32>() {
                     fatalx("bad MSG_IDENTIFY_CLIENTPID size");
                 }
                 memcpy__(&raw mut (*c).pid, data.cast());

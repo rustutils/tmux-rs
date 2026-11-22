@@ -37,7 +37,10 @@ pub const IBUF_READ_SIZE: usize = 65535;
 pub const IMSG_HEADER_SIZE: usize = size_of::<imsg_hdr>();
 pub const MAX_IMSGSIZE: usize = 16384;
 
-const IMSGF_HASFD: u16 = 1; // this needs to be u16, i think, but it's u32 in auto generated header
+/// Bit set in `imsg_hdr.len` on the wire when a file descriptor is passed
+/// with the message. This is the framing of the imsg version in tmux 3.6
+/// and later. Older imsg had a 16 bit length and a separate flags field.
+const IMSG_FD_MARK: u32 = 0x8000_0000;
 
 /// IPC message buffer. Holds data being sent or received over the socket.
 /// Allocated with C calloc, freed with `ibuf_free`.
@@ -82,10 +85,11 @@ pub struct imsgbuf {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+/// Message header, 16 bytes on the wire. `len` includes the header. When
+/// a message has been read, `len` no longer carries IMSG_FD_MARK.
 pub struct imsg_hdr {
     pub type_: u32,
-    pub len: u16,
-    pub flags: u16,
+    pub len: u32,
     pub peerid: u32,
     pub pid: u32,
 }
@@ -222,7 +226,9 @@ pub unsafe fn imsg_get(imsgbuf: *mut imsgbuf, imsg: *mut imsg) -> isize {
             (*imsgbuf).r.buf.as_ptr() as *const c_void,
             size_of::<imsg_hdr>(),
         );
-        if ((*m).hdr.len as usize) < IMSG_HEADER_SIZE || (*m).hdr.len > MAX_IMSGSIZE as u16 {
+        let has_fd = (*m).hdr.len & IMSG_FD_MARK != 0;
+        (*m).hdr.len &= !IMSG_FD_MARK;
+        if ((*m).hdr.len as usize) < IMSG_HEADER_SIZE || (*m).hdr.len as usize > MAX_IMSGSIZE {
             errno!() = ERANGE;
             return -1;
         }
@@ -249,7 +255,7 @@ pub unsafe fn imsg_get(imsgbuf: *mut imsgbuf, imsg: *mut imsg) -> isize {
             (*m).data = ibuf_data((*m).buf);
         }
 
-        if (*m).hdr.flags & IMSGF_HASFD != 0 {
+        if has_fd {
             (*m).fd = imsg_dequeue_fd(imsgbuf);
         }
 
@@ -403,8 +409,7 @@ pub unsafe fn imsg_compose_ibuf(
 
             let mut hdr: imsg_hdr = imsg_hdr {
                 type_,
-                len: (ibuf_size(buf) + IMSG_HEADER_SIZE) as u16,
-                flags: 0,
+                len: (ibuf_size(buf) + IMSG_HEADER_SIZE) as u32,
                 peerid: id,
                 pid: if pid != 0 {
                     pid as u32
@@ -485,7 +490,6 @@ pub unsafe fn imsg_create(
 
         let hdr: imsg_hdr = imsg_hdr {
             type_,
-            flags: 0,
             peerid: id,
             pid: if pid != 0 {
                 pid as u32
@@ -521,11 +525,11 @@ pub unsafe fn imsg_close(imsgbuf: *mut imsgbuf, msg: *mut ibuf) {
     unsafe {
         let hdr: *mut imsg_hdr = (*msg).buf as *mut imsg_hdr;
 
-        (*hdr).flags &= !IMSGF_HASFD;
+        let mut len = ibuf_size(msg) as u32;
         if ibuf_fd_avail(msg) != 0 {
-            (*hdr).flags |= IMSGF_HASFD;
+            len |= IMSG_FD_MARK;
         }
-        (*hdr).len = ibuf_size(msg) as u16;
+        (*hdr).len = len;
 
         ibuf_close(&raw mut (*imsgbuf).w, msg);
     }

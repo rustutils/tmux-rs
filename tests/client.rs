@@ -322,15 +322,15 @@ fn switch_client_next_previous_no_client() {
     );
 }
 
-/// Build one imsg frame: a 16 byte header (type, length, flags, peer id
-/// carrying the protocol version, pid) followed by the payload.
+/// Build one imsg frame: a 16 byte header (type, length, peer id carrying
+/// the protocol version, pid) followed by the payload. No fd is passed, so
+/// the fd bit in the length stays clear.
 fn imsg_frame(msg_type: u32, payload: &[u8]) -> Vec<u8> {
     const PROTOCOL_VERSION: u32 = 8;
-    let len = (16 + payload.len()) as u16;
+    let len = (16 + payload.len()) as u32;
     let mut frame = Vec::with_capacity(len as usize);
     frame.extend_from_slice(&msg_type.to_ne_bytes());
     frame.extend_from_slice(&len.to_ne_bytes());
-    frame.extend_from_slice(&0u16.to_ne_bytes());
     frame.extend_from_slice(&PROTOCOL_VERSION.to_ne_bytes());
     frame.extend_from_slice(&std::process::id().to_ne_bytes());
     frame.extend_from_slice(payload);
