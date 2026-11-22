@@ -230,6 +230,12 @@ pub unsafe fn control_notify_session_closed(_: *mut session) {
 
 pub unsafe fn control_notify_session_window_changed(s: *mut session) {
     unsafe {
+        // A deferred notification can fire after the session was destroyed
+        // (which clears curw) while the notification still holds a
+        // reference to it. There is no window to report then.
+        if (*s).curw.is_null() {
+            return;
+        }
         for c in clients_iter() {
             {
                 if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {

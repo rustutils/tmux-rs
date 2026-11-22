@@ -2150,7 +2150,8 @@ pub unsafe fn winlink_clear_flags(wl: *mut winlink) {
 
 /// Shuffle window indexes up.
 pub unsafe fn winlink_shuffle_up(s: *mut session, mut wl: *mut winlink, before: bool) -> i32 {
-    if wl.is_null() {
+    // Nothing can be inserted after the highest possible index.
+    if wl.is_null() || unsafe { (*wl).idx } == i32::MAX {
         return -1;
     }
     unsafe {

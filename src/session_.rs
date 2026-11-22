@@ -785,11 +785,17 @@ pub unsafe fn session_renumber_windows(s: *mut session) {
     unsafe {
         let mut marked_idx = -1;
 
-        // Save and replace old window list.
-        let mut old_wins = std::mem::take(&mut (*s).windows);
-
         // Start renumbering from the base-index if it's set.
         let mut new_idx = options_get_number_((*s).options, "base-index") as i32;
+
+        // Leave the indexes alone if they do not all fit from there.
+        let n = (*s).windows.len() as u64;
+        if n > (i32::MAX as u64) - (new_idx as u64) + 1 {
+            return;
+        }
+
+        // Save and replace old window list.
+        let mut old_wins = std::mem::take(&mut (*s).windows);
         let mut new_curw_idx = 0;
 
         // Go through the winlinks and assign new indexes.
@@ -808,7 +814,10 @@ pub unsafe fn session_renumber_windows(s: *mut session) {
                 new_curw_idx = (*wl_new).idx;
             }
 
-            new_idx += 1;
+            // Do not step past the last index after the last window.
+            if Some(&wl) != old_values.last() {
+                new_idx += 1;
+            }
         }
 
         // Fix the stack of last windows now.

@@ -141,7 +141,7 @@ pub unsafe fn clients_calculate_size(
             if type_ == window_size_option::WINDOW_SIZE_LARGEST {
                 *sx = 0;
                 *sy = 0;
-            } else if type_ == window_size_option::WINDOW_SIZE_MANUAL {
+            } else if !w.is_null() && type_ == window_size_option::WINDOW_SIZE_MANUAL {
                 *sx = (*w).manual_sx;
                 *sy = (*w).manual_sy;
                 log_debug!("{}: manual size {}x{}", __func__, *sx, *sy);
@@ -286,7 +286,9 @@ pub unsafe fn clients_calculate_size(
         // Return whether a suitable size was found.
         if type_ == window_size_option::WINDOW_SIZE_MANUAL {
             log_debug!("{}: type_ is manual", __func__);
-            return true;
+            // Without a window (a new one) there is no manual size, so the
+            // caller falls back to default-size.
+            return !w.is_null();
         }
         if type_ == window_size_option::WINDOW_SIZE_LARGEST {
             log_debug!("{}: type_ is largest", __func__);

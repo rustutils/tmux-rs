@@ -508,3 +508,27 @@ fn active_pane_client_flag_is_ignored() {
     let flags = stdout.lines().find(|l| l.starts_with("flags:")).expect("flags line");
     assert!(!flags.contains("active-pane"), "{flags:?}");
 }
+
+/// select-window followed by kill-session in one command queues a
+/// session-window-changed notification for a session that is gone by the
+/// time it fires. With a control client attached elsewhere this read the
+/// destroyed session's window and killed the server (upstream 035447b0).
+#[test]
+fn window_changed_notification_after_kill_session() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["-s", "keep", "sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd().args(["new-session", "-d", "-s", "x", "sleep 1000"]).run().assert_success();
+    tmux.cmd().args(["new-window", "-t", "x", "sleep 1000"]).run().assert_success();
+
+    let mut child = spawn_control_client(&tmux);
+    let _stdin = child.stdin.take().unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    tmux.cmd()
+        .args(["select-window", "-t", "x:0", ";", "kill-session", "-t", "x"])
+        .run();
+    std::thread::sleep(Duration::from_millis(300));
+    let alive = tmux.cmd().args(["has-session", "-t", "keep"]).run().success();
+    let _ = child.kill();
+    assert!(alive, "server died");
+}

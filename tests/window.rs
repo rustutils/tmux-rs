@@ -171,3 +171,40 @@ fn swap_pane() {
     assert_eq!(after_ids[0], before_ids[1]);
     assert_eq!(after_ids[1], before_ids[0]);
 }
+
+/// With window-size manual a new window has no manual size yet. Reading it
+/// dereferenced a null window and killed the server (upstream 6234d798
+/// and 7d41761e). The window gets default-size instead.
+#[test]
+fn new_window_with_manual_window_size() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd().args(["set", "-g", "window-size", "manual"]).run().assert_success();
+    tmux.cmd().args(["set", "-g", "default-size", "100x30"]).run().assert_success();
+    tmux.cmd().args(["new-window", "sleep 1000"]).run().assert_success();
+    assert_eq!(tmux.query("#{window_width}x#{window_height}"), "100x30");
+}
+
+/// Window indexes at INT_MAX: new-window -a after the last possible index
+/// and renumbering up to it used to overflow (upstream c3bcda3f).
+#[test]
+fn window_index_at_int_max() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd().args(["new-window", "-t", ":2147483647", "sleep 1000"]).run().assert_success();
+    // There is no index after INT_MAX, so this fails cleanly.
+    tmux.cmd().args(["new-window", "-a", "-t", ":2147483647", "sleep 1000"]).run();
+    tmux.cmd().args(["has-session"]).run().assert_success();
+
+    // Renumbering two windows from base-index INT_MAX does not fit and
+    // leaves the indexes alone. From INT_MAX - 1 it fits exactly.
+    tmux.cmd().args(["set", "base-index", "2147483647"]).run().assert_success();
+    tmux.cmd().args(["move-window", "-r"]).run();
+    tmux.cmd().args(["has-session"]).run().assert_success();
+    tmux.cmd().args(["set", "base-index", "2147483646"]).run().assert_success();
+    tmux.cmd().args(["move-window", "-r"]).run().assert_success();
+    let out = tmux.cmd().args(["list-windows", "-F", "#{window_index}"]).run();
+    assert_eq!(out.stdout_trimmed(), "2147483646\n2147483647");
+}
