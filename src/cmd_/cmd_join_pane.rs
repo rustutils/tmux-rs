@@ -133,7 +133,11 @@ unsafe fn cmd_join_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
 
         layout_close_pane(src_wp);
 
-        window_lost_pane(src_w, src_wp);
+        // Moving a pane within its own window does not lose it, so the
+        // active pane stays as it is.
+        if src_w != dst_w {
+            window_lost_pane(src_w, src_wp);
+        }
         (*src_w).panes.retain(|&p| p != src_wp);
 
         window_pane_set_window(src_wp, dst_w);

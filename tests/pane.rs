@@ -323,3 +323,22 @@ fn copy_mode_vi_basic() {
     let in_mode = tmux.query("#{pane_in_mode}");
     assert_eq!(in_mode, "0");
 }
+
+/// Joining the active pane to another place in the same window keeps it
+/// active (upstream 80836f5f). tmux-rs used to treat it as lost and
+/// activate another pane.
+#[test]
+fn join_pane_in_same_window_keeps_active_pane() {
+    let t = Duration::from_secs(5);
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["-x", "80", "-y", "24", "sleep 1000"]).run().assert_success();
+    tmux.wait_ready(t);
+    for _ in 0..2 {
+        tmux.cmd().args(["split-window", "sleep 1000"]).run().assert_success();
+    }
+    tmux.wait_for("#{window_panes}", |v| v == "3", t);
+    tmux.cmd().args(["select-pane", "-t", ".0"]).run().assert_success();
+    let active = tmux.query("#{pane_id}");
+    tmux.cmd().args(["join-pane", "-d", "-s", ".0", "-t", ".2"]).run().assert_success();
+    assert_eq!(tmux.query("#{pane_id}"), active);
+}
