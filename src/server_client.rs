@@ -3380,7 +3380,7 @@ pub unsafe fn server_client_set_flags(c: *mut client, flags: *const u8) {
         let mut s = copy;
         while {
             next = strsep(&raw mut s, c!(","));
-            next.is_null()
+            !next.is_null()
         } {
             not = *next == b'!';
             if not {
