@@ -1,9 +1,9 @@
-use super::harness;
-
 use std::io::Write;
 use std::time::Duration;
 
 use harness::{PtyClient, TmuxTestHarness};
+
+use super::harness;
 
 // ---------------------------------------------------------------------------
 // source-file
@@ -55,7 +55,10 @@ fn source_file_nonexistent_fails() {
 
     let result = tmux
         .cmd()
-        .args(["source-file", "/tmp/tmux_rs_nonexistent_config_file_12345.conf"])
+        .args([
+            "source-file",
+            "/tmp/tmux_rs_nonexistent_config_file_12345.conf",
+        ])
         .run();
     result.assert_failure();
 }
@@ -236,11 +239,17 @@ fn attach_session_nonexistent_session_fails() {
 #[test]
 fn attach_session_no_sessions_fails() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-s", "temp"]).run().assert_success();
+    tmux.new_session()
+        .args(["-s", "temp"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // Kill all sessions
-    tmux.cmd().args(["kill-session", "-t", "temp"]).run().assert_success();
+    tmux.cmd()
+        .args(["kill-session", "-t", "temp"])
+        .run()
+        .assert_success();
 
     // Now attach should fail -- no sessions remain
     let result = tmux.cmd().args(["attach-session"]).run();
@@ -250,7 +259,10 @@ fn attach_session_no_sessions_fails() {
 #[test]
 fn attach_session_wrong_target_fails() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-s", "real"]).run().assert_success();
+    tmux.new_session()
+        .args(["-s", "real"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // Attaching to a nonexistent session should fail
@@ -298,10 +310,7 @@ fn wait_for_signal_and_wake() {
 
     // Use -S to signal a named channel.
     // When no one is waiting, this should still succeed without blocking.
-    let result = tmux
-        .cmd()
-        .args(["wait-for", "-S", "my_signal"])
-        .run();
+    let result = tmux.cmd().args(["wait-for", "-S", "my_signal"]).run();
     result.assert_success();
 }
 
@@ -342,14 +351,20 @@ fn wait_for_lock_unlock_cycle() {
 #[test]
 fn run_shell_sets_pwd() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
     let base = std::env::temp_dir().join(format!("tmux-pwd-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(base.join("real")).unwrap();
     std::os::unix::fs::symlink(base.join("real"), base.join("link")).unwrap();
     let link = base.join("link");
-    let out = tmux.cmd().args(["run-shell", "-c", link.to_str().unwrap(), "echo $PWD"]).run();
+    let out = tmux
+        .cmd()
+        .args(["run-shell", "-c", link.to_str().unwrap(), "echo $PWD"])
+        .run();
     let _ = std::fs::remove_dir_all(&base);
     out.assert_success();
     assert_eq!(out.stdout_trimmed(), link.to_str().unwrap());
@@ -361,7 +376,10 @@ fn run_shell_sets_pwd() {
 fn wait_for_survives_killed_client() {
     let t = Duration::from_secs(5);
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(t);
     let spawn_wait = || {
         std::process::Command::new(harness::client_bin())
@@ -375,12 +393,18 @@ fn wait_for_survives_killed_client() {
     first.kill().unwrap();
     first.wait().unwrap();
 
-    tmux.cmd().args(["wait-for", "-S", "chan"]).run().assert_success();
+    tmux.cmd()
+        .args(["wait-for", "-S", "chan"])
+        .run()
+        .assert_success();
     tmux.cmd().args(["has-session"]).run().assert_success();
 
     let mut second = spawn_wait();
     std::thread::sleep(Duration::from_millis(300));
-    tmux.cmd().args(["wait-for", "-S", "chan"]).run().assert_success();
+    tmux.cmd()
+        .args(["wait-for", "-S", "chan"])
+        .run()
+        .assert_success();
     let start = std::time::Instant::now();
     loop {
         if let Some(status) = second.try_wait().unwrap() {

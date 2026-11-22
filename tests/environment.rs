@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 #[test]
 fn set_environment_and_show() {
@@ -64,10 +64,7 @@ fn set_environment_global() {
     assert_eq!(result.stdout_trimmed(), "GLOBAL_VAR=global_value");
 
     // It should NOT appear in session-level environment (unless inherited)
-    let result = tmux
-        .cmd()
-        .args(["show-environment", "GLOBAL_VAR"])
-        .run();
+    let result = tmux.cmd().args(["show-environment", "GLOBAL_VAR"]).run();
     // Looking up a var that doesn't exist at session level should fail
     assert!(!result.success());
 }

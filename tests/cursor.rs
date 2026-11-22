@@ -5,12 +5,12 @@
 //! build up a string of "cursor_x cursor_y cursor_character\n<numbered lines>"
 //! and compare against the reference.
 
-use super::harness;
-
 use std::path::PathBuf;
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 fn regress_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("regress")
@@ -23,7 +23,11 @@ fn regress_dir() -> PathBuf {
 fn snapshot(tmux: &TmuxTestHarness) -> String {
     let mut s = tmux
         .cmd()
-        .args(["display", "-p", "#{cursor_x} #{cursor_y} #{cursor_character}"])
+        .args([
+            "display",
+            "-p",
+            "#{cursor_x} #{cursor_y} #{cursor_character}",
+        ])
         .run()
         .stdout_str();
     let cap = tmux.cmd().args(["capture-pane", "-p"]).run().stdout_str();

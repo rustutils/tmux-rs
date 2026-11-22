@@ -49,9 +49,10 @@ pub unsafe fn getpeereid(s: i32, uid: *mut libc::uid_t, gid: *mut libc::gid_t) -
 
 #[cfg(test)]
 mod tests {
-    use super::getpeereid;
     use std::os::fd::AsRawFd;
     use std::os::unix::net::UnixStream;
+
+    use super::getpeereid;
 
     #[test]
     fn reports_peer_of_socket_pair() {

@@ -8,14 +8,26 @@
 pub const OPTIONS: &[(&str, &str)] = &[
     ("differs:-g message-command-style", "Track 3: themes"),
     ("differs:-g message-style", "Track 3: themes"),
-    ("differs:-g status-format[0]", "Track 3: switch-mode and status lines"),
-    ("differs:-g status-format[1]", "Track 3: switch-mode and status lines"),
+    (
+        "differs:-g status-format[0]",
+        "Track 3: switch-mode and status lines",
+    ),
+    (
+        "differs:-g status-format[1]",
+        "Track 3: switch-mode and status lines",
+    ),
     ("differs:-g status-style", "Track 3: themes"),
     ("differs:-gw clock-mode-colour", "Track 3: themes"),
-    ("differs:-gw copy-mode-current-match-style", "Track 3: themes"),
+    (
+        "differs:-gw copy-mode-current-match-style",
+        "Track 3: themes",
+    ),
     ("differs:-gw copy-mode-mark-style", "Track 3: themes"),
     ("differs:-gw copy-mode-match-style", "Track 3: themes"),
-    ("differs:-gw cursor-colour", "Track 3: themes (cursor-colour became a string)"),
+    (
+        "differs:-gw cursor-colour",
+        "Track 3: themes (cursor-colour became a string)",
+    ),
     ("differs:-gw fill-character", "Track 3: themes"),
     ("differs:-gw menu-border-style", "Track 3: themes"),
     ("differs:-gw menu-selected-style", "Track 3: themes"),
@@ -26,9 +38,18 @@ pub const OPTIONS: &[(&str, &str)] = &[
     ("differs:-gw pane-border-style", "Track 3: themes"),
     ("differs:-gw popup-border-style", "Track 3: themes"),
     ("differs:-gw popup-style", "Track 3: themes"),
-    ("extra:-g display-panes-active-colour", "Track 3: display-panes as a mode"),
-    ("extra:-g display-panes-colour", "Track 3: display-panes as a mode"),
-    ("extra:-g display-panes-time", "Track 3: display-panes as a mode"),
+    (
+        "extra:-g display-panes-active-colour",
+        "Track 3: display-panes as a mode",
+    ),
+    (
+        "extra:-g display-panes-colour",
+        "Track 3: display-panes as a mode",
+    ),
+    (
+        "extra:-g display-panes-time",
+        "Track 3: display-panes as a mode",
+    ),
     ("missing:-g focus-follows-mouse", "Track 3: new options"),
     ("missing:-g initial-repeat-time", "Track 3: new options"),
     ("missing:-g message-format", "F4: prompt"),
@@ -36,35 +57,98 @@ pub const OPTIONS: &[(&str, &str)] = &[
     ("missing:-g prompt-command-cursor-style", "F4: prompt"),
     ("missing:-g prompt-cursor-colour", "F4: prompt"),
     ("missing:-g prompt-cursor-style", "F4: prompt"),
-    ("missing:-g status-format[2]", "Track 3: switch-mode and status lines"),
-    ("missing:-gw copy-mode-current-line-number-style", "Track 3: themes"),
-    ("missing:-gw copy-mode-current-line-style", "Track 3: copy mode additions"),
+    (
+        "missing:-g status-format[2]",
+        "Track 3: switch-mode and status lines",
+    ),
+    (
+        "missing:-gw copy-mode-current-line-number-style",
+        "Track 3: themes",
+    ),
+    (
+        "missing:-gw copy-mode-current-line-style",
+        "Track 3: copy mode additions",
+    ),
     ("missing:-gw copy-mode-line-number-style", "Track 3: themes"),
-    ("missing:-gw copy-mode-line-numbers", "Track 3: copy mode additions"),
-    ("missing:-gw copy-mode-position-format", "Track 3: copy mode additions"),
-    ("missing:-gw copy-mode-position-style", "Track 3: copy mode additions"),
-    ("missing:-gw copy-mode-selection-style", "Track 3: copy mode additions"),
+    (
+        "missing:-gw copy-mode-line-numbers",
+        "Track 3: copy mode additions",
+    ),
+    (
+        "missing:-gw copy-mode-position-format",
+        "Track 3: copy mode additions",
+    ),
+    (
+        "missing:-gw copy-mode-position-style",
+        "Track 3: copy mode additions",
+    ),
+    (
+        "missing:-gw copy-mode-selection-style",
+        "Track 3: copy mode additions",
+    ),
     ("missing:-gw display-panes-active-colour", "Track 3: themes"),
     ("missing:-gw display-panes-border-style", "Track 3: themes"),
     ("missing:-gw display-panes-colour", "Track 3: themes"),
-    ("missing:-gw display-panes-format", "Track 3: display-panes as a mode"),
-    ("missing:-gw display-panes-time", "Track 3: display-panes as a mode"),
+    (
+        "missing:-gw display-panes-format",
+        "Track 3: display-panes as a mode",
+    ),
+    (
+        "missing:-gw display-panes-time",
+        "Track 3: display-panes as a mode",
+    ),
     ("missing:-gw pane-scrollbars", "Track 3: pane scrollbars"),
-    ("missing:-gw pane-scrollbars-position", "Track 3: pane scrollbars"),
+    (
+        "missing:-gw pane-scrollbars-position",
+        "Track 3: pane scrollbars",
+    ),
     ("missing:-gw pane-scrollbars-style", "Track 3: themes"),
-    ("missing:-gw pane-scrollbars-timeout", "Track 3: pane scrollbars"),
-    ("missing:-gw pane-status-current-style", "Track 3: switch-mode and status lines"),
-    ("missing:-gw pane-status-style", "Track 3: switch-mode and status lines"),
-    ("missing:-gw session-status-current-style", "Track 3: switch-mode and status lines"),
-    ("missing:-gw session-status-style", "Track 3: switch-mode and status lines"),
-    ("missing:-gw switch-mode-match-style", "Track 3: switch-mode and status lines"),
-    ("missing:-gw tiled-layout-max-columns", "Track 3: floating panes"),
+    (
+        "missing:-gw pane-scrollbars-timeout",
+        "Track 3: pane scrollbars",
+    ),
+    (
+        "missing:-gw pane-status-current-style",
+        "Track 3: switch-mode and status lines",
+    ),
+    (
+        "missing:-gw pane-status-style",
+        "Track 3: switch-mode and status lines",
+    ),
+    (
+        "missing:-gw session-status-current-style",
+        "Track 3: switch-mode and status lines",
+    ),
+    (
+        "missing:-gw session-status-style",
+        "Track 3: switch-mode and status lines",
+    ),
+    (
+        "missing:-gw switch-mode-match-style",
+        "Track 3: switch-mode and status lines",
+    ),
+    (
+        "missing:-gw tiled-layout-max-columns",
+        "Track 3: floating panes",
+    ),
     ("missing:-gw tree-mode-border-style", "Track 3: themes"),
-    ("missing:-gw tree-mode-preview-format", "Track 3: tree mode changes"),
+    (
+        "missing:-gw tree-mode-preview-format",
+        "Track 3: tree mode changes",
+    ),
     ("missing:-gw tree-mode-preview-style", "Track 3: themes"),
-    ("missing:-gw tree-mode-selection-style", "Track 3: tree mode changes"),
-    ("missing:-gw window-pane-current-status-format", "Track 3: switch-mode and status lines"),
-    ("missing:-gw window-pane-status-format", "Track 3: switch-mode and status lines"),
+    (
+        "missing:-gw tree-mode-selection-style",
+        "Track 3: tree mode changes",
+    ),
+    (
+        "missing:-gw window-pane-current-status-format",
+        "Track 3: switch-mode and status lines",
+    ),
+    (
+        "missing:-gw window-pane-status-format",
+        "Track 3: switch-mode and status lines",
+    ),
     ("missing:-s clear-on-attach", "Track 3: new options"),
     ("missing:-s codepoint-widths", "Track 3: new options"),
     ("missing:-s dark-theme-black", "Track 3: themes"),
@@ -91,7 +175,10 @@ pub const OPTIONS: &[(&str, &str)] = &[
     ("missing:-s light-theme-white", "Track 3: themes"),
     ("missing:-s light-theme-yellow", "Track 3: themes"),
     ("missing:-s theme", "Track 3: themes"),
-    ("missing:-s variation-selector-always-wide", "Track 3: new options"),
+    (
+        "missing:-s variation-selector-always-wide",
+        "Track 3: new options",
+    ),
 ];
 
 pub const COMMANDS: &[(&str, &str)] = &[
@@ -164,7 +251,10 @@ pub const KEY_BINDINGS: &[(&str, &str)] = &[
     ("differs:copy-mode g", "F4: prompt (command-prompt -P)"),
     ("differs:copy-mode r", "Track 3: copy mode additions"),
     ("differs:copy-mode t", "F4: prompt (command-prompt -P)"),
-    ("differs:copy-mode-vi *", "Track 3: copy mode argument parsing"),
+    (
+        "differs:copy-mode-vi *",
+        "Track 3: copy mode argument parsing",
+    ),
     ("differs:copy-mode-vi /", "F4: prompt (command-prompt -P)"),
     ("differs:copy-mode-vi 1", "F4: prompt (command-prompt -P)"),
     ("differs:copy-mode-vi 2", "F4: prompt (command-prompt -P)"),
@@ -179,7 +269,10 @@ pub const KEY_BINDINGS: &[(&str, &str)] = &[
     ("differs:copy-mode-vi ?", "F4: prompt (command-prompt -P)"),
     ("differs:copy-mode-vi F", "F4: prompt (command-prompt -P)"),
     ("differs:copy-mode-vi T", "F4: prompt (command-prompt -P)"),
-    ("differs:copy-mode-vi \\#", "Track 3: copy mode argument parsing"),
+    (
+        "differs:copy-mode-vi \\#",
+        "Track 3: copy mode argument parsing",
+    ),
     ("differs:copy-mode-vi f", "F4: prompt (command-prompt -P)"),
     ("differs:copy-mode-vi r", "Track 3: copy mode additions"),
     ("differs:copy-mode-vi t", "F4: prompt (command-prompt -P)"),
@@ -226,7 +319,10 @@ pub const KEY_BINDINGS: &[(&str, &str)] = &[
     ("missing:prefix BTab", "Track 3: floating panes"),
     ("missing:prefix Tab", "Track 3: floating panes"),
     ("missing:prefix g", "Track 3: floating panes"),
-    ("missing:root C-MouseDown1Status", "Track 3: new command flags"),
+    (
+        "missing:root C-MouseDown1Status",
+        "Track 3: new command flags",
+    ),
     ("missing:root C-MouseDrag1Empty", "Track 3: floating panes"),
     ("missing:root C-MouseDrag1Pane", "Track 3: floating panes"),
     ("missing:root M-MouseDown3Empty", "Track 3: floating panes"),
@@ -235,8 +331,17 @@ pub const KEY_BINDINGS: &[(&str, &str)] = &[
     ("missing:root MouseDown1Control7", "Track 3: floating panes"),
     ("missing:root MouseDown1Control8", "Track 3: floating panes"),
     ("missing:root MouseDown1Control9", "Track 3: floating panes"),
-    ("missing:root MouseDown1ScrollbarDown", "Track 3: pane scrollbars"),
-    ("missing:root MouseDown1ScrollbarUp", "Track 3: pane scrollbars"),
+    (
+        "missing:root MouseDown1ScrollbarDown",
+        "Track 3: pane scrollbars",
+    ),
+    (
+        "missing:root MouseDown1ScrollbarUp",
+        "Track 3: pane scrollbars",
+    ),
     ("missing:root MouseDown3Empty", "Track 3: floating panes"),
-    ("missing:root MouseDrag1ScrollbarSlider", "Track 3: pane scrollbars"),
+    (
+        "missing:root MouseDrag1ScrollbarSlider",
+        "Track 3: pane scrollbars",
+    ),
 ];

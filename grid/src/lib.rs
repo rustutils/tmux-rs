@@ -87,11 +87,11 @@ pub use line::*;
 /// specifically a reader input.
 pub const WHITESPACE: &std::ffi::CStr = c" ";
 
-use tmux_types::{COLOUR_DEFAULT, COLOUR_FLAG_256, COLOUR_FLAG_RGB, colour_split_rgb};
-use tmux_utf8::Utf8Data;
-
 use std::mem::zeroed;
 use std::ptr::null_mut;
+
+use tmux_types::{COLOUR_DEFAULT, COLOUR_FLAG_256, COLOUR_FLAG_RGB, colour_split_rgb};
+use tmux_utf8::Utf8Data;
 
 /// Entire Grid of cells.
 ///
@@ -264,11 +264,7 @@ unsafe fn grid_need_extended_cell(gce: *const GridCellEntry, gc: *const GridCell
 /// `gl` and `gce` must be writable. `gce` typically points into
 /// `gl.celldata`, so callers use raw pointers to opt out of the
 /// borrow-checker's whole-struct exclusivity check.
-unsafe fn grid_get_extended_cell(
-    gl: *mut GridLine,
-    gce: *mut GridCellEntry,
-    flags: GridFlag,
-) {
+unsafe fn grid_get_extended_cell(gl: *mut GridLine, gce: *mut GridCellEntry, flags: GridFlag) {
     unsafe {
         (*gl).extddata.push(zeroed());
         let at = (*gl).extddata.len() as u32;
@@ -435,7 +431,11 @@ impl Grid {
         Grid {
             sx,
             sy,
-            flags: if hlimit != 0 { GridFlags::HISTORY } else { GridFlags::empty() },
+            flags: if hlimit != 0 {
+                GridFlags::HISTORY
+            } else {
+                GridFlags::empty()
+            },
             hscrolled: 0,
             hsize: 0,
             hlimit,
@@ -498,7 +498,9 @@ fn grid_expand_line(gd: &mut Grid, py: u32, mut sx: u32, bg: u32) {
         sx = gd.sx;
     }
 
-    gd.linedata[py as usize].celldata.resize(sx as usize, GRID_CLEARED_ENTRY);
+    gd.linedata[py as usize]
+        .celldata
+        .resize(sx as usize, GRID_CLEARED_ENTRY);
 
     for xx in old_len..sx {
         grid_clear_cell(gd, xx, py, bg);
@@ -938,7 +940,8 @@ impl Grid {
         grid_expand_line(self, py, dx + nx, 8);
 
         let gl = &mut self.linedata[py as usize];
-        gl.celldata.copy_within(px as usize..(px + nx) as usize, dx as usize);
+        gl.celldata
+            .copy_within(px as usize..(px + nx) as usize, dx as usize);
 
         if dx + nx > gl.cellused {
             gl.cellused = dx + nx;
@@ -1402,7 +1405,6 @@ impl Grid {
     }
 }
 
-
 /// Get ANSI foreground sequence.
 /// Get ANSI foreground SGR parameters for a cell style. Returns up to 5
 /// values (e.g. `[38, 2, r, g, b]` for RGB, `[38, 5, idx]` for 256-color,
@@ -1593,9 +1595,7 @@ fn grid_string_cells_code(
 
     // If any attribute is removed, begin with 0
     for &(mask, _) in &ATTRS {
-        if !attr.intersects(mask) && lastattr.intersects(mask)
-            || (lastgc.us != 8 && gc.us == 8)
-        {
+        if !attr.intersects(mask) && lastattr.intersects(mask) || (lastgc.us != 8 && gc.us == 8) {
             s.push(0);
             lastattr &= GridAttr::GRID_ATTR_CHARSET;
             break;
@@ -1907,8 +1907,9 @@ unsafe fn grid_reflow_split(target: *mut Grid, gd: *mut Grid, sx: u32, yy: u32, 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tmux_types::colour_join_rgb;
+
+    use super::*;
 
     /// Helper: create a GridCell with a single ASCII character.
     /// Registers the test codec as a side effect so downstream Grid
@@ -2984,7 +2985,10 @@ mod tests {
         let s = std::str::from_utf8(&buf).unwrap();
         // Should contain the UTF-8 bytes of '世' followed by '!'.
         assert!(s.contains('世'), "expected '世' in output, got: {s}");
-        assert!(s.ends_with('!'), "expected trailing '!' in output, got: {s}");
+        assert!(
+            s.ends_with('!'),
+            "expected trailing '!' in output, got: {s}"
+        );
     }
 
     #[test]

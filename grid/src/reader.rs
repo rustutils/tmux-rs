@@ -38,8 +38,10 @@
 //! middle of a wide character.
 
 use std::ffi::CStr;
+
 use tmux_utf8::Utf8Data;
-use crate::{GridFlag, GridLineFlag, Grid, GridReader, WHITESPACE};
+
+use crate::{Grid, GridFlag, GridLineFlag, GridReader, WHITESPACE};
 
 impl<'a> GridReader<'a> {
     /// Create a Grid reader at the given position over the given Grid.
@@ -326,12 +328,7 @@ impl<'a> GridReader<'a> {
     /// find its start. The cursor lands on the first character of the word.
     ///
     /// If `stop_at_eol` is true, stops at line boundaries rather than crossing them.
-    pub fn cursor_previous_word(
-        &mut self,
-        separators: &CStr,
-        already: i32,
-        stop_at_eol: bool,
-    ) {
+    pub fn cursor_previous_word(&mut self, separators: &CStr, already: i32, stop_at_eol: bool) {
         let mut oldx: i32;
         let word_is_letters;
 
@@ -422,9 +419,7 @@ impl<'a> GridReader<'a> {
                 px += 1;
             }
 
-            if py == yy
-                || !self.gd.line(py).flags.intersects(GridLineFlag::WRAPPED)
-            {
+            if py == yy || !self.gd.line(py).flags.intersects(GridLineFlag::WRAPPED) {
                 return false;
             }
             px = 0;
@@ -459,9 +454,7 @@ impl<'a> GridReader<'a> {
                 px -= 1;
             }
 
-            if py == 1
-                || !self.gd.line(py - 2).flags.intersects(GridLineFlag::WRAPPED)
-            {
+            if py == 1 || !self.gd.line(py - 2).flags.intersects(GridLineFlag::WRAPPED) {
                 return false;
             }
             xx = self.gd.line_length(py - 2);
@@ -487,12 +480,7 @@ impl<'a> GridReader<'a> {
                     return;
                 }
             }
-            if !self
-                .gd
-                .line(py)
-                .flags
-                .intersects(GridLineFlag::WRAPPED)
-            {
+            if !self.gd.line(py).flags.intersects(GridLineFlag::WRAPPED) {
                 break;
             }
         }
@@ -526,7 +514,10 @@ mod tests {
                     Utf8Data::new([ch], 0, 1, 1),
                     GridAttr::empty(),
                     GridFlag::empty(),
-                    8, 8, 8, 0,
+                    8,
+                    8,
+                    8,
+                    0,
                 );
                 gd.set_cell(x as u32, y as u32, &cell);
             }

@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::{PtyClient, TmuxTestHarness};
+
+use super::harness;
 
 /// Helper: create a harness + session + attached client, drain initial output.
 fn setup(cols: u16, rows: u16) -> (TmuxTestHarness, PtyClient) {
@@ -58,10 +58,6 @@ fn fill_pane(client: &mut PtyClient, lines: &[&str]) {
     client.read_raw(); // drain
 }
 
-
-
-
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -81,7 +77,11 @@ fn enter_copy_mode_emacs() {
     set_mode_keys(&tmux, "emacs");
 
     enter_copy_mode(&tmux);
-    assert_eq!(pane_in_mode(&tmux), "1", "pane should be in copy mode (emacs)");
+    assert_eq!(
+        pane_in_mode(&tmux),
+        "1",
+        "pane should be in copy mode (emacs)"
+    );
 }
 
 #[test]
@@ -94,7 +94,11 @@ fn exit_copy_mode_vi() {
 
     // Exit copy mode with cancel
     send_copy_cmd(&tmux, "cancel");
-    assert_eq!(pane_in_mode(&tmux), "0", "pane should have exited copy mode");
+    assert_eq!(
+        pane_in_mode(&tmux),
+        "0",
+        "pane should have exited copy mode"
+    );
 }
 
 #[test]
@@ -106,7 +110,11 @@ fn exit_copy_mode_emacs() {
     assert_eq!(pane_in_mode(&tmux), "1");
 
     send_copy_cmd(&tmux, "cancel");
-    assert_eq!(pane_in_mode(&tmux), "0", "pane should have exited copy mode (emacs)");
+    assert_eq!(
+        pane_in_mode(&tmux),
+        "0",
+        "pane should have exited copy mode (emacs)"
+    );
 }
 
 #[test]
@@ -365,20 +373,12 @@ fn enter_copy_mode_via_prefix_key() {
     client.send_key("[");
     std::thread::sleep(Duration::from_millis(500));
 
-    assert_eq!(
-        pane_in_mode(&tmux),
-        "1",
-        "prefix+[ should enter copy mode"
-    );
+    assert_eq!(pane_in_mode(&tmux), "1", "prefix+[ should enter copy mode");
 
     // Exit with q
     client.send_key("q");
     std::thread::sleep(Duration::from_millis(300));
-    assert_eq!(
-        pane_in_mode(&tmux),
-        "0",
-        "q should exit copy mode"
-    );
+    assert_eq!(pane_in_mode(&tmux), "0", "q should exit copy mode");
 }
 
 #[test]
@@ -408,7 +408,10 @@ fn copy_mode_word_navigation_vi() {
 
     std::thread::sleep(Duration::from_millis(200));
     let buf = show_buffer(&tmux);
-    assert_eq!(buf, "A line", "next-word-end from 'A' should select through end of 'line'");
+    assert_eq!(
+        buf, "A line",
+        "next-word-end from 'A' should select through end of 'line'"
+    );
 }
 
 #[test]
@@ -469,9 +472,18 @@ fn copy_mode_emacs_word_navigation() {
         .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
-    tmux.cmd().args(["set", "-g", "window-size", "manual"]).run().assert_success();
-    tmux.cmd().args(["set-window-option", "-g", "mode-keys", "emacs"]).run().assert_success();
-    tmux.cmd().args(["set-window-option", "-g", "word-separators", ""]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "window-size", "manual"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-window-option", "-g", "mode-keys", "emacs"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-window-option", "-g", "word-separators", ""])
+        .run()
+        .assert_success();
     // Wait for the cat output to fully populate the pane before entering
     // copy mode.
     std::thread::sleep(Duration::from_millis(300));
@@ -498,15 +510,22 @@ fn copy_mode_emacs_word_navigation() {
     x("begin-selection");
     x("previous-word");
     x("copy-selection");
-    assert_eq!(buf(), "A", "next-word-end should land on single-letter word A");
+    assert_eq!(
+        buf(),
+        "A",
+        "next-word-end should land on single-letter word A"
+    );
 
     // next-word-end wraps around indented line breaks. The line is
     // indented with a tab. tmux 3.8 copies it as a tab, older tmux and
     // tmux-rs as spaces. This test is about navigation, so compare with
     // tabs expanded. copy_mode_keeps_tabs checks the tab itself.
-    x("next-word"); x("next-word"); x("next-word");
+    x("next-word");
+    x("next-word");
+    x("next-word");
     x("begin-selection");
-    x("next-word-end"); x("next-word-end");
+    x("next-word-end");
+    x("next-word-end");
     x("copy-selection");
     assert_eq!(buf().replace('\t', "        "), "words\n        Indented");
 
@@ -540,8 +559,10 @@ fn copy_mode_emacs_word_navigation() {
 
     // next-word and next-word-end treat other symbols as letters.
     x("begin-selection");
-    x("next-word"); x("next-word");
-    x("next-word-end"); x("next-word-end");
+    x("next-word");
+    x("next-word");
+    x("next-word-end");
+    x("next-word-end");
     x("copy-selection");
     assert_eq!(buf(), "... @nd then $ym_bols[]{}");
 
@@ -572,7 +593,11 @@ fn copy_mode_emacs_word_navigation() {
     // tmux-rs, so the captured selection contains trailing newlines. Both
     // implementations agree, so we test the bug-compatible behavior.
     x("begin-selection");
-    x("next-word"); x("next-word-end"); x("next-word"); x("next-space"); x("next-space-end");
+    x("next-word");
+    x("next-word-end");
+    x("next-word");
+    x("next-space");
+    x("next-space-end");
     x("copy-selection");
     assert_eq!(buf(), "500xyz\n\n\n\n\n");
 }
@@ -640,12 +665,18 @@ fn rectangle_toggle_vi() {
 
     // Check selection_active is still 1 (selection is on)
     let sel = tmux.query("#{selection_active}");
-    assert_eq!(sel, "1", "selection should be active after rectangle-toggle");
+    assert_eq!(
+        sel, "1",
+        "selection should be active after rectangle-toggle"
+    );
 
     // Toggle off
     send_copy_cmd(&tmux, "rectangle-toggle");
     let sel2 = tmux.query("#{selection_active}");
-    assert_eq!(sel2, "1", "selection should still be active after second rectangle-toggle");
+    assert_eq!(
+        sel2, "1",
+        "selection should still be active after second rectangle-toggle"
+    );
 
     send_copy_cmd(&tmux, "cancel");
 }
@@ -669,7 +700,10 @@ fn jump_forward_vi() {
     // jump-forward to 'e'
     send_copy_cmd_with_args(&tmux, &["jump-forward", "e"]);
     let x_after = tmux.query("#{copy_cursor_x}");
-    assert_eq!(x_after, "4", "jump-forward 'e' should move cursor to column 4");
+    assert_eq!(
+        x_after, "4",
+        "jump-forward 'e' should move cursor to column 4"
+    );
 
     send_copy_cmd(&tmux, "cancel");
 }
@@ -692,7 +726,10 @@ fn jump_backward_vi() {
     // jump-backward to 'c'
     send_copy_cmd_with_args(&tmux, &["jump-backward", "c"]);
     let x_after = tmux.query("#{copy_cursor_x}");
-    assert_eq!(x_after, "2", "jump-backward 'c' should move cursor to column 2");
+    assert_eq!(
+        x_after, "2",
+        "jump-backward 'c' should move cursor to column 2"
+    );
 
     send_copy_cmd(&tmux, "cancel");
 }
@@ -738,7 +775,10 @@ fn search_backward_vi() {
 
     // After finding "alpha", cursor should be on column 0 of that line
     let x = tmux.query("#{copy_cursor_x}");
-    assert_eq!(x, "0", "search-backward 'alpha' should place cursor at col 0");
+    assert_eq!(
+        x, "0",
+        "search-backward 'alpha' should place cursor at col 0"
+    );
 
     // Capture the pane to verify we scrolled to the right place
     let captured = tmux.capture_pane();
@@ -818,17 +858,26 @@ fn word_movement_vi() {
     // next-word again should move to "three" (col 8)
     send_copy_cmd(&tmux, "next-word");
     let x2 = tmux.query("#{copy_cursor_x}");
-    assert_eq!(x2, "8", "next-word from 'two' should move to col 8 ('three')");
+    assert_eq!(
+        x2, "8",
+        "next-word from 'two' should move to col 8 ('three')"
+    );
 
     // previous-word should go back to "two" (col 4)
     send_copy_cmd(&tmux, "previous-word");
     let x3 = tmux.query("#{copy_cursor_x}");
-    assert_eq!(x3, "4", "previous-word from 'three' should move back to col 4 ('two')");
+    assert_eq!(
+        x3, "4",
+        "previous-word from 'three' should move back to col 4 ('two')"
+    );
 
     // next-word-end from "two" should land on 'o' of "two" (col 6)
     send_copy_cmd(&tmux, "next-word-end");
     let x4 = tmux.query("#{copy_cursor_x}");
-    assert_eq!(x4, "6", "next-word-end from start of 'two' should land at col 6 (end of 'two')");
+    assert_eq!(
+        x4, "6",
+        "next-word-end from start of 'two' should land at col 6 (end of 'two')"
+    );
 
     send_copy_cmd(&tmux, "cancel");
 }
@@ -888,7 +937,10 @@ fn start_end_of_line_vi() {
     // end-of-line
     send_copy_cmd(&tmux, "end-of-line");
     let x_end: i32 = tmux.query("#{copy_cursor_x}").parse().unwrap_or(-1);
-    assert!(x_end > 0, "end-of-line should move cursor past col 0, got {x_end}");
+    assert!(
+        x_end > 0,
+        "end-of-line should move cursor past col 0, got {x_end}"
+    );
 
     // start-of-line
     send_copy_cmd(&tmux, "start-of-line");
@@ -967,7 +1019,11 @@ fn emacs_enter_exit_copy_mode() {
 
     // Cancel exits copy mode in emacs
     send_copy_cmd(&tmux, "cancel");
-    assert_eq!(pane_in_mode(&tmux), "0", "cancel should exit emacs copy mode");
+    assert_eq!(
+        pane_in_mode(&tmux),
+        "0",
+        "cancel should exit emacs copy mode"
+    );
 }
 
 #[test]
@@ -997,7 +1053,10 @@ fn emacs_cursor_movement() {
     // end-of-line
     send_copy_cmd(&tmux, "end-of-line");
     let x_end: i32 = tmux.query("#{copy_cursor_x}").parse().unwrap_or(-1);
-    assert!(x_end > 0, "end-of-line should move past col 0 (emacs), got {x_end}");
+    assert!(
+        x_end > 0,
+        "end-of-line should move past col 0 (emacs), got {x_end}"
+    );
 
     // start-of-line
     send_copy_cmd(&tmux, "start-of-line");
@@ -1021,7 +1080,10 @@ fn emacs_selection_with_begin_selection() {
     // begin-selection (C-Space in emacs)
     send_copy_cmd(&tmux, "begin-selection");
     let sel = tmux.query("#{selection_active}");
-    assert_eq!(sel, "1", "begin-selection should activate selection in emacs");
+    assert_eq!(
+        sel, "1",
+        "begin-selection should activate selection in emacs"
+    );
 
     // Move right to extend selection
     send_copy_cmd(&tmux, "cursor-right");
@@ -1030,12 +1092,18 @@ fn emacs_selection_with_begin_selection() {
 
     // Selection should still be active
     let sel2 = tmux.query("#{selection_active}");
-    assert_eq!(sel2, "1", "selection should remain active after cursor movement (emacs)");
+    assert_eq!(
+        sel2, "1",
+        "selection should remain active after cursor movement (emacs)"
+    );
 
     // clear-selection
     send_copy_cmd(&tmux, "clear-selection");
     let sel3 = tmux.query("#{selection_active}");
-    assert_eq!(sel3, "0", "clear-selection should deactivate selection (emacs)");
+    assert_eq!(
+        sel3, "0",
+        "clear-selection should deactivate selection (emacs)"
+    );
 
     send_copy_cmd(&tmux, "cancel");
 }
@@ -1054,15 +1122,15 @@ fn emacs_next_previous_word() {
     // next-word
     send_copy_cmd(&tmux, "next-word");
     let x1: i32 = tmux.query("#{copy_cursor_x}").parse().unwrap_or(-1);
-    assert!(
-        x1 > 0,
-        "next-word should move past col 0 (emacs), got {x1}"
-    );
+    assert!(x1 > 0, "next-word should move past col 0 (emacs), got {x1}");
 
     // previous-word
     send_copy_cmd(&tmux, "previous-word");
     let x2 = tmux.query("#{copy_cursor_x}");
-    assert_eq!(x2, "0", "previous-word should return to start of first word (emacs)");
+    assert_eq!(
+        x2, "0",
+        "previous-word should return to start of first word (emacs)"
+    );
 
     send_copy_cmd(&tmux, "cancel");
 }
@@ -1091,13 +1159,22 @@ fn cursor_down_up_multiple_vi() {
     send_copy_cmd(&tmux, "cursor-down");
     send_copy_cmd(&tmux, "cursor-down");
     let y3: i32 = tmux.query("#{copy_cursor_y}").parse().unwrap_or(-1);
-    assert_eq!(y3, y0 + 3, "three cursor-down should move 3 rows from {y0}, got {y3}");
+    assert_eq!(
+        y3,
+        y0 + 3,
+        "three cursor-down should move 3 rows from {y0}, got {y3}"
+    );
 
     // Move up 2 times
     send_copy_cmd(&tmux, "cursor-up");
     send_copy_cmd(&tmux, "cursor-up");
     let y1: i32 = tmux.query("#{copy_cursor_y}").parse().unwrap_or(-1);
-    assert_eq!(y1, y0 + 1, "two cursor-up from row {y3} should give {}, got {y1}", y0 + 1);
+    assert_eq!(
+        y1,
+        y0 + 1,
+        "two cursor-up from row {y3} should give {}, got {y1}",
+        y0 + 1
+    );
 
     send_copy_cmd(&tmux, "cancel");
 }
@@ -1121,7 +1198,11 @@ fn search_backward_positions_cursor_vi() {
     assert!(y >= 0, "search-backward should position cursor, got y={y}");
 
     // Verify still in copy mode after search
-    assert_eq!(pane_in_mode(&tmux), "1", "should remain in copy mode after search");
+    assert_eq!(
+        pane_in_mode(&tmux),
+        "1",
+        "should remain in copy mode after search"
+    );
 
     send_copy_cmd(&tmux, "cancel");
 }
@@ -1140,7 +1221,13 @@ fn copy_mode_keeps_tabs() {
     tmux.wait_for("#{cursor_y}", |y| y == "1", Duration::from_secs(5));
 
     tmux.cmd().args(["copy-mode"]).run().assert_success();
-    for cmd in ["history-top", "start-of-line", "begin-selection", "end-of-line", "copy-selection"] {
+    for cmd in [
+        "history-top",
+        "start-of-line",
+        "begin-selection",
+        "end-of-line",
+        "copy-selection",
+    ] {
         send_copy_cmd(&tmux, cmd);
     }
     assert_eq!(show_buffer(&tmux), "a\tb");
@@ -1154,16 +1241,24 @@ fn copy_pipe_runs_in_server_directory() {
     let out = std::env::temp_dir().join(format!("tmux-copy-pipe-{}", std::process::id()));
     let _ = std::fs::remove_file(&out);
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-x", "40", "-y", "10", "printf 'x\\n'; exec sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["-x", "40", "-y", "10", "printf 'x\\n'; exec sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(t);
     tmux.wait_for("#{cursor_y}", |y| y == "1", t);
     tmux.cmd().args(["copy-mode"]).run().assert_success();
     send_copy_cmd(&tmux, "begin-selection");
     let cmd = format!("pwd > {}", out.display());
-    tmux.cmd().args(["send-keys", "-X", "copy-pipe", &cmd]).run().assert_success();
+    tmux.cmd()
+        .args(["send-keys", "-X", "copy-pipe", &cmd])
+        .run()
+        .assert_success();
     let start = std::time::Instant::now();
     let pwd = loop {
-        if let Ok(s) = std::fs::read_to_string(&out) && s.ends_with('\n') {
+        if let Ok(s) = std::fs::read_to_string(&out)
+            && s.ends_with('\n')
+        {
             break s;
         }
         assert!(start.elapsed() < t, "copy-pipe command did not run");
@@ -1180,25 +1275,51 @@ fn copy_pipe_runs_in_server_directory() {
 fn selection_follows_mode_style() {
     let t = Duration::from_secs(5);
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-x", "40", "-y", "10", "printf 'hello world\\n'; exec sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args([
+            "-x",
+            "40",
+            "-y",
+            "10",
+            "printf 'hello world\\n'; exec sleep 1000",
+        ])
+        .run()
+        .assert_success();
     tmux.wait_ready(t);
     tmux.wait_for("#{cursor_y}", |y| y == "1", t);
-    tmux.cmd().args(["set", "-g", "@c", "blue"]).run().assert_success();
-    tmux.cmd().args(["set", "-g", "mode-style", "bg=#{@c}"]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "@c", "blue"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "mode-style", "bg=#{@c}"])
+        .run()
+        .assert_success();
     let mut pty = PtyClient::attach(&tmux, 40, 10);
     tmux.wait_for("#{session_attached}", |v| v == "1", t);
     tmux.cmd().args(["copy-mode"]).run().assert_success();
-    for cmd in ["history-top", "start-of-line", "begin-selection", "end-of-line"] {
+    for cmd in [
+        "history-top",
+        "start-of-line",
+        "begin-selection",
+        "end-of-line",
+    ] {
         send_copy_cmd(&tmux, cmd);
     }
     std::thread::sleep(Duration::from_millis(200));
     pty.read_raw();
-    tmux.cmd().args(["set", "-g", "@c", "red"]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "@c", "red"])
+        .run()
+        .assert_success();
     // Red background is SGR 41.
     let start = std::time::Instant::now();
     let mut out = Vec::new();
     while !out.windows(3).any(|w| w == b"41m") {
-        assert!(start.elapsed() < t, "selection was not redrawn with the new style");
+        assert!(
+            start.elapsed() < t,
+            "selection was not redrawn with the new style"
+        );
         out.extend(pty.read_raw());
         std::thread::sleep(Duration::from_millis(20));
     }

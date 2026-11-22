@@ -35,7 +35,6 @@ pub(crate) use crate::libc::{free_, memcpy_, memcpy__, streq_};
 #[macro_use] // evbuffer_add_printf!
 extern crate tmux_event;
 use terminfo_lean::expand::ExpandContext;
-
 use tmux_event::*;
 
 macro_rules! cfg_pub_mods {
@@ -123,9 +122,7 @@ use std::{
     cell::RefCell,
     cmp,
     collections::LinkedList,
-    ffi::{
-        CStr, CString, c_int, c_long, c_longlong, c_uchar, c_uint, c_ulonglong, c_void,
-    },
+    ffi::{CStr, CString, c_int, c_long, c_longlong, c_uchar, c_uint, c_ulonglong, c_void},
     mem::{MaybeUninit, size_of, zeroed},
     path::PathBuf,
     ptr::{NonNull, addr_of, addr_of_mut, null, null_mut},
@@ -137,6 +134,7 @@ use std::{
 };
 
 use tmux_log::*;
+
 pub use crate::tmux::tmux_main;
 use crate::{
     alerts::*,
@@ -145,12 +143,16 @@ use crate::{
     cfg_::*,
     client_::*,
     cmd_::{
-        cmd_attach_session::cmd_attach_session, cmd_find::*, cmd_log_argv, cmd_queue::*,
-        cmd_wait_for::{cmd_wait_for_client_lost, cmd_wait_for_flush}, *,
+        cmd_attach_session::cmd_attach_session,
+        cmd_find::*,
+        cmd_log_argv,
+        cmd_queue::*,
+        cmd_wait_for::{cmd_wait_for_client_lost, cmd_wait_for_flush},
+        *,
     },
     cmd_parse::*,
     colour::*,
-    compat::{imsg::imsg, strtonum, *}, /* strtonum need to disambiguate from libc on macos */
+    compat::{imsg::imsg, strtonum, *}, // strtonum need to disambiguate from libc on macos
     control::{control_write, *},
     control_notify::*,
     environ_::*,
@@ -992,7 +994,6 @@ impl menu_item {
     }
 }
 
-
 struct menu {
     title: String,
     items: Vec<menu_item>,
@@ -1176,7 +1177,6 @@ struct window_pane {
 
     control_bg: i32,
     control_fg: i32,
-
 }
 type window_pane_tree = BTreeMap<u32, *mut window_pane>;
 
@@ -1397,10 +1397,7 @@ impl LayoutArena {
     /// code still holding `*mut layout_cell` keeps working while the
     /// arena owns the box. The pointer is valid until the slot is
     /// `remove`d or the arena is dropped.
-    pub(crate) fn alloc_with_ptr(
-        &mut self,
-        cell: layout_cell,
-    ) -> (LayoutCellId, *mut layout_cell) {
+    pub(crate) fn alloc_with_ptr(&mut self, cell: layout_cell) -> (LayoutCellId, *mut layout_cell) {
         let id = self.alloc(cell);
         let ptr: *mut layout_cell = self.cells[id.0 as usize]
             .as_mut()
@@ -1674,7 +1671,6 @@ struct session {
     environ: Box<Environ>,
 
     references: i32,
-
 }
 type sessions = BTreeMap<String, *mut session>;
 
@@ -1794,7 +1790,6 @@ struct tty_term {
     codes: Vec<tty_code>,
     expand_context: ExpandContext,
     flags: term_flags,
-
 }
 type tty_terms = Vec<Box<tty_term>>;
 
@@ -1884,7 +1879,6 @@ struct tty {
 
 type tty_ctx_redraw_cb = Option<unsafe fn(*const tty_ctx)>;
 type tty_ctx_set_client_cb = Option<unsafe fn(*mut tty_ctx, *mut client) -> i32>;
-
 
 struct tty_ctx {
     s: *mut screen,
@@ -1989,7 +1983,9 @@ impl Clone for args_value {
         unsafe {
             match self {
                 args_value::None => args_value::None,
-                args_value::String { string } => args_value::String { string: string.clone() },
+                args_value::String { string } => args_value::String {
+                    string: string.clone(),
+                },
                 args_value::Commands { cmdlist, .. } => {
                     (**cmdlist).references += 1;
                     args_value::Commands {
@@ -2007,7 +2003,9 @@ impl Drop for args_value {
         // CString/OnceCell<CString> handle their own deallocation.
         // Only the cmdlist needs manual cleanup.
         if let args_value::Commands { cmdlist, .. } = self {
-            unsafe { cmd_list_free(*cmdlist); }
+            unsafe {
+                cmd_list_free(*cmdlist);
+            }
         }
     }
 }
@@ -2052,7 +2050,6 @@ enum cmd_find_type {
     CMD_FIND_WINDOW,
     CMD_FIND_SESSION,
 }
-
 
 #[derive(Copy, Clone, Default)]
 struct cmd_find_state {
@@ -2148,7 +2145,6 @@ impl std::ops::BitAndAssign<cmd_parse_input_flags> for &AtomicCmdParseInputFlags
             .fetch_and(rhs.bits(), std::sync::atomic::Ordering::SeqCst);
     }
 }
-
 
 #[derive(Default)]
 struct cmd_parse_input<'a> {
@@ -2466,7 +2462,6 @@ struct client {
 
     keytable: *mut key_table,
 
-
     message_ignore_keys: c_int,
     message_ignore_styles: c_int,
     message_string: Option<String>,
@@ -2506,7 +2501,6 @@ struct client {
     overlay_timer: Option<TimerHandle>,
 
     files: client_files,
-
 }
 
 /// Control mode subscription type.
@@ -2545,7 +2539,6 @@ type key_tables = BTreeMap<String, Box<key_table>>;
 // Option data.
 type options_array = BTreeMap<u32, options_array_item>;
 
-
 #[derive(Copy, Clone)]
 union options_value {
     string: *mut u8,
@@ -2580,7 +2573,6 @@ const OPTIONS_TABLE_IS_HOOK: i32 = 0x2;
 const OPTIONS_TABLE_IS_STYLE: i32 = 0x4;
 
 unsafe impl Sync for options_table_entry {}
-
 
 struct options_table_entry {
     name: &'static str,
@@ -2627,7 +2619,6 @@ impl options_table_entry {
     }
 }
 
-
 struct options_name_map_str {
     from: &'static str,
     to: &'static str,
@@ -2637,7 +2628,6 @@ impl options_name_map_str {
         Self { from, to }
     }
 }
-
 
 struct options_name_map {
     from: &'static str,

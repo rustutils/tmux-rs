@@ -246,8 +246,9 @@ pub fn fatalx(msg: &str) -> ! {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::{Read, Seek, SeekFrom};
+
+    use super::*;
 
     /// Serialize tests — they mutate process-wide LOG_FILE and LOG_LEVEL.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -267,7 +268,11 @@ mod tests {
             let file_clone = tempfile.reopen().unwrap();
             *LOG_FILE.lock().unwrap() = Some(LineWriter::new(file_clone));
             let prev_level = LOG_LEVEL.swap(1, DEFAULT_ORDERING);
-            LogCapture { tempfile, prev_level, _guard: guard }
+            LogCapture {
+                tempfile,
+                prev_level,
+                _guard: guard,
+            }
         }
 
         fn read_contents(&mut self) -> String {
@@ -275,7 +280,10 @@ mod tests {
             if let Some(f) = LOG_FILE.lock().unwrap().as_mut() {
                 let _ = f.flush();
             }
-            self.tempfile.as_file_mut().seek(SeekFrom::Start(0)).unwrap();
+            self.tempfile
+                .as_file_mut()
+                .seek(SeekFrom::Start(0))
+                .unwrap();
             let mut s = String::new();
             self.tempfile.as_file_mut().read_to_string(&mut s).unwrap();
             s
@@ -296,7 +304,10 @@ mod tests {
         let contents = cap.read_contents();
         // Expect: "<secs>.<micros> <file>:<line> hello world\n"
         assert!(contents.contains(".rs:"), "missing file:line: {contents:?}");
-        assert!(contents.ends_with("hello world\n"), "wrong tail: {contents:?}");
+        assert!(
+            contents.ends_with("hello world\n"),
+            "wrong tail: {contents:?}"
+        );
         // Timestamp starts the line.
         let first = contents.split_whitespace().next().unwrap();
         assert!(first.contains('.'), "no timestamp: {contents:?}");
@@ -309,7 +320,10 @@ mod tests {
         ::log::debug!("adapter works {}", 42);
         let contents = cap.read_contents();
         assert!(contents.contains(".rs:"), "missing file:line: {contents:?}");
-        assert!(contents.ends_with("adapter works 42\n"), "wrong tail: {contents:?}");
+        assert!(
+            contents.ends_with("adapter works 42\n"),
+            "wrong tail: {contents:?}"
+        );
     }
 
     #[test]
@@ -319,11 +333,18 @@ mod tests {
         log_debug!("a\nb\tc");
         let contents = cap.read_contents();
         // stravis VIS_CSTYLE emits \n and \t literal backslash-escapes.
-        assert!(contents.contains(r"\n"), "newline not escaped: {contents:?}");
+        assert!(
+            contents.contains(r"\n"),
+            "newline not escaped: {contents:?}"
+        );
         assert!(contents.contains(r"\t"), "tab not escaped: {contents:?}");
         // And exactly one newline at end of line.
         assert!(contents.ends_with('\n'));
-        assert_eq!(contents.matches('\n').count(), 1, "unexpected newlines: {contents:?}");
+        assert_eq!(
+            contents.matches('\n').count(),
+            1,
+            "unexpected newlines: {contents:?}"
+        );
     }
 
     #[test]
@@ -338,9 +359,13 @@ mod tests {
         // LOG_LEVEL; the adapter checks LOG_LEVEL explicitly. So the
         // log_debug! call DOES write (legacy behavior preserved) while
         // ::log::debug! does not. This test documents that fact.
-        assert!(contents.contains("should not appear"),
-            "log_debug! legacy: writes regardless of LOG_LEVEL when file is open");
-        assert!(!contents.contains("also should not appear"),
-            "log::debug! respects LOG_LEVEL");
+        assert!(
+            contents.contains("should not appear"),
+            "log_debug! legacy: writes regardless of LOG_LEVEL when file is open"
+        );
+        assert!(
+            !contents.contains("also should not appear"),
+            "log::debug! respects LOG_LEVEL"
+        );
     }
 }

@@ -36,12 +36,7 @@ use libc::{regcomp, regex_t, regexec, regfree, regmatch_t};
 ///
 /// The output is not NUL-terminated; callers that need a C string should
 /// append a terminator themselves.
-pub fn regsub(
-    pattern: &CStr,
-    with: &CStr,
-    text: &CStr,
-    flags: c_int,
-) -> Option<Vec<u8>> {
+pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<Vec<u8>> {
     let text_bytes = text.to_bytes();
     if text_bytes.is_empty() {
         return Some(Vec::new());
@@ -173,8 +168,9 @@ pub fn fuzz_regsub(pattern: &[u8], with: &[u8], text: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::ffi::CString;
+
+    use super::*;
 
     fn sub(pattern: &str, with: &str, text: &str) -> Option<String> {
         sub_flags(pattern, with, text, libc::REG_EXTENDED)

@@ -1,9 +1,9 @@
-use super::harness;
-
 use std::path::PathBuf;
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 fn regress_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("regress")
@@ -85,11 +85,7 @@ sleep 5
     tmux.wait_ready(Duration::from_secs(5));
     std::thread::sleep(Duration::from_secs(1));
 
-    let captured = tmux
-        .cmd()
-        .args(["capture-pane", "-pe"])
-        .run()
-        .stdout_str();
+    let captured = tmux.cmd().args(["capture-pane", "-pe"]).run().stdout_str();
     assert_eq!(captured, expected);
 }
 
@@ -99,7 +95,10 @@ fn print_in_pane(printf_arg: &str) -> TmuxTestHarness {
     let t = Duration::from_secs(5);
     let mut tmux = TmuxTestHarness::new();
     let cmd = format!("printf '{printf_arg}|'; exec sleep 1000");
-    tmux.new_session().args(["-x", "40", "-y", "5", &cmd]).run().assert_success();
+    tmux.new_session()
+        .args(["-x", "40", "-y", "5", &cmd])
+        .run()
+        .assert_success();
     tmux.wait_ready(t);
     tmux.wait_for("#{cursor_x}", |v| v != "0", t);
     let start = std::time::Instant::now();
@@ -133,7 +132,10 @@ fn hangul_jamo_compose_into_one_cell() {
     // U+1100 (choseong), U+1161 (jungseong), U+11A8 (jongseong).
     let tmux = print_in_pane(r"\341\204\200\341\205\241\341\206\250x");
     assert_eq!(tmux.query("#{cursor_x}"), "4");
-    assert_eq!(tmux.capture_pane().lines().next().unwrap(), "\u{1100}\u{1161}\u{11a8}x|");
+    assert_eq!(
+        tmux.capture_pane().lines().next().unwrap(),
+        "\u{1100}\u{1161}\u{11a8}x|"
+    );
 }
 
 /// Two regional indicators make one flag, a third starts a new cell.
@@ -144,4 +146,3 @@ fn regional_indicators_pair_up() {
     let tmux = print_in_pane(r"\360\237\207\254\360\237\207\247\360\237\207\253");
     assert_eq!(tmux.query("#{cursor_x}"), "4");
 }
-

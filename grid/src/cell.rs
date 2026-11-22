@@ -13,8 +13,9 @@
 //! definitions live here so future consumers (`tmux-grid`) can depend on
 //! the types without pulling the whole tmux-rs crate.
 
-use crate::{GridAttr, GridFlag};
 use tmux_utf8::{Utf8Char, Utf8Data};
+
+use crate::{GridAttr, GridFlag};
 
 /// Primary in-memory representation of a styled terminal cell.
 ///
@@ -46,7 +47,15 @@ impl GridCell {
         us: i32,
         link: u32,
     ) -> Self {
-        Self { data, attr, flags, fg, bg, us, link }
+        Self {
+            data,
+            attr,
+            flags,
+            fg,
+            bg,
+            us,
+            link,
+        }
     }
 }
 

@@ -1,9 +1,9 @@
-use super::harness;
-
 use std::io::Write;
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 // Ported from regress/conf-syntax.sh
 #[test]
@@ -15,8 +15,13 @@ fn config_syntax_error_handling() {
     writeln!(tmpfile, "not-a-real-command").unwrap();
 
     // The original test uses -f with the bad config
-    let result = tmux.cmd()
-        .args([&format!("-f{}", tmpfile.path().display()), "new-session", "-d"])
+    let result = tmux
+        .cmd()
+        .args([
+            &format!("-f{}", tmpfile.path().display()),
+            "new-session",
+            "-d",
+        ])
         .run();
     // Should still work (bad config lines are skipped with errors)
     // Note: behavior may vary — some configs cause startup failure
@@ -76,12 +81,16 @@ fn if_shell_unknown_command_in_config() {
 
     // Use -C control mode + new-session, which prints %config-error lines
     // for any errors encountered while loading -f.
-    let result = tmux.cmd()
+    let result = tmux
+        .cmd()
         .args([&format!("-f{}", tmp_path), "-C", "new"])
         .stdin("")
         .run();
     let stdout = result.stdout_str();
-    let needle = format!("%config-error {}:1: {}:1: unknown command: wibble", tmp_path, tmp_path);
+    let needle = format!(
+        "%config-error {}:1: {}:1: unknown command: wibble",
+        tmp_path, tmp_path
+    );
     assert!(
         stdout.contains(&needle),
         "expected {needle:?} in control output, got: {stdout:?}"
@@ -129,13 +138,21 @@ fn if_shell_term_from_outside() {
         tmpfile.flush().unwrap();
 
         tmux.cmd()
-            .args([&format!("-f{}", tmpfile.path().display()), "new-session", "-d"])
+            .args([
+                &format!("-f{}", tmpfile.path().display()),
+                "new-session",
+                "-d",
+            ])
             .env("TERM", "xterm")
             .run()
             .assert_success();
         tmux.wait_ready(Duration::from_secs(5));
 
-        let val = tmux.cmd().args(["show", "-vg", "default-terminal"]).run().stdout_trimmed();
+        let val = tmux
+            .cmd()
+            .args(["show", "-vg", "default-terminal"])
+            .run()
+            .stdout_trimmed();
         assert_eq!(val, "vt220", "xterm branch should pick vt220");
     }
 
@@ -150,13 +167,21 @@ fn if_shell_term_from_outside() {
         tmpfile.flush().unwrap();
 
         tmux.cmd()
-            .args([&format!("-f{}", tmpfile.path().display()), "new-session", "-d"])
+            .args([
+                &format!("-f{}", tmpfile.path().display()),
+                "new-session",
+                "-d",
+            ])
             .env("TERM", "screen")
             .run()
             .assert_success();
         tmux.wait_ready(Duration::from_secs(5));
 
-        let val = tmux.cmd().args(["show", "-vg", "default-terminal"]).run().stdout_trimmed();
+        let val = tmux
+            .cmd()
+            .args(["show", "-vg", "default-terminal"])
+            .run()
+            .stdout_trimmed();
         assert_eq!(val, "ansi", "non-xterm branch should pick ansi");
     }
 }
@@ -221,6 +246,10 @@ fn if_shell_nested_tmux_invocation() {
     // Allow the if-shell command to complete
     std::thread::sleep(Duration::from_millis(800));
 
-    let val = tmux.cmd().args(["show", "-vs", "@done"]).run().stdout_trimmed();
+    let val = tmux
+        .cmd()
+        .args(["show", "-vs", "@done"])
+        .run()
+        .stdout_trimmed();
     assert_eq!(val, "yes");
 }

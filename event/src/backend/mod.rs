@@ -21,7 +21,6 @@ pub use event_impl::*;
 // ---------------------------------------------------------------------------
 // Evbuffer shim functions — bridge the C-shaped API to Evbuffer methods.
 // ---------------------------------------------------------------------------
-
 use super::evbuffer_eol_style;
 
 pub fn evbuffer_new() -> *mut evbuffer {
@@ -30,17 +29,23 @@ pub fn evbuffer_new() -> *mut evbuffer {
 
 pub unsafe fn evbuffer_free(buf: *mut evbuffer) {
     if !buf.is_null() {
-        unsafe { drop(Box::from_raw(buf)); }
+        unsafe {
+            drop(Box::from_raw(buf));
+        }
     }
 }
 
 pub unsafe fn evbuffer_get_length(buf: *const evbuffer) -> usize {
-    if buf.is_null() { return 0; }
+    if buf.is_null() {
+        return 0;
+    }
     unsafe { (*buf).len() }
 }
 
 pub unsafe fn evbuffer_add(buf: *mut evbuffer, data: *const c_void, datlen: usize) -> c_int {
-    if buf.is_null() || (data.is_null() && datlen > 0) { return -1; }
+    if buf.is_null() || (data.is_null() && datlen > 0) {
+        return -1;
+    }
     unsafe {
         (*buf).add(std::slice::from_raw_parts(data.cast::<u8>(), datlen));
     }
@@ -48,13 +53,19 @@ pub unsafe fn evbuffer_add(buf: *mut evbuffer, data: *const c_void, datlen: usiz
 }
 
 pub unsafe fn evbuffer_drain(buf: *mut evbuffer, len: usize) -> c_int {
-    if buf.is_null() { return -1; }
-    unsafe { (*buf).drain(len); }
+    if buf.is_null() {
+        return -1;
+    }
+    unsafe {
+        (*buf).drain(len);
+    }
     0
 }
 
 pub unsafe fn evbuffer_pullup(buf: *mut evbuffer, _size: isize) -> *mut u8 {
-    if buf.is_null() { return std::ptr::null_mut(); }
+    if buf.is_null() {
+        return std::ptr::null_mut();
+    }
     unsafe { (*buf).as_mut_ptr() }
 }
 
@@ -63,7 +74,9 @@ pub unsafe fn evbuffer_readln(
     n_read_out: *mut usize,
     _eol_style: evbuffer_eol_style,
 ) -> *mut u8 {
-    if buffer.is_null() { return std::ptr::null_mut(); }
+    if buffer.is_null() {
+        return std::ptr::null_mut();
+    }
     unsafe {
         match (*buffer).readln_lf() {
             Some(line) => {
@@ -84,15 +97,25 @@ pub unsafe fn evbuffer_readln(
 
 /// Read and remove a line (NUL-terminated), legacy API.
 pub unsafe fn evbuffer_readline(buffer: *mut evbuffer) -> *mut u8 {
-    unsafe { evbuffer_readln(buffer, std::ptr::null_mut(), evbuffer_eol_style::EVBUFFER_EOL_ANY) }
+    unsafe {
+        evbuffer_readln(
+            buffer,
+            std::ptr::null_mut(),
+            evbuffer_eol_style::EVBUFFER_EOL_ANY,
+        )
+    }
 }
 
 pub unsafe fn evbuffer_read(buffer: *mut evbuffer, fd: c_int, howmuch: c_int) -> c_int {
-    if buffer.is_null() { return -1; }
+    if buffer.is_null() {
+        return -1;
+    }
     unsafe { (*buffer).read_from_fd(fd, howmuch) }
 }
 
 pub unsafe fn evbuffer_write(buffer: *mut evbuffer, fd: c_int) -> c_int {
-    if buffer.is_null() { return -1; }
+    if buffer.is_null() {
+        return -1;
+    }
     unsafe { (*buffer).write_to_fd(fd) }
 }

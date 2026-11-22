@@ -31,8 +31,9 @@
 // tmux-rs tree references via re-export. Rename is tracked separately.
 #![allow(non_camel_case_types)]
 
-use libc::wchar_t;
 use std::cell::RefCell;
+
+use libc::wchar_t;
 
 // libc crate doesn't expose these on Linux; declare the externs directly.
 // (Not widely a portability issue — tmux-rs already ships for Linux/macOS/BSD.)
@@ -62,6 +63,7 @@ use std::fmt::{self, Display};
 use std::mem::MaybeUninit;
 use std::ptr::{null, null_mut};
 use std::slice;
+
 use unicode_width::UnicodeWidthChar;
 
 mod data;
@@ -142,14 +144,15 @@ impl utf8_item_data {
         for (i, ch) in bytes.iter().enumerate() {
             data[i] = MaybeUninit::new(*ch);
         }
-        Self { data, size: bytes.len() as u8 }
+        Self {
+            data,
+            size: bytes.len() as u8,
+        }
     }
 
     fn initialized_slice(&self) -> &[u8] {
         // SAFETY: type invariant — bytes up to `size` were written by `new`.
-        unsafe {
-            std::slice::from_raw_parts(self.data.as_ptr().cast(), self.size as usize)
-        }
+        unsafe { std::slice::from_raw_parts(self.data.as_ptr().cast(), self.size as usize) }
     }
 }
 
@@ -214,7 +217,9 @@ pub unsafe fn utf8_put_item(data: *const [u8; UTF8_SIZE], size: usize, index: *m
             return -1;
         }
 
-        let ui_index = utf8_item_index { index: UTF8_NEXT_INDEX };
+        let ui_index = utf8_item_index {
+            index: UTF8_NEXT_INDEX,
+        };
         UTF8_NEXT_INDEX += 1;
 
         let ui_data = *ud;
@@ -236,38 +241,176 @@ pub unsafe fn utf8_put_item(data: *const [u8; UTF8_SIZE], size: usize, index: *m
 /// regional indicators, which are narrow until two of them pair up into a
 /// flag. Sorted by codepoint for a binary search.
 static UTF8_DEFAULT_WIDTHS: [(wchar_t, i32); 162] = [
-    (0x0261D, 2), (0x026F9, 2), (0x0270A, 2), (0x0270B, 2), (0x0270C, 2), (0x0270D, 2),
-    (0x1F1E6, 1), (0x1F1E7, 1), (0x1F1E8, 1), (0x1F1E9, 1), (0x1F1EA, 1), (0x1F1EB, 1),
-    (0x1F1EC, 1), (0x1F1ED, 1), (0x1F1EE, 1), (0x1F1EF, 1), (0x1F1F0, 1), (0x1F1F1, 1),
-    (0x1F1F2, 1), (0x1F1F3, 1), (0x1F1F4, 1), (0x1F1F5, 1), (0x1F1F6, 1), (0x1F1F7, 1),
-    (0x1F1F8, 1), (0x1F1F9, 1), (0x1F1FA, 1), (0x1F1FB, 1), (0x1F1FC, 1), (0x1F1FD, 1),
-    (0x1F1FE, 1), (0x1F1FF, 1), (0x1F385, 2), (0x1F3C2, 2), (0x1F3C3, 2), (0x1F3C4, 2),
-    (0x1F3C7, 2), (0x1F3CA, 2), (0x1F3CB, 2), (0x1F3CC, 2), (0x1F3FB, 2), (0x1F3FC, 2),
-    (0x1F3FD, 2), (0x1F3FE, 2), (0x1F3FF, 2), (0x1F442, 2), (0x1F443, 2), (0x1F446, 2),
-    (0x1F447, 2), (0x1F448, 2), (0x1F449, 2), (0x1F44A, 2), (0x1F44B, 2), (0x1F44C, 2),
-    (0x1F44D, 2), (0x1F44E, 2), (0x1F44F, 2), (0x1F450, 2), (0x1F466, 2), (0x1F467, 2),
-    (0x1F468, 2), (0x1F469, 2), (0x1F46B, 2), (0x1F46C, 2), (0x1F46D, 2), (0x1F46E, 2),
-    (0x1F470, 2), (0x1F471, 2), (0x1F472, 2), (0x1F473, 2), (0x1F474, 2), (0x1F475, 2),
-    (0x1F476, 2), (0x1F477, 2), (0x1F478, 2), (0x1F47C, 2), (0x1F481, 2), (0x1F482, 2),
-    (0x1F483, 2), (0x1F485, 2), (0x1F486, 2), (0x1F487, 2), (0x1F48F, 2), (0x1F491, 2),
-    (0x1F4AA, 2), (0x1F574, 2), (0x1F575, 2), (0x1F57A, 2), (0x1F590, 2), (0x1F595, 2),
-    (0x1F596, 2), (0x1F645, 2), (0x1F646, 2), (0x1F647, 2), (0x1F64B, 2), (0x1F64C, 2),
-    (0x1F64D, 2), (0x1F64E, 2), (0x1F64F, 2), (0x1F6A3, 2), (0x1F6B4, 2), (0x1F6B5, 2),
-    (0x1F6B6, 2), (0x1F6C0, 2), (0x1F6CC, 2), (0x1F90C, 2), (0x1F90F, 2), (0x1F918, 2),
-    (0x1F919, 2), (0x1F91A, 2), (0x1F91B, 2), (0x1F91C, 2), (0x1F91D, 2), (0x1F91E, 2),
-    (0x1F91F, 2), (0x1F926, 2), (0x1F930, 2), (0x1F931, 2), (0x1F932, 2), (0x1F933, 2),
-    (0x1F934, 2), (0x1F935, 2), (0x1F936, 2), (0x1F937, 2), (0x1F938, 2), (0x1F939, 2),
-    (0x1F93D, 2), (0x1F93E, 2), (0x1F977, 2), (0x1F9B5, 2), (0x1F9B6, 2), (0x1F9B8, 2),
-    (0x1F9B9, 2), (0x1F9BB, 2), (0x1F9CD, 2), (0x1F9CE, 2), (0x1F9CF, 2), (0x1F9D1, 2),
-    (0x1F9D2, 2), (0x1F9D3, 2), (0x1F9D4, 2), (0x1F9D5, 2), (0x1F9D6, 2), (0x1F9D7, 2),
-    (0x1F9D8, 2), (0x1F9D9, 2), (0x1F9DA, 2), (0x1F9DB, 2), (0x1F9DC, 2), (0x1F9DD, 2),
-    (0x1FAC3, 2), (0x1FAC4, 2), (0x1FAC5, 2), (0x1FAF0, 2), (0x1FAF1, 2), (0x1FAF2, 2),
-    (0x1FAF3, 2), (0x1FAF4, 2), (0x1FAF5, 2), (0x1FAF6, 2), (0x1FAF7, 2), (0x1FAF8, 2),
+    (0x0261D, 2),
+    (0x026F9, 2),
+    (0x0270A, 2),
+    (0x0270B, 2),
+    (0x0270C, 2),
+    (0x0270D, 2),
+    (0x1F1E6, 1),
+    (0x1F1E7, 1),
+    (0x1F1E8, 1),
+    (0x1F1E9, 1),
+    (0x1F1EA, 1),
+    (0x1F1EB, 1),
+    (0x1F1EC, 1),
+    (0x1F1ED, 1),
+    (0x1F1EE, 1),
+    (0x1F1EF, 1),
+    (0x1F1F0, 1),
+    (0x1F1F1, 1),
+    (0x1F1F2, 1),
+    (0x1F1F3, 1),
+    (0x1F1F4, 1),
+    (0x1F1F5, 1),
+    (0x1F1F6, 1),
+    (0x1F1F7, 1),
+    (0x1F1F8, 1),
+    (0x1F1F9, 1),
+    (0x1F1FA, 1),
+    (0x1F1FB, 1),
+    (0x1F1FC, 1),
+    (0x1F1FD, 1),
+    (0x1F1FE, 1),
+    (0x1F1FF, 1),
+    (0x1F385, 2),
+    (0x1F3C2, 2),
+    (0x1F3C3, 2),
+    (0x1F3C4, 2),
+    (0x1F3C7, 2),
+    (0x1F3CA, 2),
+    (0x1F3CB, 2),
+    (0x1F3CC, 2),
+    (0x1F3FB, 2),
+    (0x1F3FC, 2),
+    (0x1F3FD, 2),
+    (0x1F3FE, 2),
+    (0x1F3FF, 2),
+    (0x1F442, 2),
+    (0x1F443, 2),
+    (0x1F446, 2),
+    (0x1F447, 2),
+    (0x1F448, 2),
+    (0x1F449, 2),
+    (0x1F44A, 2),
+    (0x1F44B, 2),
+    (0x1F44C, 2),
+    (0x1F44D, 2),
+    (0x1F44E, 2),
+    (0x1F44F, 2),
+    (0x1F450, 2),
+    (0x1F466, 2),
+    (0x1F467, 2),
+    (0x1F468, 2),
+    (0x1F469, 2),
+    (0x1F46B, 2),
+    (0x1F46C, 2),
+    (0x1F46D, 2),
+    (0x1F46E, 2),
+    (0x1F470, 2),
+    (0x1F471, 2),
+    (0x1F472, 2),
+    (0x1F473, 2),
+    (0x1F474, 2),
+    (0x1F475, 2),
+    (0x1F476, 2),
+    (0x1F477, 2),
+    (0x1F478, 2),
+    (0x1F47C, 2),
+    (0x1F481, 2),
+    (0x1F482, 2),
+    (0x1F483, 2),
+    (0x1F485, 2),
+    (0x1F486, 2),
+    (0x1F487, 2),
+    (0x1F48F, 2),
+    (0x1F491, 2),
+    (0x1F4AA, 2),
+    (0x1F574, 2),
+    (0x1F575, 2),
+    (0x1F57A, 2),
+    (0x1F590, 2),
+    (0x1F595, 2),
+    (0x1F596, 2),
+    (0x1F645, 2),
+    (0x1F646, 2),
+    (0x1F647, 2),
+    (0x1F64B, 2),
+    (0x1F64C, 2),
+    (0x1F64D, 2),
+    (0x1F64E, 2),
+    (0x1F64F, 2),
+    (0x1F6A3, 2),
+    (0x1F6B4, 2),
+    (0x1F6B5, 2),
+    (0x1F6B6, 2),
+    (0x1F6C0, 2),
+    (0x1F6CC, 2),
+    (0x1F90C, 2),
+    (0x1F90F, 2),
+    (0x1F918, 2),
+    (0x1F919, 2),
+    (0x1F91A, 2),
+    (0x1F91B, 2),
+    (0x1F91C, 2),
+    (0x1F91D, 2),
+    (0x1F91E, 2),
+    (0x1F91F, 2),
+    (0x1F926, 2),
+    (0x1F930, 2),
+    (0x1F931, 2),
+    (0x1F932, 2),
+    (0x1F933, 2),
+    (0x1F934, 2),
+    (0x1F935, 2),
+    (0x1F936, 2),
+    (0x1F937, 2),
+    (0x1F938, 2),
+    (0x1F939, 2),
+    (0x1F93D, 2),
+    (0x1F93E, 2),
+    (0x1F977, 2),
+    (0x1F9B5, 2),
+    (0x1F9B6, 2),
+    (0x1F9B8, 2),
+    (0x1F9B9, 2),
+    (0x1F9BB, 2),
+    (0x1F9CD, 2),
+    (0x1F9CE, 2),
+    (0x1F9CF, 2),
+    (0x1F9D1, 2),
+    (0x1F9D2, 2),
+    (0x1F9D3, 2),
+    (0x1F9D4, 2),
+    (0x1F9D5, 2),
+    (0x1F9D6, 2),
+    (0x1F9D7, 2),
+    (0x1F9D8, 2),
+    (0x1F9D9, 2),
+    (0x1F9DA, 2),
+    (0x1F9DB, 2),
+    (0x1F9DC, 2),
+    (0x1F9DD, 2),
+    (0x1FAC3, 2),
+    (0x1FAC4, 2),
+    (0x1FAC5, 2),
+    (0x1FAF0, 2),
+    (0x1FAF1, 2),
+    (0x1FAF2, 2),
+    (0x1FAF3, 2),
+    (0x1FAF4, 2),
+    (0x1FAF5, 2),
+    (0x1FAF6, 2),
+    (0x1FAF7, 2),
+    (0x1FAF8, 2),
 ];
 
 /// The width tmux 3.8 gives `wc` by default, if it overrides it.
 pub fn utf8_default_width(wc: wchar_t) -> Option<i32> {
-    UTF8_DEFAULT_WIDTHS.binary_search_by_key(&wc, |&(w, _)| w).ok().map(|i| UTF8_DEFAULT_WIDTHS[i].1)
+    UTF8_DEFAULT_WIDTHS
+        .binary_search_by_key(&wc, |&(w, _)| w)
+        .ok()
+        .map(|i| UTF8_DEFAULT_WIDTHS[i].1)
 }
 
 /// Binary search for `find` in a sorted `wchar_t` table. Used by
@@ -422,7 +565,11 @@ pub unsafe fn utf8_width(ud: *mut Utf8Data, width: *mut i32) -> Utf8State {
         *width = match columns {
             Some(w) => w as i32,
             None => {
-                if (0x80..=0x9f).contains(&wc) { 0 } else { 1 }
+                if (0x80..=0x9f).contains(&wc) {
+                    0
+                } else {
+                    1
+                }
             }
         };
         log::debug!("utf8_width({:05X}) = {}", wc, *width);
@@ -494,7 +641,12 @@ pub unsafe fn utf8_fromwc(wc: wchar_t, ud: *mut Utf8Data) -> Utf8State {
 /// `ud` must be writable for a full `Utf8Data`.
 pub unsafe fn utf8_open(ud: *mut Utf8Data, ch: c_uchar) -> Utf8State {
     unsafe {
-        *ud = Utf8Data { data: [0; UTF8_SIZE], have: 0, size: 0, width: 0 };
+        *ud = Utf8Data {
+            data: [0; UTF8_SIZE],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
         (*ud).size = match ch {
             0xc2..=0xdf => 2,
             0xe0..=0xef => 3,
@@ -548,7 +700,12 @@ pub unsafe fn utf8_append(ud: *mut Utf8Data, ch: c_uchar) -> Utf8State {
 /// `s` must be a valid NUL-terminated byte string.
 pub unsafe fn utf8_isvalid(mut s: *const u8) -> bool {
     unsafe {
-        let mut ud: Utf8Data = Utf8Data { data: [0; UTF8_SIZE], have: 0, size: 0, width: 0 };
+        let mut ud: Utf8Data = Utf8Data {
+            data: [0; UTF8_SIZE],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
         let end = {
             let mut p = s;
             while *p != 0 {
@@ -598,7 +755,12 @@ pub unsafe fn utf8_cstrhas(set: *const u8, ud: *const Utf8Data) -> bool {
     unsafe {
         let mut p = set;
         while *p != 0 {
-            let mut candidate: Utf8Data = Utf8Data { data: [0; UTF8_SIZE], have: 0, size: 0, width: 0 };
+            let mut candidate: Utf8Data = Utf8Data {
+                data: [0; UTF8_SIZE],
+                have: 0,
+                size: 0,
+                width: 0,
+            };
             let byte = *p;
             if (0xc2..=0xf4).contains(&byte) {
                 // Multi-byte — try streaming decode.
@@ -652,9 +814,16 @@ impl Utf8Data {
     /// Construct a `Utf8Data` for a single ASCII byte. Convenience
     /// wrapper over [`utf8_set`] for the common "printable char" case.
     pub fn single(ch: u8) -> Self {
-        let mut ud = Utf8Data { data: [0; UTF8_SIZE], have: 0, size: 0, width: 0 };
+        let mut ud = Utf8Data {
+            data: [0; UTF8_SIZE],
+            have: 0,
+            size: 0,
+            width: 0,
+        };
         // SAFETY: `ud` is on the stack, exclusive, fully owned.
-        unsafe { utf8_set(&raw mut ud, ch); }
+        unsafe {
+            utf8_set(&raw mut ud, ch);
+        }
         ud
     }
 
@@ -712,7 +881,12 @@ impl Utf8Data {
     /// Zeroed placeholder — equivalent to the C `{0}` initializer pattern.
     /// Used as the starting state for streaming decode via [`Utf8Data::open`].
     pub const fn empty() -> Self {
-        Utf8Data { data: [0; UTF8_SIZE], have: 0, size: 0, width: 0 }
+        Utf8Data {
+            data: [0; UTF8_SIZE],
+            have: 0,
+            size: 0,
+            width: 0,
+        }
     }
 
     /// Start a streaming decode: initialize `self` from a lead byte
@@ -764,8 +938,9 @@ pub fn utf8_is_valid_cstr(s: &std::ffi::CStr) -> bool {
 }
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::mem::zeroed;
+
+    use super::*;
 
     // ---------------------------------------------------------------
     // utf8_build_one
@@ -823,11 +998,7 @@ mod tests {
     fn set_get_width_roundtrip() {
         for w in 0..=2u8 {
             let packed = utf8_set_width(w);
-            assert_eq!(
-                utf8_get_width(packed),
-                w,
-                "width round-trip failed for {w}"
-            );
+            assert_eq!(utf8_get_width(packed), w, "width round-trip failed for {w}");
         }
     }
 

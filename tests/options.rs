@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 #[test]
 fn set_and_get_global_option() {
@@ -105,7 +105,10 @@ fn default_terminal_option() {
     tmux.wait_ready(Duration::from_secs(5));
 
     // default-terminal should have a value
-    let val = tmux.cmd().args(["show-options", "-gv", "default-terminal"]).run();
+    let val = tmux
+        .cmd()
+        .args(["show-options", "-gv", "default-terminal"])
+        .run();
     let term = val.stdout_trimmed();
     assert!(!term.is_empty(), "default-terminal should not be empty");
 }

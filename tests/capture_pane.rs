@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 // Ported from regress/capture-pane-sgr0.sh
 // capture-pane should re-emit colours after SGR 0 reset.
@@ -35,7 +35,8 @@ fn capture_pane_sgr0_reset() {
 #[test]
 fn capture_pane_hyperlink_with_id() {
     let tmux = TmuxTestHarness::new();
-    let cmd = "printf '\\033]8;id=1;https://github.com\\033\\\\test1\\033]8;;\\033\\\\\\n'; sleep 5";
+    let cmd =
+        "printf '\\033]8;id=1;https://github.com\\033\\\\test1\\033]8;;\\033\\\\\\n'; sleep 5";
     tmux.cmd()
         .args(["-f/dev/null", "new", "-d", cmd])
         .run()
@@ -69,8 +70,6 @@ fn capture_pane_hyperlink_without_id() {
         .args(["capture-pane", "-pe", "-S", "0", "-E", "1"])
         .run()
         .stdout_str();
-    let expected =
-        "\u{1b}]8;;https://github.com/tmux/tmux\u{1b}\\test1\u{1b}]8;;\u{1b}\\\n\n";
+    let expected = "\u{1b}]8;;https://github.com/tmux/tmux\u{1b}\\test1\u{1b}]8;;\u{1b}\\\n\n";
     assert_eq!(captured, expected);
 }
-

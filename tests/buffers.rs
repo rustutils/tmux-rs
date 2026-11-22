@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 // ---------------------------------------------------------------------------
 // set-buffer
@@ -146,8 +146,14 @@ fn list_buffers_shows_entries() {
     assert_eq!(lines.len(), 2, "expected 2 buffers, got: {output}");
 
     // Both buffer names should appear somewhere in the output
-    assert!(output.contains("buf0"), "output should mention buf0: {output}");
-    assert!(output.contains("buf1"), "output should mention buf1: {output}");
+    assert!(
+        output.contains("buf0"),
+        "output should mention buf0: {output}"
+    );
+    assert!(
+        output.contains("buf1"),
+        "output should mention buf1: {output}"
+    );
 }
 
 #[test]
@@ -416,10 +422,7 @@ fn load_buffer_roundtrip_with_save() {
         .run()
         .assert_success();
 
-    tmux.cmd()
-        .args(["delete-buffer"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["delete-buffer"]).run().assert_success();
 
     // Verify buffer is gone
     let result = tmux.cmd().args(["show-buffer"]).run();
@@ -443,7 +446,10 @@ fn load_buffer_roundtrip_with_save() {
 #[test]
 fn paste_buffer_into_pane() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["--", "cat"]).run().assert_success();
+    tmux.new_session()
+        .args(["--", "cat"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // Give cat a moment to start
@@ -454,10 +460,7 @@ fn paste_buffer_into_pane() {
         .run()
         .assert_success();
 
-    tmux.cmd()
-        .args(["paste-buffer"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["paste-buffer"]).run().assert_success();
 
     // Give cat time to echo back
     std::thread::sleep(Duration::from_millis(500));
@@ -472,7 +475,10 @@ fn paste_buffer_into_pane() {
 #[test]
 fn paste_buffer_named_into_pane() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["--", "cat"]).run().assert_success();
+    tmux.new_session()
+        .args(["--", "cat"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     std::thread::sleep(Duration::from_millis(200));
@@ -499,7 +505,10 @@ fn paste_buffer_named_into_pane() {
 #[test]
 fn paste_buffer_delete_flag() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["--", "cat"]).run().assert_success();
+    tmux.new_session()
+        .args(["--", "cat"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     std::thread::sleep(Duration::from_millis(200));
@@ -534,10 +543,7 @@ fn paste_buffer_nonexistent_fails() {
     tmux.new_session().run().assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
-    let result = tmux
-        .cmd()
-        .args(["paste-buffer", "-b", "nonexistent"])
-        .run();
+    let result = tmux.cmd().args(["paste-buffer", "-b", "nonexistent"]).run();
     result.assert_failure();
 }
 
@@ -598,10 +604,7 @@ fn delete_buffer_nonexistent_fails() {
     tmux.new_session().run().assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
-    let result = tmux
-        .cmd()
-        .args(["delete-buffer", "-b", "nope"])
-        .run();
+    let result = tmux.cmd().args(["delete-buffer", "-b", "nope"]).run();
     result.assert_failure();
 }
 
@@ -674,12 +677,22 @@ fn wait_for_clipboard_query(client: &mut harness::PtyClient) {
     let mut seen = Vec::new();
     while start.elapsed() < Duration::from_secs(5) {
         seen.extend(client.read_raw());
-        if seen.windows(7).any(|w| w == b"\x1b]52;c;" || w == b"\x1b]52;;?") || seen.windows(5).any(|w| w == b"52;?\x07" || w == b";?\x1b\\\x07") || seen.windows(4).any(|w| w == b";?\x07") {
+        if seen
+            .windows(7)
+            .any(|w| w == b"\x1b]52;c;" || w == b"\x1b]52;;?")
+            || seen
+                .windows(5)
+                .any(|w| w == b"52;?\x07" || w == b";?\x1b\\\x07")
+            || seen.windows(4).any(|w| w == b";?\x07")
+        {
             return;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    panic!("no clipboard query sent to the terminal: {:?}", String::from_utf8_lossy(&seen));
+    panic!(
+        "no clipboard query sent to the terminal: {:?}",
+        String::from_utf8_lossy(&seen)
+    );
 }
 
 /// refresh-client -l asks the terminal for its clipboard and stores the
@@ -692,27 +705,49 @@ fn refresh_client_l_stores_clipboard_reply() {
     tmux.new_session().run().assert_success();
     tmux.wait_ready(Duration::from_secs(5));
     tmux.cmd()
-        .args(["set", "-as", "terminal-overrides", ",*:Ms=\\E]52;%p1%s;%p2%s\\007"])
+        .args([
+            "set",
+            "-as",
+            "terminal-overrides",
+            ",*:Ms=\\E]52;%p1%s;%p2%s\\007",
+        ])
         .run()
         .assert_success();
 
     let mut client = harness::PtyClient::attach(&tmux, 80, 24);
     tmux.wait_for("#{session_attached}", |v| v == "1", Duration::from_secs(5));
-    let name = tmux.cmd().args(["list-clients", "-F", "#{client_name}"]).run().stdout_trimmed();
+    let name = tmux
+        .cmd()
+        .args(["list-clients", "-F", "#{client_name}"])
+        .run()
+        .stdout_trimmed();
     client.read_raw();
 
-    tmux.cmd().args(["refresh-client", "-l", "-t", &name]).run().assert_success();
+    tmux.cmd()
+        .args(["refresh-client", "-l", "-t", &name])
+        .run()
+        .assert_success();
     wait_for_clipboard_query(&mut client);
     client.write(b"\x1b]52;c;aGVsbG8=\x07");
     tmux.wait_for("#{buffer_sample}", |v| v == "hello", Duration::from_secs(5));
 
-    tmux.cmd().args(["refresh-client", "-l", "-t", &name]).run().assert_success();
+    tmux.cmd()
+        .args(["refresh-client", "-l", "-t", &name])
+        .run()
+        .assert_success();
     wait_for_clipboard_query(&mut client);
     client.write(b"\x1b]52;c;aGVsbG\x07");
     std::thread::sleep(Duration::from_millis(300));
-    let buffers = tmux.cmd().args(["list-buffers", "-F", "#{buffer_sample}"]).run();
+    let buffers = tmux
+        .cmd()
+        .args(["list-buffers", "-F", "#{buffer_sample}"])
+        .run();
     buffers.assert_success();
-    assert_eq!(buffers.stdout_trimmed(), "hello", "invalid reply must not create a buffer");
+    assert_eq!(
+        buffers.stdout_trimmed(),
+        "hello",
+        "invalid reply must not create a buffer"
+    );
 }
 
 /// A program in a pane can set the clipboard with OSC 52, which creates a
@@ -724,12 +759,23 @@ fn osc52_from_pane_creates_buffer() {
     tmux.new_session().args(["cat"]).run().assert_success();
     tmux.wait_ready(Duration::from_secs(5));
     // The default (external) only passes the sequence to the terminal.
-    tmux.cmd().args(["set", "-s", "set-clipboard", "on"]).run().assert_success();
     tmux.cmd()
-        .args(["respawn-pane", "-k", "printf '\\033]52;c;aGVsbG8gMjAyNg==\\007'; cat"])
+        .args(["set", "-s", "set-clipboard", "on"])
         .run()
         .assert_success();
-    tmux.wait_for("#{buffer_sample}", |v| v == "hello 2026", Duration::from_secs(5));
+    tmux.cmd()
+        .args([
+            "respawn-pane",
+            "-k",
+            "printf '\\033]52;c;aGVsbG8gMjAyNg==\\007'; cat",
+        ])
+        .run()
+        .assert_success();
+    tmux.wait_for(
+        "#{buffer_sample}",
+        |v| v == "hello 2026",
+        Duration::from_secs(5),
+    );
 }
 
 /// File errors give the error first and the path last (tmux 3.8), so
@@ -737,18 +783,27 @@ fn osc52_from_pane_creates_buffer() {
 #[test]
 fn file_errors_put_the_path_last() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     let missing = "/nonexistent-tmux-rs-test/file";
     let load = tmux.cmd().args(["load-buffer", missing]).run();
     load.assert_failure();
-    assert_eq!(load.stderr_str().trim(), format!("No such file or directory: {missing}"));
+    assert_eq!(
+        load.stderr_str().trim(),
+        format!("No such file or directory: {missing}")
+    );
 
     tmux.cmd().args(["set-buffer", "x"]).run().assert_success();
     let save = tmux.cmd().args(["save-buffer", missing]).run();
     save.assert_failure();
-    assert_eq!(save.stderr_str().trim(), format!("No such file or directory: {missing}"));
+    assert_eq!(
+        save.stderr_str().trim(),
+        format!("No such file or directory: {missing}")
+    );
 }
 
 /// Mode key handlers compare the whole key code. They used to compare only
@@ -757,10 +812,19 @@ fn file_errors_put_the_path_last() {
 #[test]
 fn choose_buffer_ignores_modified_key_with_same_low_byte() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
-    tmux.cmd().args(["set-buffer", "-b", "one", "1"]).run().assert_success();
-    tmux.cmd().args(["set-buffer", "-b", "two", "2"]).run().assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "one", "1"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "two", "2"])
+        .run()
+        .assert_success();
 
     // An attached client running no shell: keys typed here go to the mode.
     let mut client = harness::PtyClient::attach(&tmux, 80, 24);

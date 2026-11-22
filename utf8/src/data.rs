@@ -52,7 +52,12 @@ impl Utf8Data {
             i += 1;
         }
 
-        Self { data: padded_data, have, size, width }
+        Self {
+            data: padded_data,
+            have,
+            size,
+            width,
+        }
     }
 
     /// Return the valid-byte prefix of `data` — `data[..size]`.

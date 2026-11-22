@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::{PtyClient, TmuxTestHarness};
+
+use super::harness;
 
 /// Verify that the automatic-rename timer fires: when a pane runs a new
 /// command, the window name should update to reflect it.
@@ -24,11 +24,7 @@ fn automatic_rename_updates_window_name() {
         .run()
         .assert_success();
 
-    let name = tmux.wait_for(
-        "#{window_name}",
-        |v| v == "cat",
-        Duration::from_secs(5),
-    );
+    let name = tmux.wait_for("#{window_name}", |v| v == "cat", Duration::from_secs(5));
     assert_eq!(name, "cat");
 }
 
@@ -90,10 +86,7 @@ fn monitor_silence_triggers_alert() {
     tmux.wait_ready(Duration::from_secs(5));
 
     // Create a second window so we can monitor the first from the second.
-    tmux.cmd()
-        .args(["new-window"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["new-window"]).run().assert_success();
 
     // Enable silence monitoring on window 0 with a 2-second timeout.
     tmux.cmd()
@@ -111,8 +104,15 @@ fn monitor_silence_triggers_alert() {
     let start = std::time::Instant::now();
     let timeout = Duration::from_secs(5);
     loop {
-        let result = tmux.cmd()
-            .args(["display-message", "-t", ":0", "-p", "#{window_silence_flag}"])
+        let result = tmux
+            .cmd()
+            .args([
+                "display-message",
+                "-t",
+                ":0",
+                "-p",
+                "#{window_silence_flag}",
+            ])
             .run();
         let flag = result.stdout_trimmed();
         if flag == "1" {
@@ -176,7 +176,12 @@ fn session_lock_timer_fires() {
         .run()
         .assert_success();
     tmux.cmd()
-        .args(["set", "-g", "lock-command", "echo SESSION_LOCKED && sleep 100"])
+        .args([
+            "set",
+            "-g",
+            "lock-command",
+            "echo SESSION_LOCKED && sleep 100",
+        ])
         .run()
         .assert_success();
 
@@ -285,20 +290,14 @@ fn clock_mode_renders() {
     client.read_raw(); // drain initial output
 
     // Enter clock mode.
-    tmux.cmd()
-        .args(["clock-mode"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["clock-mode"]).run().assert_success();
 
     // The clock draws using box characters.  Wait for some output that
     // contains the ":" separator (drawn as block characters) or just any
     // substantial redraw.
     std::thread::sleep(Duration::from_millis(500));
     let output = client.read_screen();
-    assert!(
-        !output.is_empty(),
-        "clock mode should have produced output"
-    );
+    assert!(!output.is_empty(), "clock mode should have produced output");
 
     // Verify we're actually in clock-mode by checking the pane mode.
     let mode = tmux.query("#{pane_mode}");
@@ -346,10 +345,7 @@ fn message_timer_clears_message() {
     client.read_raw(); // drain any intermediate output
 
     // Send a no-op to force a redraw so we get fresh screen content.
-    tmux.cmd()
-        .args(["refresh-client"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["refresh-client"]).run().assert_success();
     std::thread::sleep(Duration::from_millis(200));
     let screen = client.read_screen();
     assert!(

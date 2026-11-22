@@ -289,19 +289,27 @@ mod tests {
         // Each attribute should survive a round-trip (parse then format).
         // Note: "bold" → BRIGHT → "bright," (alias doesn't round-trip to same name).
         let names = [
-            "bright", "dim", "underscore", "blink", "reverse", "hidden",
-            "italics", "acs", "strikethrough", "double-underscore",
-            "curly-underscore", "dotted-underscore", "dashed-underscore", "overline",
+            "bright",
+            "dim",
+            "underscore",
+            "blink",
+            "reverse",
+            "hidden",
+            "italics",
+            "acs",
+            "strikethrough",
+            "double-underscore",
+            "curly-underscore",
+            "dotted-underscore",
+            "dashed-underscore",
+            "overline",
         ];
         for name in &names {
             let attr = attributes_fromstring(name).unwrap();
             let s = attributes_tostring(attr);
             // tostring appends a trailing comma for single attributes.
             let trimmed = s.trim_end_matches(',');
-            assert_eq!(
-                trimmed, *name,
-                "round-trip failed for {name}"
-            );
+            assert_eq!(trimmed, *name, "round-trip failed for {name}");
         }
     }
 }

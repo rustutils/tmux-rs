@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 // Ported from regress/new-window-command.sh
 #[test]
@@ -30,7 +30,10 @@ fn new_window_with_command() {
 #[test]
 fn command_chaining_order() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-s", "main"]).run().assert_success();
+    tmux.new_session()
+        .args(["-s", "main"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // Create a second session and verify we can list both
@@ -39,11 +42,20 @@ fn command_chaining_order() {
         .run()
         .assert_success();
 
-    let sessions = tmux.cmd().args(["list-sessions", "-F", "#{session_name}"]).run();
+    let sessions = tmux
+        .cmd()
+        .args(["list-sessions", "-F", "#{session_name}"])
+        .run();
     let output = sessions.stdout_trimmed();
     let names: Vec<&str> = output.lines().collect();
-    assert!(names.contains(&"main"), "should contain 'main', got: {names:?}");
-    assert!(names.contains(&"other"), "should contain 'other', got: {names:?}");
+    assert!(
+        names.contains(&"main"),
+        "should contain 'main', got: {names:?}"
+    );
+    assert!(
+        names.contains(&"other"),
+        "should contain 'other', got: {names:?}"
+    );
 }
 
 // Ported from regress/control-client-sanity.sh
@@ -68,7 +80,10 @@ fn control_client_basic_operations() {
     tmux.cmd().args(["new-window"]).run().assert_success();
 
     // Verify we have 2 windows
-    let windows = tmux.cmd().args(["list-windows", "-F", "#{window_id}"]).run();
+    let windows = tmux
+        .cmd()
+        .args(["list-windows", "-F", "#{window_id}"])
+        .run();
     let output = windows.stdout_trimmed();
     let window_count = output.lines().count();
     assert_eq!(window_count, 2, "expected 2 windows, got {window_count}");
@@ -87,17 +102,25 @@ fn control_client_pane_layout() {
     // Split and verify layout includes both panes
     tmux.cmd().args(["split-window"]).run().assert_success();
 
-    let layout = tmux.cmd().args(["list-panes", "-F", "#{pane_id} #{pane_width}x#{pane_height}"]).run();
+    let layout = tmux
+        .cmd()
+        .args([
+            "list-panes",
+            "-F",
+            "#{pane_id} #{pane_width}x#{pane_height}",
+        ])
+        .run();
     let output = layout.stdout_trimmed();
     let panes: Vec<&str> = output.lines().collect();
-    assert_eq!(panes.len(), 2, "expected 2 panes after split, got: {panes:?}");
+    assert_eq!(
+        panes.len(),
+        2,
+        "expected 2 panes after split, got: {panes:?}"
+    );
 
     // Both panes should be 200 wide
     for pane in &panes {
-        assert!(
-            pane.contains("200x"),
-            "pane should be 200 wide: {pane}"
-        );
+        assert!(pane.contains("200x"), "pane should be 200 wide: {pane}");
     }
 }
 
@@ -116,12 +139,19 @@ fn select_layout_tiled() {
     tmux.cmd().args(["split-window"]).run().assert_success();
 
     // Apply tiled layout
-    tmux.cmd().args(["select-layout", "tiled"]).run().assert_success();
+    tmux.cmd()
+        .args(["select-layout", "tiled"])
+        .run()
+        .assert_success();
 
     // All 4 panes should exist
     let panes = tmux.cmd().args(["list-panes", "-F", "#{pane_id}"]).run();
     let output = panes.stdout_trimmed();
-    assert_eq!(output.lines().count(), 4, "expected 4 panes after tiled layout");
+    assert_eq!(
+        output.lines().count(),
+        4,
+        "expected 4 panes after tiled layout"
+    );
 }
 
 #[test]
@@ -132,11 +162,23 @@ fn kill_window() {
 
     // Create a second window, then kill it
     tmux.cmd().args(["new-window"]).run().assert_success();
-    let count_before = tmux.cmd().args(["list-windows"]).run().stdout_trimmed().lines().count();
+    let count_before = tmux
+        .cmd()
+        .args(["list-windows"])
+        .run()
+        .stdout_trimmed()
+        .lines()
+        .count();
     assert_eq!(count_before, 2);
 
     tmux.cmd().args(["kill-window"]).run().assert_success();
-    let count_after = tmux.cmd().args(["list-windows"]).run().stdout_trimmed().lines().count();
+    let count_after = tmux
+        .cmd()
+        .args(["list-windows"])
+        .run()
+        .stdout_trimmed()
+        .lines()
+        .count();
     assert_eq!(count_after, 1);
 }
 
@@ -178,11 +220,23 @@ fn swap_pane() {
 #[test]
 fn new_window_with_manual_window_size() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
-    tmux.cmd().args(["set", "-g", "window-size", "manual"]).run().assert_success();
-    tmux.cmd().args(["set", "-g", "default-size", "100x30"]).run().assert_success();
-    tmux.cmd().args(["new-window", "sleep 1000"]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "window-size", "manual"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "default-size", "100x30"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["new-window", "sleep 1000"])
+        .run()
+        .assert_success();
     assert_eq!(tmux.query("#{window_width}x#{window_height}"), "100x30");
 }
 
@@ -191,21 +245,41 @@ fn new_window_with_manual_window_size() {
 #[test]
 fn window_index_at_int_max() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
-    tmux.cmd().args(["new-window", "-t", ":2147483647", "sleep 1000"]).run().assert_success();
+    tmux.cmd()
+        .args(["new-window", "-t", ":2147483647", "sleep 1000"])
+        .run()
+        .assert_success();
     // There is no index after INT_MAX, so this fails cleanly.
-    tmux.cmd().args(["new-window", "-a", "-t", ":2147483647", "sleep 1000"]).run();
+    tmux.cmd()
+        .args(["new-window", "-a", "-t", ":2147483647", "sleep 1000"])
+        .run();
     tmux.cmd().args(["has-session"]).run().assert_success();
 
     // Renumbering two windows from base-index INT_MAX does not fit and
     // leaves the indexes alone. From INT_MAX - 1 it fits exactly.
-    tmux.cmd().args(["set", "base-index", "2147483647"]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "base-index", "2147483647"])
+        .run()
+        .assert_success();
     tmux.cmd().args(["move-window", "-r"]).run();
     tmux.cmd().args(["has-session"]).run().assert_success();
-    tmux.cmd().args(["set", "base-index", "2147483646"]).run().assert_success();
-    tmux.cmd().args(["move-window", "-r"]).run().assert_success();
-    let out = tmux.cmd().args(["list-windows", "-F", "#{window_index}"]).run();
+    tmux.cmd()
+        .args(["set", "base-index", "2147483646"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["move-window", "-r"])
+        .run()
+        .assert_success();
+    let out = tmux
+        .cmd()
+        .args(["list-windows", "-F", "#{window_index}"])
+        .run();
     assert_eq!(out.stdout_trimmed(), "2147483646\n2147483647");
 }
 
@@ -216,17 +290,32 @@ fn window_index_at_int_max() {
 #[test]
 fn new_window_current_path_is_set_at_once() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
     let dir = std::fs::canonicalize(std::env::temp_dir()).unwrap();
     let dir = dir.to_str().unwrap();
     for _ in 0..20 {
         let out = tmux
             .cmd()
-            .args(["new-window", "-d", "-c", dir, "-P", "-F", "#{pane_current_path}", "sleep 1000"])
+            .args([
+                "new-window",
+                "-d",
+                "-c",
+                dir,
+                "-P",
+                "-F",
+                "#{pane_current_path}",
+                "sleep 1000",
+            ])
             .run();
         out.assert_success();
         let path = out.stdout_trimmed();
-        assert!(path.is_empty() || path == dir, "pane_current_path is {path:?}");
+        assert!(
+            path.is_empty() || path == dir,
+            "pane_current_path is {path:?}"
+        );
     }
 }

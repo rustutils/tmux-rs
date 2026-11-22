@@ -8,11 +8,11 @@
 //! drawn pane output. The original's "drawn" assertions require an attached
 //! client and are covered indirectly by the format trim values.
 
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 fn check(tmux: &TmuxTestHarness, fmt: &str, expected_value: &str) {
     let v = tmux.query(fmt);
@@ -27,37 +27,55 @@ fn style_trim_format_strings() {
     tmux.wait_ready(Duration::from_secs(5));
 
     // V = '#0'
-    tmux.cmd().args(["setenv", "-g", "V", "#0"]).run().assert_success();
+    tmux.cmd()
+        .args(["setenv", "-g", "V", "#0"])
+        .run()
+        .assert_success();
     check(&tmux, "#{V} #{w:V}", "#0 2");
     check(&tmux, "#{=3:V}", "#0");
     check(&tmux, "#{=-3:V}", "#0");
 
     // V = '###[bg=yellow]0'
-    tmux.cmd().args(["setenv", "-g", "V", "###[bg=yellow]0"]).run().assert_success();
+    tmux.cmd()
+        .args(["setenv", "-g", "V", "###[bg=yellow]0"])
+        .run()
+        .assert_success();
     check(&tmux, "#{V} #{w:V}", "###[bg=yellow]0 2");
     check(&tmux, "#{=3:V}", "###[bg=yellow]0");
     check(&tmux, "#{=-3:V}", "###[bg=yellow]0");
 
     // V = '#0123456'
-    tmux.cmd().args(["setenv", "-g", "V", "#0123456"]).run().assert_success();
+    tmux.cmd()
+        .args(["setenv", "-g", "V", "#0123456"])
+        .run()
+        .assert_success();
     check(&tmux, "#{V} #{w:V}", "#0123456 8");
     check(&tmux, "#{=3:V}", "#01");
     check(&tmux, "#{=-3:V}", "456");
 
     // V = '##0123456'
-    tmux.cmd().args(["setenv", "-g", "V", "##0123456"]).run().assert_success();
+    tmux.cmd()
+        .args(["setenv", "-g", "V", "##0123456"])
+        .run()
+        .assert_success();
     check(&tmux, "#{V} #{w:V}", "##0123456 8");
     check(&tmux, "#{=3:V}", "##01");
     check(&tmux, "#{=-3:V}", "456");
 
     // V = '###0123456'
-    tmux.cmd().args(["setenv", "-g", "V", "###0123456"]).run().assert_success();
+    tmux.cmd()
+        .args(["setenv", "-g", "V", "###0123456"])
+        .run()
+        .assert_success();
     check(&tmux, "#{V} #{w:V}", "###0123456 9");
     check(&tmux, "#{=3:V}", "####0");
     check(&tmux, "#{=-3:V}", "456");
 
     // V = '#[bg=yellow]0123456'
-    tmux.cmd().args(["setenv", "-g", "V", "#[bg=yellow]0123456"]).run().assert_success();
+    tmux.cmd()
+        .args(["setenv", "-g", "V", "#[bg=yellow]0123456"])
+        .run()
+        .assert_success();
     check(&tmux, "#{V} #{w:V}", "#[bg=yellow]0123456 7");
     check(&tmux, "#{=3:V}", "#[bg=yellow]012");
     check(&tmux, "#{=-3:V}", "#[bg=yellow]456");

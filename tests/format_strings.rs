@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 fn setup() -> TmuxTestHarness {
     let mut tmux = TmuxTestHarness::new();
@@ -312,7 +312,10 @@ fn format_window_variables() {
     test_format(&tmux, "#{window_panes}", "1");
 
     // After split, should be 2
-    tmux.cmd().args(["split-window", "-d"]).run().assert_success();
+    tmux.cmd()
+        .args(["split-window", "-d"])
+        .run()
+        .assert_success();
     test_format(&tmux, "#{window_panes}", "2");
 }
 
@@ -342,8 +345,14 @@ fn format_cursor_position() {
     // cursor_x and cursor_y should be numeric
     let cx = tmux.query("#{cursor_x}");
     let cy = tmux.query("#{cursor_y}");
-    assert!(cx.parse::<u32>().is_ok(), "cursor_x should be numeric: {cx}");
-    assert!(cy.parse::<u32>().is_ok(), "cursor_y should be numeric: {cy}");
+    assert!(
+        cx.parse::<u32>().is_ok(),
+        "cursor_x should be numeric: {cx}"
+    );
+    assert!(
+        cy.parse::<u32>().is_ok(),
+        "cursor_y should be numeric: {cy}"
+    );
 }
 
 // --- Nested format expansion ---
@@ -361,17 +370,12 @@ fn format_nested_comparison_with_variables() {
 fn format_nested_conditional_with_variables() {
     let tmux = setup();
     // If session_name == Summer, return "warm", else "cold"
-    test_format(
-        &tmux,
-        "#{?#{==:#{session_name},Summer},warm,cold}",
-        "warm",
-    );
-    tmux.cmd().args(["rename-session", "Winter"]).run().assert_success();
-    test_format(
-        &tmux,
-        "#{?#{==:#{session_name},Summer},warm,cold}",
-        "cold",
-    );
+    test_format(&tmux, "#{?#{==:#{session_name},Summer},warm,cold}", "warm");
+    tmux.cmd()
+        .args(["rename-session", "Winter"])
+        .run()
+        .assert_success();
+    test_format(&tmux, "#{?#{==:#{session_name},Summer},warm,cold}", "cold");
 }
 
 // --- String length ---
@@ -391,17 +395,33 @@ fn format_string_length() {
 #[test]
 fn exponential_format_is_cut_off() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
-    tmux.cmd().args(["set", "-g", "@a25", "x"]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "@a25", "x"])
+        .run()
+        .assert_success();
     for level in (0..25).rev() {
         let next = level + 1;
         let value = format!("#{{E:@a{next}}}#{{E:@a{next}}}");
-        tmux.cmd().args(["set", "-g", &format!("@a{level}"), &value]).run().assert_success();
+        tmux.cmd()
+            .args(["set", "-g", &format!("@a{level}"), &value])
+            .run()
+            .assert_success();
     }
     let start = std::time::Instant::now();
-    tmux.cmd().args(["display-message", "-p", "#{E:@a0}"]).run().assert_success();
-    assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+    tmux.cmd()
+        .args(["display-message", "-p", "#{E:@a0}"])
+        .run()
+        .assert_success();
+    assert!(
+        start.elapsed() < Duration::from_secs(5),
+        "took {:?}",
+        start.elapsed()
+    );
     tmux.cmd().args(["has-session"]).run().assert_success();
 }

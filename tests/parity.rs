@@ -31,7 +31,11 @@ fn reference_bin() -> Option<PathBuf> {
     if version.trim() == "tmux 3.8" {
         Some(bin)
     } else {
-        eprintln!("skipping parity test: {} is {:?}, not tmux 3.8", bin.display(), version.trim());
+        eprintln!(
+            "skipping parity test: {} is {:?}, not tmux 3.8",
+            bin.display(),
+            version.trim()
+        );
         None
     }
 }
@@ -48,7 +52,11 @@ impl Server {
         let socket = format!("/tmp/tmux-parity-{}-{id}", std::process::id());
         let server = Self { bin, socket };
         let out = server.command(&["-f/dev/null", "new-session", "-d", "-x", "80", "-y", "24"]);
-        assert!(out.status.success(), "{} failed to start", server.bin.display());
+        assert!(
+            out.status.success(),
+            "{} failed to start",
+            server.bin.display()
+        );
         server
     }
 
@@ -123,7 +131,11 @@ fn check(
     c: &BTreeMap<String, String>,
 ) {
     let listed: BTreeSet<String> = known.iter().map(|(k, _)| (*k).to_string()).collect();
-    assert_eq!(listed.len(), known.len(), "{what}: duplicate entries in the known table");
+    assert_eq!(
+        listed.len(),
+        known.len(),
+        "{what}: duplicate entries in the known table"
+    );
     let mut msg = String::new();
     for d in actual.difference(&listed) {
         let key = d.split_once(':').map_or(d.as_str(), |(_, k)| k);

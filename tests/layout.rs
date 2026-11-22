@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 /// Parsed pane info from `list-panes`.
 #[derive(Debug)]
@@ -30,10 +30,7 @@ fn list_panes(tmux: &TmuxTestHarness) -> Vec<PaneInfo> {
         .lines()
         .map(|line| {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            assert!(
-                parts.len() >= 5,
-                "unexpected list-panes output: {line}"
-            );
+            assert!(parts.len() >= 5, "unexpected list-panes output: {line}");
             PaneInfo {
                 id: parts[0].to_string(),
                 width: parts[1].parse().unwrap(),
@@ -86,7 +83,10 @@ fn layout_even_horizontal() {
     let heights: Vec<u32> = panes.iter().map(|p| p.height).collect();
     let h0 = heights[0];
     for h in &heights {
-        assert_eq!(*h, h0, "even-horizontal heights should all match, got {heights:?}");
+        assert_eq!(
+            *h, h0,
+            "even-horizontal heights should all match, got {heights:?}"
+        );
     }
 
     // Panes should be side by side (increasing left coordinate).
@@ -126,7 +126,10 @@ fn layout_even_vertical() {
     let widths: Vec<u32> = panes.iter().map(|p| p.width).collect();
     let w0 = widths[0];
     for w in &widths {
-        assert_eq!(*w, w0, "even-vertical widths should all match, got {widths:?}");
+        assert_eq!(
+            *w, w0,
+            "even-vertical widths should all match, got {widths:?}"
+        );
     }
 
     // Panes should be stacked (increasing top coordinate).
@@ -287,7 +290,10 @@ fn layout_tiled_6_panes() {
 fn layout_custom_string() {
     let tmux = setup(200, 50, 1);
     // Split to get 2 panes, then apply a custom layout.
-    tmux.cmd().args(["split-window", "-h"]).run().assert_success();
+    tmux.cmd()
+        .args(["split-window", "-h"])
+        .run()
+        .assert_success();
 
     // Get the current layout string, then re-apply it.
     let layout_str = tmux.query("#{window_layout}");
@@ -352,10 +358,16 @@ fn layout_nested_splits() {
     let tmux = setup(200, 50, 1);
 
     // Split horizontally to get 2 side-by-side panes.
-    tmux.cmd().args(["split-window", "-h"]).run().assert_success();
+    tmux.cmd()
+        .args(["split-window", "-h"])
+        .run()
+        .assert_success();
 
     // Now split the right pane vertically.
-    tmux.cmd().args(["split-window", "-v"]).run().assert_success();
+    tmux.cmd()
+        .args(["split-window", "-v"])
+        .run()
+        .assert_success();
 
     let panes = list_panes(&tmux);
     assert_eq!(panes.len(), 3, "should have 3 panes after nested splits");

@@ -1,9 +1,9 @@
-use super::harness;
-
 use std::io::Write;
 use std::time::Duration;
 
 use harness::{PtyClient, TmuxTestHarness};
+
+use super::harness;
 
 // Ported from regress/new-session-size.sh
 #[test]
@@ -34,12 +34,19 @@ fn new_session_explicit_size() {
 #[test]
 fn new_session_with_command() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["--", "cat"]).run().assert_success();
+    tmux.new_session()
+        .args(["--", "cat"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // The command should become 'cat'. Right after the session starts the
     // pane process may not have run exec yet, so wait for it.
-    tmux.wait_for("#{pane_current_command}", |c| c == "cat", Duration::from_secs(5));
+    tmux.wait_for(
+        "#{pane_current_command}",
+        |c| c == "cat",
+        Duration::from_secs(5),
+    );
 }
 
 // Ported from regress/has-session-return.sh
@@ -63,7 +70,10 @@ fn has_session_returns_error_for_nonexistent() {
 #[test]
 fn has_session_returns_success_for_existing() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-s", "foo"]).run().assert_success();
+    tmux.new_session()
+        .args(["-s", "foo"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     let result = tmux.cmd().args(["has-session", "-t", "foo"]).run();
@@ -83,23 +93,19 @@ fn new_session_base_index() {
 
     // Set base-index to 1 and create a new session
     let mut tmux2 = TmuxTestHarness::new();
-    tmux2
-        .new_session()
-        .run()
-        .assert_success();
+    tmux2.new_session().run().assert_success();
     tmux2.wait_ready(Duration::from_secs(5));
     tmux2
         .cmd()
         .args(["set-option", "-g", "base-index", "1"])
         .run()
         .assert_success();
-    tmux2
-        .cmd()
-        .args(["new-window"])
-        .run()
-        .assert_success();
+    tmux2.cmd().args(["new-window"]).run().assert_success();
     // The new window should have index 1 (or 2 if base-index was applied)
-    let windows = tmux2.cmd().args(["list-windows", "-F", "#{window_index}"]).run();
+    let windows = tmux2
+        .cmd()
+        .args(["list-windows", "-F", "#{window_index}"])
+        .run();
     let output = windows.stdout_trimmed();
     let indices: Vec<&str> = output.lines().collect();
     assert!(indices.contains(&"0") || indices.contains(&"1"));
@@ -109,7 +115,10 @@ fn new_session_base_index() {
 #[test]
 fn kill_session_kills_processes() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["--", "sleep", "300"]).run().assert_success();
+    tmux.new_session()
+        .args(["--", "sleep", "300"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // Get the pane PID
@@ -213,19 +222,34 @@ fn detach_on_destroy_no_detached_with_only_attached_sessions() {
     let t = Duration::from_secs(5);
     let mut tmux = TmuxTestHarness::new();
     for name in ["a", "b"] {
-        tmux.new_session().args(["-s", name, "-x", "80", "-y", "24", "sleep 1000"]).run().assert_success();
+        tmux.new_session()
+            .args(["-s", name, "-x", "80", "-y", "24", "sleep 1000"])
+            .run()
+            .assert_success();
     }
     tmux.wait_ready(t);
-    tmux.cmd().args(["set", "-g", "detach-on-destroy", "no-detached"]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "detach-on-destroy", "no-detached"])
+        .run()
+        .assert_success();
     let mut a = PtyClient::attach_to(&tmux, "a", 80, 24);
     let _b = PtyClient::attach_to(&tmux, "b", 80, 24);
     tmux.wait_for("#{session_attached}", |v| v == "1", t);
     tmux.wait_for("#{S:#{session_attached}}", |v| v == "11", t);
-    tmux.cmd().args(["kill-session", "-t", "a"]).run().assert_success();
+    tmux.cmd()
+        .args(["kill-session", "-t", "a"])
+        .run()
+        .assert_success();
     let start = std::time::Instant::now();
     while a.is_alive() {
-        assert!(start.elapsed() < t, "client of the killed session did not detach");
+        assert!(
+            start.elapsed() < t,
+            "client of the killed session did not detach"
+        );
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert_eq!(tmux.query("#{S:#{session_name}=#{session_attached} }"), "b=1");
+    assert_eq!(
+        tmux.query("#{S:#{session_name}=#{session_attached} }"),
+        "b=1"
+    );
 }

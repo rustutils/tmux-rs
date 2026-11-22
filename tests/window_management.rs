@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::{PtyClient, TmuxTestHarness};
+
+use super::harness;
 
 // ---------------------------------------------------------------------------
 // rename-window
@@ -171,7 +171,11 @@ fn move_window_to_new_index() {
         .run();
     let output = windows.stdout_trimmed();
     let lines: Vec<&str> = output.lines().collect();
-    assert_eq!(lines.len(), 2, "should still have 2 windows, got: {lines:?}");
+    assert_eq!(
+        lines.len(),
+        2,
+        "should still have 2 windows, got: {lines:?}"
+    );
     assert!(
         output.contains("1:beta"),
         "beta should remain at index 1, got: {output}"
@@ -194,7 +198,10 @@ fn move_window_fails_on_occupied_index() {
     tmux.cmd().args(["new-window"]).run().assert_success();
 
     // Moving window 0 to index 1 should fail (occupied)
-    let result = tmux.cmd().args(["move-window", "-s", ":0", "-t", ":1"]).run();
+    let result = tmux
+        .cmd()
+        .args(["move-window", "-s", ":0", "-t", ":1"])
+        .run();
     result.assert_failure();
 }
 
@@ -305,26 +312,17 @@ fn rotate_window_panes() {
     tmux.cmd().args(["split-window"]).run().assert_success();
 
     // Record the pane IDs in positional order
-    let before = tmux
-        .cmd()
-        .args(["list-panes", "-F", "#{pane_id}"])
-        .run();
+    let before = tmux.cmd().args(["list-panes", "-F", "#{pane_id}"]).run();
     let before_output = before.stdout_trimmed();
     let before_ids: Vec<&str> = before_output.lines().collect();
     assert_eq!(before_ids.len(), 3);
 
     // Rotate the window (default: downward)
-    tmux.cmd()
-        .args(["rotate-window"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["rotate-window"]).run().assert_success();
 
     // After rotation, the order of pane IDs in list-panes should change.
     // The last pane moves to the first position.
-    let after = tmux
-        .cmd()
-        .args(["list-panes", "-F", "#{pane_id}"])
-        .run();
+    let after = tmux.cmd().args(["list-panes", "-F", "#{pane_id}"]).run();
     let after_output = after.stdout_trimmed();
     let after_ids: Vec<&str> = after_output.lines().collect();
     assert_eq!(after_ids.len(), 3);
@@ -356,10 +354,7 @@ fn rotate_window_upward() {
     tmux.cmd().args(["split-window"]).run().assert_success();
     tmux.cmd().args(["split-window"]).run().assert_success();
 
-    let before = tmux
-        .cmd()
-        .args(["list-panes", "-F", "#{pane_id}"])
-        .run();
+    let before = tmux.cmd().args(["list-panes", "-F", "#{pane_id}"]).run();
     let before_output = before.stdout_trimmed();
     let before_ids: Vec<&str> = before_output.lines().collect();
 
@@ -369,10 +364,7 @@ fn rotate_window_upward() {
         .run()
         .assert_success();
 
-    let after = tmux
-        .cmd()
-        .args(["list-panes", "-F", "#{pane_id}"])
-        .run();
+    let after = tmux.cmd().args(["list-panes", "-F", "#{pane_id}"]).run();
     let after_output = after.stdout_trimmed();
     let after_ids: Vec<&str> = after_output.lines().collect();
 
@@ -547,7 +539,10 @@ fn respawn_window_kill_flag() {
     std::thread::sleep(Duration::from_millis(200));
 
     let cmd = tmux.query("#{pane_current_command}");
-    assert_eq!(cmd, "sleep", "respawned command should be 'sleep', got: {cmd}");
+    assert_eq!(
+        cmd, "sleep",
+        "respawned command should be 'sleep', got: {cmd}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -588,10 +583,7 @@ fn find_window_by_name() {
         .run()
         .assert_success();
 
-    let result = tmux
-        .cmd()
-        .args(["find-window", "-N", "logs-viewer"])
-        .run();
+    let result = tmux.cmd().args(["find-window", "-N", "logs-viewer"]).run();
 
     // find-window should succeed (the command itself doesn't error)
     result.assert_success();
@@ -614,10 +606,7 @@ fn break_pane_into_new_window() {
     tmux.cmd().args(["split-window"]).run().assert_success();
 
     // Verify we have 2 panes
-    let panes_before = tmux
-        .cmd()
-        .args(["list-panes", "-F", "#{pane_id}"])
-        .run();
+    let panes_before = tmux.cmd().args(["list-panes", "-F", "#{pane_id}"]).run();
     let before_output = panes_before.stdout_trimmed();
     let before_ids: Vec<&str> = before_output.lines().collect();
     assert_eq!(before_ids.len(), 2, "should have 2 panes before break-pane");
@@ -636,10 +625,7 @@ fn break_pane_into_new_window() {
     assert_eq!(win_count_before, 1);
 
     // Break the current pane into its own window
-    tmux.cmd()
-        .args(["break-pane"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["break-pane"]).run().assert_success();
 
     // We should now have 2 windows
     let win_count_after = tmux
@@ -649,10 +635,7 @@ fn break_pane_into_new_window() {
         .stdout_trimmed()
         .lines()
         .count();
-    assert_eq!(
-        win_count_after, 2,
-        "break-pane should create a new window"
-    );
+    assert_eq!(win_count_after, 2, "break-pane should create a new window");
 
     // The original window should have only 1 pane
     let panes_win0 = tmux
@@ -691,10 +674,7 @@ fn break_pane_with_detach() {
     let orig_window = tmux.query("#{window_index}");
 
     // Break pane with -d (stay on current window)
-    tmux.cmd()
-        .args(["break-pane", "-d"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["break-pane", "-d"]).run().assert_success();
 
     // We should still be on the original window
     let current_window = tmux.query("#{window_index}");
@@ -759,10 +739,7 @@ fn join_pane_from_another_window() {
         .assert_success();
 
     // Window 0 should now have 2 panes
-    let panes_after = tmux
-        .cmd()
-        .args(["list-panes", "-F", "#{pane_id}"])
-        .run();
+    let panes_after = tmux.cmd().args(["list-panes", "-F", "#{pane_id}"]).run();
     let after_output = panes_after.stdout_trimmed();
     let after_ids: Vec<&str> = after_output.lines().collect();
     assert_eq!(
@@ -815,10 +792,7 @@ fn join_pane_horizontal() {
         .assert_success();
 
     // Should have 2 panes side by side (same height, different widths)
-    let panes = tmux
-        .cmd()
-        .args(["list-panes", "-F", "#{pane_width}"])
-        .run();
+    let panes = tmux.cmd().args(["list-panes", "-F", "#{pane_width}"]).run();
     let widths_output = panes.stdout_trimmed();
     let widths: Vec<&str> = widths_output.lines().collect();
     assert_eq!(widths.len(), 2, "should have 2 panes after horizontal join");
@@ -864,10 +838,7 @@ fn previous_window_wraps_to_last() {
     assert_eq!(tmux.query("#{window_name}"), "win0");
 
     // previous-window from window 0 should wrap to window 2
-    tmux.cmd()
-        .args(["previous-window"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["previous-window"]).run().assert_success();
     assert_eq!(
         tmux.query("#{window_name}"),
         "win2",
@@ -944,10 +915,7 @@ fn next_window_wraps_to_first() {
     assert_eq!(tmux.query("#{window_name}"), "win2");
 
     // next-window from window 2 should wrap to window 0
-    tmux.cmd()
-        .args(["next-window"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["next-window"]).run().assert_success();
     assert_eq!(
         tmux.query("#{window_name}"),
         "win0",
@@ -967,9 +935,6 @@ fn join_pane_same_window_fails() {
     let pane_id = tmux.query("#{pane_id}");
 
     // Trying to join a pane into its own window should fail
-    let result = tmux
-        .cmd()
-        .args(["join-pane", "-s", &pane_id])
-        .run();
+    let result = tmux.cmd().args(["join-pane", "-s", &pane_id]).run();
     result.assert_failure();
 }

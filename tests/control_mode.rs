@@ -1,10 +1,10 @@
-use super::harness;
-
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 /// Spawn a control-mode client attached to the given harness.
 /// Returns the child process with piped stdin/stdout/stderr.
@@ -115,10 +115,7 @@ fn control_mode_list_sessions() {
         // Just consume until we see a %begin/%end pair or timeout.
         line.starts_with("%end")
     });
-    assert!(
-        !initial.is_empty(),
-        "expected initial control mode output"
-    );
+    assert!(!initial.is_empty(), "expected initial control mode output");
 
     // Send list-sessions command
     let lines = send_and_collect(
@@ -374,7 +371,9 @@ fn control_mode_wait_exit_waits_for_empty_line() {
         }
     });
 
-    stdin.write_all(b"refresh-client -f wait-exit\ndetach-client\n").unwrap();
+    stdin
+        .write_all(b"refresh-client -f wait-exit\ndetach-client\n")
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
@@ -388,7 +387,10 @@ fn control_mode_wait_exit_waits_for_empty_line() {
         "control client exited without waiting for an empty line"
     );
     stdin.write_all(b"\n").unwrap();
-    assert!(wait_for_exit(&mut child, Duration::from_secs(5)), "control client did not exit");
+    assert!(
+        wait_for_exit(&mut child, Duration::from_secs(5)),
+        "control client did not exit"
+    );
 }
 
 /// Toggling no-output while a pane produces output used to leave queued
@@ -490,8 +492,14 @@ fn refresh_client_sets_client_flags() {
         assert!(set.contains(flag), "{flag} missing in {set:?}");
     }
     let cleared = line("cleared:");
-    assert!(!cleared.contains("ignore-size") && !cleared.contains("no-output"), "{cleared:?}");
-    assert!(cleared.contains("read-only"), "read-only should stay set: {cleared:?}");
+    assert!(
+        !cleared.contains("ignore-size") && !cleared.contains("no-output"),
+        "{cleared:?}"
+    );
+    assert!(
+        cleared.contains("read-only"),
+        "read-only should stay set: {cleared:?}"
+    );
 }
 
 /// tmux 3.8 removed the active-pane client flag, so it is ignored.
@@ -505,7 +513,10 @@ fn active_pane_client_flag_is_ignored() {
         "refresh-client -f active-pane\ndisplay-message -p 'flags:#{client_flags}'\n",
     );
     let stdout = out.stdout_str();
-    let flags = stdout.lines().find(|l| l.starts_with("flags:")).expect("flags line");
+    let flags = stdout
+        .lines()
+        .find(|l| l.starts_with("flags:"))
+        .expect("flags line");
     assert!(!flags.contains("active-pane"), "{flags:?}");
 }
 
@@ -516,10 +527,19 @@ fn active_pane_client_flag_is_ignored() {
 #[test]
 fn window_changed_notification_after_kill_session() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-s", "keep", "sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["-s", "keep", "sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
-    tmux.cmd().args(["new-session", "-d", "-s", "x", "sleep 1000"]).run().assert_success();
-    tmux.cmd().args(["new-window", "-t", "x", "sleep 1000"]).run().assert_success();
+    tmux.cmd()
+        .args(["new-session", "-d", "-s", "x", "sleep 1000"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["new-window", "-t", "x", "sleep 1000"])
+        .run()
+        .assert_success();
 
     let mut child = spawn_control_client(&tmux);
     let _stdin = child.stdin.take().unwrap();
@@ -528,7 +548,11 @@ fn window_changed_notification_after_kill_session() {
         .args(["select-window", "-t", "x:0", ";", "kill-session", "-t", "x"])
         .run();
     std::thread::sleep(Duration::from_millis(300));
-    let alive = tmux.cmd().args(["has-session", "-t", "keep"]).run().success();
+    let alive = tmux
+        .cmd()
+        .args(["has-session", "-t", "keep"])
+        .run()
+        .success();
     let _ = child.kill();
     assert!(alive, "server died");
 }
@@ -539,7 +563,10 @@ fn window_changed_notification_after_kill_session() {
 #[test]
 fn rename_top_buffer_notifies_old_name() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
     let out = tmux.control_mode("set-buffer hello\nset-buffer -n renamed\n");
     let lines: Vec<String> = out

@@ -33,7 +33,9 @@ impl Drop for TimerHandle {
         base.timer_callbacks.remove(&self.id);
         // Mark cancelled so any already-queued ReadyEvent for this id is
         // skipped in the current dispatch cycle.
-        CANCELLED.with(|cell| { cell.borrow_mut().insert(self.id); });
+        CANCELLED.with(|cell| {
+            cell.borrow_mut().insert(self.id);
+        });
     }
 }
 
@@ -59,7 +61,9 @@ impl Drop for IoHandle {
         }
         base.io_callbacks.remove(&self.id);
         base.fallback_io.remove(&self.id);
-        CANCELLED.with(|cell| { cell.borrow_mut().insert(self.id); });
+        CANCELLED.with(|cell| {
+            cell.borrow_mut().insert(self.id);
+        });
     }
 }
 
@@ -83,7 +87,10 @@ pub fn io_register(
     let base = unsafe { &mut *base_ptr };
     let id = base.alloc_id();
 
-    let interest = match ((events & super::super::EV_READ) != 0, (events & super::super::EV_WRITE) != 0) {
+    let interest = match (
+        (events & super::super::EV_READ) != 0,
+        (events & super::super::EV_WRITE) != 0,
+    ) {
         (true, true) => Interest::BOTH,
         (true, false) => Interest::READ,
         (false, true) => Interest::WRITE,
@@ -98,23 +105,25 @@ pub fn io_register(
     let owned_fd = unsafe { OwnedFd::from_raw_fd(dup_fd) };
     let generic = Generic::new(owned_fd, interest, Mode::Level);
 
-    match base.handle.insert_source(generic, move |readiness, _, data| {
-        let mut fired: c_short = 0;
-        if readiness.readable {
-            fired |= super::super::EV_READ;
-        }
-        if readiness.writable {
-            fired |= super::super::EV_WRITE;
-        }
-        if fired != 0 {
-            data.ready.push(ReadyEvent {
-                id,
-                fd,
-                events: fired,
-            });
-        }
-        Ok(PostAction::Continue)
-    }) {
+    match base
+        .handle
+        .insert_source(generic, move |readiness, _, data| {
+            let mut fired: c_short = 0;
+            if readiness.readable {
+                fired |= super::super::EV_READ;
+            }
+            if readiness.writable {
+                fired |= super::super::EV_WRITE;
+            }
+            if fired != 0 {
+                data.ready.push(ReadyEvent {
+                    id,
+                    fd,
+                    events: fired,
+                });
+            }
+            Ok(PostAction::Continue)
+        }) {
         Ok(token) => {
             base.registrations.insert(id, Registration { token });
             base.io_callbacks.insert(id, callback);
@@ -123,7 +132,13 @@ pub fn io_register(
         Err(_) => {
             // Non-epolable fd (regular file, etc.) — treat as always-ready.
             // The callback fires on every event_loop iteration.
-            base.fallback_io.insert(id, (fd, events & (super::super::EV_READ | super::super::EV_WRITE)));
+            base.fallback_io.insert(
+                id,
+                (
+                    fd,
+                    events & (super::super::EV_READ | super::super::EV_WRITE),
+                ),
+            );
             base.io_callbacks.insert(id, callback);
             Some(IoHandle { id })
         }
@@ -193,7 +208,9 @@ impl Drop for SignalHandle {
         base.timer_callbacks.remove(&self.id);
         #[cfg(not(target_os = "linux"))]
         signal_hook::low_level::unregister(self.sig_id);
-        CANCELLED.with(|cell| { cell.borrow_mut().insert(self.id); });
+        CANCELLED.with(|cell| {
+            cell.borrow_mut().insert(self.id);
+        });
     }
 }
 
@@ -214,13 +231,16 @@ pub fn signal_register(signum: c_int, callback: Box<dyn Fn()>) -> Option<SignalH
 
     let signal = signal_from_number(signum)?;
     let signals = Signals::new(&[signal]).ok()?;
-    let token = base.handle.insert_source(signals, move |_, (), data| {
-        data.ready.push(ReadyEvent {
-            id,
-            fd: signum,
-            events: super::super::EV_SIGNAL,
-        });
-    }).ok()?;
+    let token = base
+        .handle
+        .insert_source(signals, move |_, (), data| {
+            data.ready.push(ReadyEvent {
+                id,
+                fd: signum,
+                events: super::super::EV_SIGNAL,
+            });
+        })
+        .ok()?;
 
     base.registrations.insert(id, Registration { token });
     base.timer_callbacks.insert(id, callback);
@@ -245,22 +265,25 @@ pub fn signal_register(signum: c_int, callback: Box<dyn Fn()>) -> Option<SignalH
 
     // Register the read end with calloop.
     let generic = Generic::new(read_fd, Interest::READ, Mode::Level);
-    let token = base.handle.insert_source(generic, move |_, fd, data| {
-        // Drain the pipe so it doesn't keep firing.
-        let mut buf = [0u8; 64];
-        loop {
-            match rustix::io::read(&mut *fd, &mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {}
+    let token = base
+        .handle
+        .insert_source(generic, move |_, fd, data| {
+            // Drain the pipe so it doesn't keep firing.
+            let mut buf = [0u8; 64];
+            loop {
+                match rustix::io::read(&mut *fd, &mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
             }
-        }
-        data.ready.push(ReadyEvent {
-            id,
-            fd: signum,
-            events: super::super::EV_SIGNAL,
-        });
-        Ok(PostAction::Continue)
-    }).ok()?;
+            data.ready.push(ReadyEvent {
+                id,
+                fd: signum,
+                events: super::super::EV_SIGNAL,
+            });
+            Ok(PostAction::Continue)
+        })
+        .ok()?;
 
     base.registrations.insert(id, Registration { token });
     base.timer_callbacks.insert(id, callback);
@@ -283,14 +306,17 @@ pub fn timer_add(duration: Duration, callback: Box<dyn Fn()>) -> Option<TimerHan
     let id = base.alloc_id();
 
     let timer = Timer::from_duration(duration);
-    let token = base.handle.insert_source(timer, move |_, (), data| {
-        data.ready.push(ReadyEvent {
-            id,
-            fd: -1,
-            events: super::super::EV_TIMEOUT,
-        });
-        TimeoutAction::Drop
-    }).ok()?;
+    let token = base
+        .handle
+        .insert_source(timer, move |_, (), data| {
+            data.ready.push(ReadyEvent {
+                id,
+                fd: -1,
+                events: super::super::EV_TIMEOUT,
+            });
+            TimeoutAction::Drop
+        })
+        .ok()?;
 
     base.registrations.insert(id, Registration { token });
     base.timer_callbacks.insert(id, callback);
@@ -302,13 +328,10 @@ use calloop::generic::Generic;
 use calloop::signals::{Signal, Signals};
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{EventLoop, Interest, LoopHandle, Mode, PostAction, RegistrationToken};
-
-use super::event_base;
-use super::super::{
-    EV_READ, EV_SIGNAL, EV_TIMEOUT, EV_WRITE, EVLOOP_NONBLOCK,
-    event_log_cb,
-};
 use tmux_log::log_debug;
+
+use super::super::{EV_READ, EV_SIGNAL, EV_TIMEOUT, EV_WRITE, EVLOOP_NONBLOCK, event_log_cb};
+use super::event_base;
 
 /// A ready event notification — queued when a calloop source fires.
 struct ReadyEvent {
@@ -321,7 +344,6 @@ struct ReadyEvent {
 struct Registration {
     token: RegistrationToken,
 }
-
 
 /// Shared state passed to calloop callbacks and the dispatch loop.
 struct LoopData {
@@ -402,8 +424,8 @@ fn signal_from_number(signum: c_int) -> Option<Signal> {
 #[cfg(not(target_os = "linux"))]
 fn pipe_nonblock() -> io::Result<(OwnedFd, OwnedFd)> {
     use std::os::fd::AsRawFd;
-    let (read_fd, write_fd) = rustix::pipe::pipe()
-        .map_err(|e| io::Error::from_raw_os_error(e.raw_os_error()))?;
+    let (read_fd, write_fd) =
+        rustix::pipe::pipe().map_err(|e| io::Error::from_raw_os_error(e.raw_os_error()))?;
     // Set non-blocking and close-on-exec on both ends.
     for fd in [read_fd.as_raw_fd(), write_fd.as_raw_fd()] {
         unsafe {
@@ -422,8 +444,13 @@ pub unsafe fn event_init() -> *mut event_base {
     match EventBase::new() {
         Ok(base) => {
             let ptr = Box::into_raw(Box::new(base));
-            unsafe { GLOBAL_BASE = ptr; }
-            log_debug!("event_init: calloop base={ptr:p} pid={}", std::process::id());
+            unsafe {
+                GLOBAL_BASE = ptr;
+            }
+            log_debug!(
+                "event_init: calloop base={ptr:p} pid={}",
+                std::process::id()
+            );
             ptr as *mut event_base
         }
         Err(e) => {
@@ -442,7 +469,9 @@ pub unsafe fn event_reinit(_base: *mut event_base) -> c_int {
     match EventBase::new() {
         Ok(base) => {
             let ptr = Box::into_raw(Box::new(base));
-            unsafe { GLOBAL_BASE = ptr; }
+            unsafe {
+                GLOBAL_BASE = ptr;
+            }
             0
         }
         Err(_) => -1,
@@ -479,7 +508,9 @@ pub unsafe fn event_loop(flags: c_int) -> c_int {
         // Fallback I/O events are always ready, so data.ready is never empty
         // when they exist.  We still need to poll epoll for real I/O and
         // signals, but can't block forever — use a short timeout.
-        let _ = base.event_loop.dispatch(Some(Duration::from_millis(1)), &mut data);
+        let _ = base
+            .event_loop
+            .dispatch(Some(Duration::from_millis(1)), &mut data);
     } else {
         // EVLOOP_ONCE: block until at least one event fires.
         let _ = base.event_loop.dispatch(None, &mut data);
@@ -541,9 +572,10 @@ pub fn event_set_log_callback(_cb: event_log_cb) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::cell::{Cell, RefCell};
     use std::rc::Rc;
+
+    use super::*;
 
     /// A timer callback may drop its own handle and register new timers
     /// while it runs. Both used to free or move the running closure,

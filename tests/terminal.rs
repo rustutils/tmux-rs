@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 // Ported from regress/am-terminal.sh
 // Tests drawing the status line on a terminal without auto margins (am@).
@@ -25,8 +25,16 @@ fn am_terminal_status_line() {
     }
 
     let mut outer = TmuxTestHarness::new();
-    let attach = format!("{} -S {} attach", harness::client_bin().display(), inner.socket_path());
-    outer.new_session().args(["-x", "20", "-y", "2", &attach]).run().assert_success();
+    let attach = format!(
+        "{} -S {} attach",
+        harness::client_bin().display(),
+        inner.socket_path()
+    );
+    outer
+        .new_session()
+        .args(["-x", "20", "-y", "2", &attach])
+        .run()
+        .assert_success();
     outer.wait_ready(t);
 
     let start = std::time::Instant::now();

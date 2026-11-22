@@ -160,27 +160,16 @@ pub unsafe fn image_scroll_up(s: *mut screen, lines: u32) -> bool {
             let sx = (*im).sx;
             let sy = ((*im).py + (*im).sy) - lines;
 
-            let new = crate::image_sixel::sixel_scale(
-                (*im).data,
-                0,
-                0,
-                0,
-                (*im).sy - sy,
-                sx,
-                sy,
-                1,
-            );
+            let new =
+                crate::image_sixel::sixel_scale((*im).data, 0, 0, 0, (*im).sy - sy, sx, sy, 1);
             crate::image_sixel::sixel_free((*im).data);
             (*im).data = new;
 
             (*im).py = 0;
-            ((*im).sx, (*im).sy) =
-                crate::image_sixel::sixel_size_in_cells(&*(*im).data);
+            ((*im).sx, (*im).sy) = crate::image_sixel::sixel_size_in_cells(&*(*im).data);
 
             free_((*im).fallback);
-            (*im).fallback = image_fallback((*im).sx, (*im).sy)
-                .into_raw()
-                .cast();
+            (*im).fallback = image_fallback((*im).sx, (*im).sy).into_raw().cast();
             redraw = true;
             true
         });

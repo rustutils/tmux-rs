@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::{PtyClient, TmuxTestHarness};
+
+use super::harness;
 
 #[test]
 fn send_keys_and_capture_pane() {
@@ -62,12 +62,24 @@ fn kill_pane() {
 
     tmux.cmd().args(["split-window"]).run().assert_success();
 
-    let before = tmux.cmd().args(["list-panes"]).run().stdout_trimmed().lines().count();
+    let before = tmux
+        .cmd()
+        .args(["list-panes"])
+        .run()
+        .stdout_trimmed()
+        .lines()
+        .count();
     assert_eq!(before, 2);
 
     tmux.cmd().args(["kill-pane"]).run().assert_success();
 
-    let after = tmux.cmd().args(["list-panes"]).run().stdout_trimmed().lines().count();
+    let after = tmux
+        .cmd()
+        .args(["list-panes"])
+        .run()
+        .stdout_trimmed()
+        .lines()
+        .count();
     assert_eq!(after, 1);
 }
 
@@ -133,7 +145,13 @@ fn split_window_vertical_twice() {
         .run()
         .assert_success();
 
-    let panes = tmux.cmd().args(["list-panes"]).run().stdout_trimmed().lines().count();
+    let panes = tmux
+        .cmd()
+        .args(["list-panes"])
+        .run()
+        .stdout_trimmed()
+        .lines()
+        .count();
     assert_eq!(panes, 2, "should have 2 panes after first vertical split");
 
     // Split the same pane vertically again
@@ -142,7 +160,13 @@ fn split_window_vertical_twice() {
         .run()
         .assert_success();
 
-    let panes = tmux.cmd().args(["list-panes"]).run().stdout_trimmed().lines().count();
+    let panes = tmux
+        .cmd()
+        .args(["list-panes"])
+        .run()
+        .stdout_trimmed()
+        .lines()
+        .count();
     assert_eq!(panes, 3, "should have 3 panes after second vertical split");
 }
 
@@ -163,11 +187,19 @@ fn split_window_vertical_twice_layout() {
 
     // After first split, active pane should be the new (right) one
     let active_after_first = tmux.query("#{pane_index}");
-    let widths_first = tmux.cmd()
-        .args(["list-panes", "-F", "#{pane_index}:#{pane_width}:#{pane_active}"])
+    let widths_first = tmux
+        .cmd()
+        .args([
+            "list-panes",
+            "-F",
+            "#{pane_index}:#{pane_width}:#{pane_active}",
+        ])
         .run()
         .stdout_trimmed();
-    eprintln!("After first split (active={}): {}", active_after_first, widths_first);
+    eprintln!(
+        "After first split (active={}): {}",
+        active_after_first, widths_first
+    );
 
     // Second vertical split on the active (right) pane
     tmux.cmd()
@@ -176,20 +208,31 @@ fn split_window_vertical_twice_layout() {
         .assert_success();
 
     let active_after_second = tmux.query("#{pane_index}");
-    let widths_second = tmux.cmd()
-        .args(["list-panes", "-F", "#{pane_index}:#{pane_width}:#{pane_active}"])
+    let widths_second = tmux
+        .cmd()
+        .args([
+            "list-panes",
+            "-F",
+            "#{pane_index}:#{pane_width}:#{pane_active}",
+        ])
         .run()
         .stdout_trimmed();
-    eprintln!("After second split (active={}): {}", active_after_second, widths_second);
+    eprintln!(
+        "After second split (active={}): {}",
+        active_after_second, widths_second
+    );
 
     // Parse pane widths
-    let panes: Vec<(u32, u32, bool)> = widths_second.lines().map(|line| {
-        let parts: Vec<&str> = line.split(':').collect();
-        let idx: u32 = parts[0].parse().unwrap();
-        let width: u32 = parts[1].parse().unwrap();
-        let active = parts[2] == "1";
-        (idx, width, active)
-    }).collect();
+    let panes: Vec<(u32, u32, bool)> = widths_second
+        .lines()
+        .map(|line| {
+            let parts: Vec<&str> = line.split(':').collect();
+            let idx: u32 = parts[0].parse().unwrap();
+            let width: u32 = parts[1].parse().unwrap();
+            let active = parts[2] == "1";
+            (idx, width, active)
+        })
+        .collect();
 
     assert_eq!(panes.len(), 3, "should have 3 panes");
 
@@ -206,7 +249,8 @@ fn split_window_vertical_twice_layout() {
     assert!(
         first_pane.1 > active_pane.1,
         "first pane (width {}) should be wider than active split pane (width {})",
-        first_pane.1, active_pane.1
+        first_pane.1,
+        active_pane.1
     );
 }
 
@@ -225,8 +269,13 @@ fn split_window_fullsize_vertical_twice() {
         .run()
         .assert_success();
 
-    let widths_first = tmux.cmd()
-        .args(["list-panes", "-F", "#{pane_index}:#{pane_width}:#{pane_active}"])
+    let widths_first = tmux
+        .cmd()
+        .args([
+            "list-panes",
+            "-F",
+            "#{pane_index}:#{pane_width}:#{pane_active}",
+        ])
         .run()
         .stdout_trimmed();
     eprintln!("After first -fh split: {}", widths_first);
@@ -237,16 +286,28 @@ fn split_window_fullsize_vertical_twice() {
         .run()
         .assert_success();
 
-    let widths_second = tmux.cmd()
-        .args(["list-panes", "-F", "#{pane_index}:#{pane_width}:#{pane_active}"])
+    let widths_second = tmux
+        .cmd()
+        .args([
+            "list-panes",
+            "-F",
+            "#{pane_index}:#{pane_width}:#{pane_active}",
+        ])
         .run()
         .stdout_trimmed();
     eprintln!("After second -fh split: {}", widths_second);
 
-    let panes: Vec<(u32, u32, bool)> = widths_second.lines().map(|line| {
-        let parts: Vec<&str> = line.split(':').collect();
-        (parts[0].parse().unwrap(), parts[1].parse().unwrap(), parts[2] == "1")
-    }).collect();
+    let panes: Vec<(u32, u32, bool)> = widths_second
+        .lines()
+        .map(|line| {
+            let parts: Vec<&str> = line.split(':').collect();
+            (
+                parts[0].parse().unwrap(),
+                parts[1].parse().unwrap(),
+                parts[2] == "1",
+            )
+        })
+        .collect();
 
     assert_eq!(panes.len(), 3, "should have 3 panes");
 
@@ -258,7 +319,11 @@ fn split_window_fullsize_vertical_twice() {
     eprintln!("Active pane: idx={} width={}", active.0, active.1);
 
     // New pane (rightmost) gets ~half the window, existing panes share the other half
-    assert_eq!(widths, vec![20, 19, 39], "full-size split layout should match C tmux");
+    assert_eq!(
+        widths,
+        vec![20, 19, 39],
+        "full-size split layout should match C tmux"
+    );
 }
 
 #[test]
@@ -281,7 +346,13 @@ fn split_window_vertical_twice_attached() {
         .assert_success();
     std::thread::sleep(Duration::from_millis(200));
 
-    let panes = tmux.cmd().args(["list-panes"]).run().stdout_trimmed().lines().count();
+    let panes = tmux
+        .cmd()
+        .args(["list-panes"])
+        .run()
+        .stdout_trimmed()
+        .lines()
+        .count();
     assert_eq!(panes, 2, "should have 2 panes after first vertical split");
 
     // Split the same pane vertically again
@@ -291,7 +362,13 @@ fn split_window_vertical_twice_attached() {
         .assert_success();
     std::thread::sleep(Duration::from_millis(200));
 
-    let panes = tmux.cmd().args(["list-panes"]).run().stdout_trimmed().lines().count();
+    let panes = tmux
+        .cmd()
+        .args(["list-panes"])
+        .run()
+        .stdout_trimmed()
+        .lines()
+        .count();
     assert_eq!(panes, 3, "should have 3 panes after second vertical split");
 }
 
@@ -331,15 +408,27 @@ fn copy_mode_vi_basic() {
 fn join_pane_in_same_window_keeps_active_pane() {
     let t = Duration::from_secs(5);
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-x", "80", "-y", "24", "sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["-x", "80", "-y", "24", "sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(t);
     for _ in 0..2 {
-        tmux.cmd().args(["split-window", "sleep 1000"]).run().assert_success();
+        tmux.cmd()
+            .args(["split-window", "sleep 1000"])
+            .run()
+            .assert_success();
     }
     tmux.wait_for("#{window_panes}", |v| v == "3", t);
-    tmux.cmd().args(["select-pane", "-t", ".0"]).run().assert_success();
+    tmux.cmd()
+        .args(["select-pane", "-t", ".0"])
+        .run()
+        .assert_success();
     let active = tmux.query("#{pane_id}");
-    tmux.cmd().args(["join-pane", "-d", "-s", ".0", "-t", ".2"]).run().assert_success();
+    tmux.cmd()
+        .args(["join-pane", "-d", "-s", ".0", "-t", ".2"])
+        .run()
+        .assert_success();
     assert_eq!(tmux.query("#{pane_id}"), active);
 }
 
@@ -354,18 +443,40 @@ fn output_of_exited_pane_is_read_to_the_end() {
         .run()
         .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
-    tmux.cmd().args(["set", "-g", "remain-on-exit", "on"]).run().assert_success();
     tmux.cmd()
-        .args(["new-window", "-d", "-t", ":1", "seq 1 1500 | sed 's/$/ some padding to make the output longer/'"])
+        .args(["set", "-g", "remain-on-exit", "on"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args([
+            "new-window",
+            "-d",
+            "-t",
+            ":1",
+            "seq 1 1500 | sed 's/$/ some padding to make the output longer/'",
+        ])
         .run()
         .assert_success();
     let start = std::time::Instant::now();
-    while tmux.cmd().args(["display", "-p", "-t", ":1", "#{pane_dead}"]).run().stdout_trimmed() != "1" {
-        assert!(start.elapsed() < Duration::from_secs(5), "pane did not exit");
+    while tmux
+        .cmd()
+        .args(["display", "-p", "-t", ":1", "#{pane_dead}"])
+        .run()
+        .stdout_trimmed()
+        != "1"
+    {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "pane did not exit"
+        );
         std::thread::sleep(Duration::from_millis(50));
     }
     std::thread::sleep(Duration::from_millis(300));
-    let out = tmux.cmd().args(["capture-pane", "-p", "-t", ":1", "-S", "-"]).run().stdout_str();
+    let out = tmux
+        .cmd()
+        .args(["capture-pane", "-p", "-t", ":1", "-S", "-"])
+        .run()
+        .stdout_str();
     assert!(
         out.contains("1500 some padding"),
         "last line missing, capture ends with:\n{}",

@@ -119,12 +119,7 @@ impl TmuxTestHarness {
     /// Each element of `commands` is a separate tmux command.
     pub fn run_shell_cmd(&self, shell_args: &str) -> TmuxResult {
         let bin = client_bin();
-        let full_cmd = format!(
-            "{} -L{} {}",
-            bin.display(),
-            self.socket_path,
-            shell_args,
-        );
+        let full_cmd = format!("{} -L{} {}", bin.display(), self.socket_path, shell_args,);
         let output = Command::new("sh")
             .args(["-c", &full_cmd])
             .stdin(Stdio::null())
@@ -221,12 +216,7 @@ impl TmuxTestHarness {
     /// Poll a tmux format query until the returned value satisfies `pred`,
     /// or panic after `timeout`. Useful when a command's side effect
     /// (new-window, split-window, etc.) takes time to become visible.
-    pub fn wait_for(
-        &self,
-        format: &str,
-        pred: impl Fn(&str) -> bool,
-        timeout: Duration,
-    ) -> String {
+    pub fn wait_for(&self, format: &str, pred: impl Fn(&str) -> bool, timeout: Duration) -> String {
         let start = Instant::now();
         loop {
             let val = self.query(format);
@@ -234,9 +224,7 @@ impl TmuxTestHarness {
                 return val;
             }
             if start.elapsed() >= timeout {
-                panic!(
-                    "wait_for({format:?}) timed out after {timeout:?}, last value: {val:?}"
-                );
+                panic!("wait_for({format:?}) timed out after {timeout:?}, last value: {val:?}");
             }
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -430,12 +418,7 @@ impl PtyClient {
         Self::spawn_with_args(harness, &["-f/dev/null", "new-session"], cols, rows)
     }
 
-    fn spawn_with_args(
-        harness: &TmuxTestHarness,
-        args: &[&str],
-        cols: u16,
-        rows: u16,
-    ) -> Self {
+    fn spawn_with_args(harness: &TmuxTestHarness, args: &[&str], cols: u16, rows: u16) -> Self {
         let winsize = nix::pty::Winsize {
             ws_row: rows,
             ws_col: cols,
@@ -443,8 +426,7 @@ impl PtyClient {
             ws_ypixel: 0,
         };
 
-        let pty = nix::pty::openpty(Some(&winsize), None)
-            .expect("openpty failed");
+        let pty = nix::pty::openpty(Some(&winsize), None).expect("openpty failed");
 
         let slave_fd = pty.slave;
 

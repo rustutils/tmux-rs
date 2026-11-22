@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 #[test]
 fn bind_key_and_verify_with_list_keys() {
@@ -44,10 +44,7 @@ fn unbind_key_removes_binding() {
     assert!(output.contains("Y"), "key Y should be bound");
 
     // Unbind it
-    tmux.cmd()
-        .args(["unbind-key", "Y"])
-        .run()
-        .assert_success();
+    tmux.cmd().args(["unbind-key", "Y"]).run().assert_success();
 
     // Verify it's gone -- filter to prefix table bindings for 'Y'
     // We look specifically for " Y " to avoid matching other keys that contain Y
@@ -121,7 +118,14 @@ fn bind_key_with_specific_table() {
 
     // Bind a key in the root table
     tmux.cmd()
-        .args(["bind-key", "-T", "root", "F12", "display-message", "root-test"])
+        .args([
+            "bind-key",
+            "-T",
+            "root",
+            "F12",
+            "display-message",
+            "root-test",
+        ])
         .run()
         .assert_success();
 
@@ -138,10 +142,7 @@ fn bind_key_with_specific_table() {
     let result = tmux.cmd().args(["list-keys", "-T", "prefix"]).run();
     let output = result.stdout_str();
     let has_f12 = output.lines().any(|line| line.contains("F12"));
-    assert!(
-        !has_f12,
-        "F12 should not be in prefix table"
-    );
+    assert!(!has_f12, "F12 should not be in prefix table");
 }
 
 #[test]
@@ -153,7 +154,13 @@ fn bind_key_in_copy_mode_table() {
     // Bind in copy-mode table
     tmux.cmd()
         .args([
-            "bind-key", "-T", "copy-mode", "Q", "send-keys", "-X", "cancel",
+            "bind-key",
+            "-T",
+            "copy-mode",
+            "Q",
+            "send-keys",
+            "-X",
+            "cancel",
         ])
         .run()
         .assert_success();
@@ -260,16 +267,40 @@ fn unbind_nonexistent_key_does_not_error() {
 fn send_keys_k_runs_keys_in_order() {
     let t = Duration::from_secs(5);
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-x", "80", "-y", "24", "sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["-x", "80", "-y", "24", "sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(t);
-    tmux.cmd().args(["bind", "-n", "F11", "set", "-g", "@x", "a"]).run().assert_success();
-    tmux.cmd().args(["bind", "-n", "F12", "set", "-ga", "@x", "b"]).run().assert_success();
+    tmux.cmd()
+        .args(["bind", "-n", "F11", "set", "-g", "@x", "a"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["bind", "-n", "F12", "set", "-ga", "@x", "b"])
+        .run()
+        .assert_success();
     let _pty = harness::PtyClient::attach(&tmux, 80, 24);
     tmux.wait_for("#{session_attached}", |v| v == "1", t);
-    let client = tmux.cmd().args(["list-clients", "-F", "#{client_name}"]).run().stdout_trimmed();
+    let client = tmux
+        .cmd()
+        .args(["list-clients", "-F", "#{client_name}"])
+        .run()
+        .stdout_trimmed();
     let out = tmux
         .cmd()
-        .args(["send-keys", "-K", "-c", &client, "F11", "F12", ";", "display", "-p", "#{@x}"])
+        .args([
+            "send-keys",
+            "-K",
+            "-c",
+            &client,
+            "F11",
+            "F12",
+            ";",
+            "display",
+            "-p",
+            "#{@x}",
+        ])
         .run();
     out.assert_success();
     assert_eq!(out.stdout_trimmed(), "ab");

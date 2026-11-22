@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::{PtyClient, TmuxTestHarness};
+
+use super::harness;
 
 #[test]
 fn list_clients_empty_for_detached_session() {
@@ -69,7 +69,10 @@ fn detach_client_with_nonexistent_target() {
 #[test]
 fn switch_client_no_client_errors() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-s", "sess1"]).run().assert_success();
+    tmux.new_session()
+        .args(["-s", "sess1"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // Create a second session
@@ -213,24 +216,21 @@ fn server_access_allow_deny() {
 
     // Try to allow a user -- this may fail if the feature isn't supported
     // or if the user doesn't exist, but it should not crash
-    let result = tmux
-        .cmd()
-        .args(["server-access", "-a", "nobody"])
-        .run();
+    let result = tmux.cmd().args(["server-access", "-a", "nobody"]).run();
     let _ = result.success();
 
     // Try to deny a user
-    let result = tmux
-        .cmd()
-        .args(["server-access", "-d", "nobody"])
-        .run();
+    let result = tmux.cmd().args(["server-access", "-d", "nobody"]).run();
     let _ = result.success();
 }
 
 #[test]
 fn multiple_sessions_list_clients() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-s", "alpha"]).run().assert_success();
+    tmux.new_session()
+        .args(["-s", "alpha"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // Create additional sessions
@@ -282,7 +282,10 @@ fn list_clients_format_flag() {
 #[test]
 fn detach_client_all_flag() {
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-s", "mysess"]).run().assert_success();
+    tmux.new_session()
+        .args(["-s", "mysess"])
+        .run()
+        .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
     // detach-client -a (detach all other clients) with no clients
@@ -405,21 +408,54 @@ fn server_drops_client_on_malformed_message() {
         ("IDENTIFY_STDOUT with data", imsg_frame(110, &[1])),
         ("IDENTIFY_LONGFLAGS size", imsg_frame(111, &[1, 2, 3])),
         ("IDENTIFY_TERMINFO without NUL", imsg_frame(112, b"x")),
-        ("identify after DONE", [identify_done(), imsg_frame(100, &0i32.to_ne_bytes())].concat()),
-        ("COMMAND too short", [identify_done(), imsg_frame(200, &[1])].concat()),
+        (
+            "identify after DONE",
+            [identify_done(), imsg_frame(100, &0i32.to_ne_bytes())].concat(),
+        ),
+        (
+            "COMMAND too short",
+            [identify_done(), imsg_frame(200, &[1])].concat(),
+        ),
         (
             "COMMAND string without NUL",
             [identify_done(), imsg_frame(200, &[1, 0, 0, 0, b'l', b's'])].concat(),
         ),
-        ("EXITING with data", [identify_done(), imsg_frame(205, &[1])].concat()),
-        ("RESIZE with data", [identify_done(), imsg_frame(208, &[1])].concat()),
-        ("SHELL with data", [identify_done(), imsg_frame(209, &[1])].concat()),
-        ("UNLOCK with data", [identify_done(), imsg_frame(215, &[1])].concat()),
-        ("WAKEUP with data", [identify_done(), imsg_frame(216, &[1])].concat()),
-        ("READ too short", [identify_done(), imsg_frame(301, &[1])].concat()),
-        ("READ_DONE size", [identify_done(), imsg_frame(302, &[1])].concat()),
-        ("WRITE_READY size", [identify_done(), imsg_frame(305, &[1])].concat()),
-        ("WRITE_DONE size", [identify_done(), imsg_frame(308, &[1])].concat()),
+        (
+            "EXITING with data",
+            [identify_done(), imsg_frame(205, &[1])].concat(),
+        ),
+        (
+            "RESIZE with data",
+            [identify_done(), imsg_frame(208, &[1])].concat(),
+        ),
+        (
+            "SHELL with data",
+            [identify_done(), imsg_frame(209, &[1])].concat(),
+        ),
+        (
+            "UNLOCK with data",
+            [identify_done(), imsg_frame(215, &[1])].concat(),
+        ),
+        (
+            "WAKEUP with data",
+            [identify_done(), imsg_frame(216, &[1])].concat(),
+        ),
+        (
+            "READ too short",
+            [identify_done(), imsg_frame(301, &[1])].concat(),
+        ),
+        (
+            "READ_DONE size",
+            [identify_done(), imsg_frame(302, &[1])].concat(),
+        ),
+        (
+            "WRITE_READY size",
+            [identify_done(), imsg_frame(305, &[1])].concat(),
+        ),
+        (
+            "WRITE_DONE size",
+            [identify_done(), imsg_frame(308, &[1])].concat(),
+        ),
     ];
 
     let mut tmux = TmuxTestHarness::new();
@@ -474,7 +510,8 @@ fn server_survives_bad_command_argument_counts() {
 
     for (what, frame) in cases {
         let mut sock = UnixStream::connect(tmux.socket_path()).expect("connect to server");
-        sock.write_all(&[imsg_frame(IDENTIFY_DONE, &[]), frame].concat()).expect("send frames");
+        sock.write_all(&[imsg_frame(IDENTIFY_DONE, &[]), frame].concat())
+            .expect("send frames");
         std::thread::sleep(Duration::from_millis(200));
         drop(sock);
         let alive = tmux.cmd().args(["has-session"]).run();

@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::TmuxTestHarness;
+
+use super::harness;
 
 /// Set up a tmux session and open a window running `cat -tv` in raw mode,
 /// mirroring the upstream regress/input-keys.sh pattern.
@@ -277,12 +277,7 @@ fn enable_extended_keys(tmux: &TmuxTestHarness) {
 
 /// Assert all 7 modifier combinations of an extended key. `pattern` should
 /// contain `_` where the modifier digit goes (e.g., `^[[1;_A` for arrow Up).
-fn assert_extended_key(
-    tmux: &TmuxTestHarness,
-    window: &str,
-    base: &str,
-    pattern: &str,
-) {
+fn assert_extended_key(tmux: &TmuxTestHarness, window: &str, base: &str, pattern: &str) {
     for (mods, digit) in [
         ("S-", '2'),
         ("M-", '3'),
@@ -360,7 +355,13 @@ fn bracketed_paste_is_written_unchanged() {
     let t = Duration::from_secs(5);
     let mut tmux = TmuxTestHarness::new();
     tmux.new_session()
-        .args(["-x", "80", "-y", "24", "printf '\\033[?1h'; stty -icanon -echo; exec cat -v"])
+        .args([
+            "-x",
+            "80",
+            "-y",
+            "24",
+            "printf '\\033[?1h'; stty -icanon -echo; exec cat -v",
+        ])
         .run()
         .assert_success();
     tmux.wait_ready(t);

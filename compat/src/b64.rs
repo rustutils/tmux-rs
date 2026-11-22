@@ -192,7 +192,10 @@ mod tests {
     #[test]
     fn pton_full_groups() {
         assert_eq!(decode(c"TWFu", 3).as_deref(), Some(&b"Man"[..]));
-        assert_eq!(decode(c"aGVsbG8gd29ybGQh", 12).as_deref(), Some(&b"hello world!"[..]));
+        assert_eq!(
+            decode(c"aGVsbG8gd29ybGQh", 12).as_deref(),
+            Some(&b"hello world!"[..])
+        );
     }
 
     #[test]

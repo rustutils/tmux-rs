@@ -1,8 +1,8 @@
-use super::harness;
-
 use std::time::Duration;
 
 use harness::{PtyClient, TmuxTestHarness};
+
+use super::harness;
 
 // ---------------------------------------------------------------------------
 // Helper: create a harness with a ready session
@@ -182,10 +182,7 @@ fn status_left_with_session_name_variable() {
 
     // Query the format to see the expanded value
     let session_name = tmux.query("#{session_name}");
-    assert!(
-        !session_name.is_empty(),
-        "session_name should not be empty"
-    );
+    assert!(!session_name.is_empty(), "session_name should not be empty");
 }
 
 // ===========================================================================
@@ -229,10 +226,7 @@ fn style_colour_number() {
     let tmux = setup();
 
     let val = set_and_get_global(&tmux, "status-style", "fg=colour123");
-    assert!(
-        val.contains("colour123"),
-        "expected colour123 in '{val}'"
-    );
+    assert!(val.contains("colour123"), "expected colour123 in '{val}'");
 }
 
 #[test]
@@ -267,10 +261,7 @@ fn pane_active_border_style() {
     let tmux = setup();
 
     let val = set_and_get_global(&tmux, "pane-active-border-style", "fg=yellow");
-    assert!(
-        val.contains("fg=yellow"),
-        "expected fg=yellow in '{val}'"
-    );
+    assert!(val.contains("fg=yellow"), "expected fg=yellow in '{val}'");
 }
 
 #[test]
@@ -287,14 +278,8 @@ fn mode_style() {
     let tmux = setup();
 
     let val = set_and_get_global(&tmux, "mode-style", "bg=yellow,fg=black");
-    assert!(
-        val.contains("bg=yellow"),
-        "expected bg=yellow in '{val}'"
-    );
-    assert!(
-        val.contains("fg=black"),
-        "expected fg=black in '{val}'"
-    );
+    assert!(val.contains("bg=yellow"), "expected bg=yellow in '{val}'");
+    assert!(val.contains("fg=black"), "expected fg=black in '{val}'");
 }
 
 // ===========================================================================
@@ -318,10 +303,7 @@ fn capture_pane_with_escapes() {
     let _ = pty.read_raw();
 
     // Capture with -e (include escape sequences)
-    let result = tmux
-        .cmd()
-        .args(["capture-pane", "-p", "-e"])
-        .run();
+    let result = tmux.cmd().args(["capture-pane", "-p", "-e"]).run();
     let output = result.stdout_str();
 
     // The output should contain ANSI escape sequences (ESC = \x1b = \033)
@@ -376,15 +358,30 @@ fn pty_output_contains(pty: &mut PtyClient, needle: &[u8], timeout: Duration) ->
 fn window_style_follows_user_option() {
     let t = Duration::from_secs(5);
     let mut tmux = TmuxTestHarness::new();
-    tmux.new_session().args(["-x", "80", "-y", "24", "sleep 1000"]).run().assert_success();
+    tmux.new_session()
+        .args(["-x", "80", "-y", "24", "sleep 1000"])
+        .run()
+        .assert_success();
     tmux.wait_ready(t);
-    tmux.cmd().args(["set", "-g", "@c", "default"]).run().assert_success();
-    tmux.cmd().args(["set", "-g", "window-style", "bg=#{@c}"]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "@c", "default"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "window-style", "bg=#{@c}"])
+        .run()
+        .assert_success();
     let mut pty = PtyClient::attach(&tmux, 80, 24);
     tmux.wait_for("#{session_attached}", |v| v == "1", t);
     std::thread::sleep(Duration::from_millis(200));
     pty.read_raw();
-    tmux.cmd().args(["set", "-g", "@c", "red"]).run().assert_success();
+    tmux.cmd()
+        .args(["set", "-g", "@c", "red"])
+        .run()
+        .assert_success();
     // Red background is SGR 41.
-    assert!(pty_output_contains(&mut pty, b"41m", t), "pane was not redrawn with the new style");
+    assert!(
+        pty_output_contains(&mut pty, b"41m", t),
+        "pane was not redrawn with the new style"
+    );
 }
