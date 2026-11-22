@@ -496,10 +496,21 @@ pub unsafe fn event_loop(flags: c_int) -> c_int {
         if cancelled {
             continue;
         }
-        if let Some(cb) = base.io_callbacks.get(&ready.id) {
+        // Take the callback out of its map while it runs. A callback may
+        // drop its own handle, which removes the callback from the map, or
+        // register new events, which can reallocate the map. Either would
+        // free or move the closure while it is still running. Put it back
+        // afterwards unless its handle was dropped meanwhile.
+        if let Some(cb) = base.io_callbacks.remove(&ready.id) {
             cb(ready.fd, ready.events);
-        } else if let Some(cb) = base.timer_callbacks.get(&ready.id) {
+            if !CANCELLED.with(|cell| cell.borrow().contains(&ready.id)) {
+                base.io_callbacks.insert(ready.id, cb);
+            }
+        } else if let Some(cb) = base.timer_callbacks.remove(&ready.id) {
             cb();
+            if !CANCELLED.with(|cell| cell.borrow().contains(&ready.id)) {
+                base.timer_callbacks.insert(ready.id, cb);
+            }
         } else if let Some(slot) = base.deferred_callbacks.get_mut(&ready.id)
             && let Some(cb) = slot.take()
         {
@@ -526,4 +537,44 @@ pub fn event_get_method() -> *const u8 {
 
 pub fn event_set_log_callback(_cb: event_log_cb) {
     // TODO: wire up to calloop's logging or a global callback.
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    /// A timer callback may drop its own handle and register new timers
+    /// while it runs. Both used to free or move the running closure,
+    /// because dispatch called it through a reference into the map.
+    #[test]
+    fn timer_callback_can_drop_its_own_handle() {
+        unsafe { event_init() };
+        let slot: Rc<RefCell<Option<TimerHandle>>> = Rc::new(RefCell::new(None));
+        let fired = Rc::new(Cell::new(0));
+        let extra: Rc<RefCell<Vec<TimerHandle>>> = Rc::new(RefCell::new(Vec::new()));
+
+        let (s, f, e) = (slot.clone(), fired.clone(), extra.clone());
+        let handle = timer_add(
+            Duration::from_millis(1),
+            Box::new(move || {
+                f.set(f.get() + 1);
+                // Drop our own handle while running.
+                s.borrow_mut().take();
+                // Register enough timers to make the map reallocate.
+                for _ in 0..256 {
+                    if let Some(h) = timer_add(Duration::from_secs(3600), Box::new(|| {})) {
+                        e.borrow_mut().push(h);
+                    }
+                }
+            }),
+        );
+        *slot.borrow_mut() = handle;
+
+        unsafe { event_loop(crate::EVLOOP_ONCE) };
+        assert_eq!(fired.get(), 1);
+        assert!(slot.borrow().is_none());
+        assert_eq!(extra.borrow().len(), 256);
+    }
 }
