@@ -344,12 +344,22 @@ pub fn popup_free_cb(c: *mut client, data: *mut c_void) {
             }
             cmdq_continue(item);
         }
+        popup_free(pd);
+    }
+}
+
+/// Free a popup and drop its reference to the client. Also used when
+/// creating the popup fails, so the input context may not exist yet.
+unsafe fn popup_free(pd: *mut popup_data) {
+    unsafe {
         server_client_unref((*pd).c);
 
         if !(*pd).job.is_null() {
             job_free((*pd).job);
         }
-        input_free((*pd).ictx);
+        if !(*pd).ictx.is_null() {
+            input_free((*pd).ictx);
+        }
 
         screen_free(&mut (*pd).s);
         colour_palette_free(Some(&mut (*pd).palette));
@@ -908,6 +918,12 @@ pub unsafe fn popup_display(
             jx as i32,
             jy as i32,
         );
+        // job_run fails if fork, forkpty or socketpair do (upstream
+        // 67e6f824 and 65e81157).
+        if (*pd).job.is_null() {
+            popup_free(pd);
+            return -1;
+        }
         (*pd).ictx = input_init(null_mut(), job_get_output((*pd).job), &raw mut (*pd).palette);
 
         server_client_set_overlay(

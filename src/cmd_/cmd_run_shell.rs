@@ -214,6 +214,15 @@ unsafe fn cmd_run_shell_timer_fire(cdata: *mut cmd_run_shell_data) {
             )
             .is_null()
             {
+                // Report the failure and let the queue go on, otherwise a
+                // waiting run-shell hangs forever (upstream ec58272b).
+                let cmd = _s(cmd);
+                if (*cdata).item.is_null() {
+                    status_message_set!(c, -1, 1, false, "failed to run command: {}", cmd);
+                } else {
+                    cmdq_error!((*cdata).item, "failed to run command: {}", cmd);
+                    cmdq_continue((*cdata).item);
+                }
                 cmd_run_shell_free(cdata.cast());
             }
             return;

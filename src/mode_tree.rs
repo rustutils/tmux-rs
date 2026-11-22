@@ -298,6 +298,10 @@ unsafe fn mode_tree_clear_tagged(mtl: &Vec<*mut mode_tree_item>) {
 
 pub unsafe fn mode_tree_up(mtd: *mut mode_tree_data, wrap: i32) {
     unsafe {
+        // An empty list has nothing to move to (upstream 2e9c6c25).
+        if (*mtd).line_list.is_empty() {
+            return;
+        }
         if (*mtd).current == 0 {
             if wrap != 0 {
                 (*mtd).current = (*mtd).line_list.len() as u32 - 1;
@@ -316,6 +320,9 @@ pub unsafe fn mode_tree_up(mtd: *mut mode_tree_data, wrap: i32) {
 
 pub unsafe fn mode_tree_down(mtd: *mut mode_tree_data, wrap: i32) -> bool {
     unsafe {
+        if (*mtd).line_list.is_empty() {
+            return false;
+        }
         if (*mtd).current == (*mtd).line_list.len() as u32 - 1 {
             if wrap != 0 {
                 (*mtd).current = 0;
@@ -386,6 +393,9 @@ pub unsafe fn mode_tree_set_current(mtd: *mut mode_tree_data, tag: u64) -> bool 
         if let Some(found) = mode_tree_get_tag(&*mtd, tag) {
             (*mtd).current = found as u32;
             // TODO does this same problem exist in upstream?
+            if (*mtd).line_list.is_empty() {
+                return false;
+            }
             if (*mtd).current > (*mtd).height.saturating_sub(1) {
                 (*mtd).offset = (*mtd).current - (*mtd).height + 1;
             } else {
@@ -1238,6 +1248,12 @@ pub unsafe fn mode_tree_key(
     unsafe {
         let mut x: u32 = 0;
         let mut y: u32 = 0;
+
+        // Nothing to act on in an empty list (upstream 85d72b99).
+        if (*mtd).line_list.is_empty() {
+            *key = KEYC_NONE;
+            return 1;
+        }
 
         if KEYC_IS_MOUSE(*key) && !m.is_null() {
             if cmd_mouse_at(pane_ptr_from_id((*mtd).wp), &*m, &raw mut x, &raw mut y, 0) != 0 {
