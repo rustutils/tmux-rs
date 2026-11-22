@@ -155,7 +155,7 @@ pub unsafe fn paste_is_empty() -> bool {
 
 /// Returns the newest automatic paste buffer, or null if none exist.
 /// If `name` is non-null, writes the buffer's name into it.
-pub unsafe fn paste_get_top(name: *mut Option<&str>) -> *mut PasteBuffer {
+pub unsafe fn paste_get_top(name: *mut Option<String>) -> *mut PasteBuffer {
     unsafe {
         // Walk in reverse order (most recent first) to find the newest automatic buffer.
         let order_vec = &*(&raw const PASTE_ORDER);
@@ -164,8 +164,11 @@ pub unsafe fn paste_get_top(name: *mut Option<&str>) -> *mut PasteBuffer {
             if let Some(buf) = map.get_mut(buf_name)
                 && buf.automatic != 0 {
                     let ptr = &mut **buf as *mut PasteBuffer;
+                    // A copy: callers may rename or free the buffer, which
+                    // would leave a borrowed name dangling (upstream
+                    // 7e50eb0e).
                     if !name.is_null() {
-                        *name = Some(&(*ptr).name);
+                        *name = Some((*ptr).name.to_string());
                     }
                     return ptr;
                 }

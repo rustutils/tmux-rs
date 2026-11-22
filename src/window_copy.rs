@@ -5583,10 +5583,9 @@ pub unsafe fn window_copy_append_selection(wme: *mut window_mode_entry) {
             libc::memcpy(buf.cast(), bufdata.cast(), bufsize);
             len += bufsize;
         }
-        // Own the buffer name before paste_set, which may free the buffer
-        // that the borrowed &str points into.
-        let bufname_owned = bufname.map(std::string::ToString::to_string);
-        let _ = paste_set(buf, len, bufname_owned.as_deref());
+        // paste_get_top returns a copy of the name, so it stays valid when
+        // paste_set frees the old buffer.
+        let _ = paste_set(buf, len, bufname.as_deref());
     }
 }
 

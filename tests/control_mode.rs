@@ -532,3 +532,28 @@ fn window_changed_notification_after_kill_session() {
     let _ = child.kill();
     assert!(alive, "server died");
 }
+
+/// Renaming the newest buffer without -b notifies the old name as deleted.
+/// The old name used to be read after the rename had freed it (upstream
+/// 7e50eb0e), so the notification showed the new name.
+#[test]
+fn rename_top_buffer_notifies_old_name() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    let out = tmux.control_mode("set-buffer hello\nset-buffer -n renamed\n");
+    let lines: Vec<String> = out
+        .stdout_str()
+        .lines()
+        .filter(|l| l.starts_with("%paste-buffer"))
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "%paste-buffer-changed buffer0",
+            "%paste-buffer-deleted buffer0",
+            "%paste-buffer-changed renamed",
+        ]
+    );
+}

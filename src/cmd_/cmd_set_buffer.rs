@@ -47,6 +47,7 @@ unsafe fn cmd_set_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
         let tc = cmdq_get_target_client(item);
         let mut pb;
         let olddata;
+        let mut top_name: Option<String> = None;
 
         let mut bufname = cstr_to_str_(args_get_(args, 'b'));
         if bufname.is_none() {
@@ -61,7 +62,7 @@ unsafe fn cmd_set_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
                     cmdq_error!(item, "unknown buffer: {}", bufname);
                     return cmd_retval::CMD_RETURN_ERROR;
                 }
-                pb = paste_get_top(&raw mut bufname);
+                pb = paste_get_top(&raw mut top_name);
             }
             if pb.is_null() {
                 cmdq_error!(item, "no buffer");
@@ -77,7 +78,8 @@ unsafe fn cmd_set_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
                     cmdq_error!(item, "unknown buffer: {}", bufname);
                     return cmd_retval::CMD_RETURN_ERROR;
                 }
-                pb = paste_get_top(&raw mut bufname);
+                pb = paste_get_top(&raw mut top_name);
+                bufname = top_name.as_deref();
             }
             if pb.is_null() {
                 cmdq_error!(item, "no buffer");
