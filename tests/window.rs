@@ -208,3 +208,25 @@ fn window_index_at_int_max() {
     let out = tmux.cmd().args(["list-windows", "-F", "#{window_index}"]).run();
     assert_eq!(out.stdout_trimmed(), "2147483646\n2147483647");
 }
+
+/// pane_current_path is never the server's directory straight after
+/// new-window -c. The child used to change directory after fork, so a
+/// format expanded at once could see the old one (upstream f58b8d0d). It
+/// can be empty, in C tmux too, until the child owns the terminal.
+#[test]
+fn new_window_current_path_is_set_at_once() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    let dir = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+    let dir = dir.to_str().unwrap();
+    for _ in 0..20 {
+        let out = tmux
+            .cmd()
+            .args(["new-window", "-d", "-c", dir, "-P", "-F", "#{pane_current_path}", "sleep 1000"])
+            .run();
+        out.assert_success();
+        let path = out.stdout_trimmed();
+        assert!(path.is_empty() || path == dir, "pane_current_path is {path:?}");
+    }
+}

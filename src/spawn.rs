@@ -11,7 +11,6 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use std::path::Path;
 
 use crate::compat::{closefrom, fdforkpty::fdforkpty};
 use crate::libc::{
@@ -425,6 +424,28 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
                 break 'complete;
             }
 
+            // Change to the new working directory before forking and back
+            // in the parent afterwards. Changing it in the child would race
+            // with pane_current_path reading the child's directory. Like
+            // C, do not move if the current directory cannot be found,
+            // since there would be nothing to go back to.
+            let home = find_home().and_then(|h| h.to_str().ok());
+            let old_cwd = std::env::current_dir().ok();
+            let actual_cwd: Option<PathBuf> = old_cwd.as_ref().and_then(|_| {
+                [(*new_wp).cwd.clone(), home.map(PathBuf::from), Some(PathBuf::from("/"))]
+                    .into_iter()
+                    .flatten()
+                    .find(|dir| std::env::set_current_dir(dir).is_ok())
+            });
+            let restore_cwd = || {
+                if let (Some(_), Some(old)) = (&actual_cwd, &old_cwd)
+                    && std::env::set_current_dir(old).is_err()
+                    && home.is_none_or(|h| std::env::set_current_dir(h).is_err())
+                {
+                    let _ = std::env::set_current_dir("/");
+                }
+            };
+
             // Fork the new process.
             (*new_wp).pid = fdforkpty(
                 PTM_FD,
@@ -435,6 +456,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             );
             if (*new_wp).pid == -1 {
                 let msg = format!("fork failed: {}", strerror(errno!()));
+                restore_cwd();
                 (*new_wp).fd = -1;
                 if !(*sc).flags.intersects(SPAWN_RESPAWN) {
                     layout_close_pane(new_wp);
@@ -445,8 +467,10 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
                 return Err(msg);
             }
 
-            // In the parent process, everything is done now.
+            // In the parent process, everything is done now. Change the
+            // working directory back.
             if (*new_wp).pid != 0 {
+                restore_cwd();
                 #[cfg(all(feature = "systemd", feature = "cgroups"))]
                 {
                     // Move the child process into a new cgroup for systemd-oomd
@@ -464,30 +488,9 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
                 break 'complete;
             }
 
-            // Child process. Change to the working directory or home if that
-            // fails.
-            if (*new_wp).cwd.as_deref().is_some_and(|p| std::env::set_current_dir(p).is_ok()) {
-                environ_set!(
-                    child,
-                    c!("PWD"),
-                    environ_flags::empty(),
-                    "{}",
-                    (*new_wp).cwd.as_deref().unwrap().display()
-                );
-            } else if let Some(tmp) = find_home()
-                && std::env::set_current_dir(tmp.to_str().expect("TODO")).is_ok()
-            {
-                environ_set!(
-                    child,
-                    c!("PWD"),
-                    environ_flags::empty(),
-                    "{}",
-                    tmp.to_str().unwrap()
-                );
-            } else if std::env::set_current_dir(Path::new("/")).is_ok() {
-                environ_set!(child, c!("PWD"), environ_flags::empty(), "/");
-            } else {
-                fatal("chdir failed");
+            // Child process. Set PWD to the working directory.
+            if let Some(dir) = &actual_cwd {
+                environ_set!(child, c!("PWD"), environ_flags::empty(), "{}", dir.display());
             }
 
             // Update terminal escape characters from the session if available and
