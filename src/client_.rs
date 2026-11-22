@@ -11,7 +11,6 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use std::io::Write;
 
 use crate::compat::{
     WAIT_ANY, closefrom,
@@ -399,13 +398,15 @@ pub unsafe extern "C-unwind" fn client_main(
             client_exec(CLIENT_EXECSHELL, CLIENT_EXECCMD);
         }
 
-        setblocking(STDIN_FILENO, 1);
-        setblocking(STDOUT_FILENO, 1);
-        setblocking(STDERR_FILENO, 1);
-
+        // Print the exit message, if any. The streams may still be
+        // non-blocking here, they are only restored at the end so a control
+        // client is not stuck while the terminal still has data for it
+        // (upstream issue 5356). Output still in Rust's stdout buffer goes
+        // first, the exit message is written to the fd directly.
+        let _ = std::io::Write::flush(&mut std::io::stdout());
         if CLIENT_ATTACHED != 0 {
             if CLIENT_EXITREASON != client_exitreason::CLIENT_EXIT_NONE {
-                println!("[{}]", client_exit_message());
+                client_write_all(STDOUT_FILENO, format!("[{}]\n", client_exit_message()).as_bytes());
             }
 
             let ppid = getppid();
@@ -414,34 +415,95 @@ pub unsafe extern "C-unwind" fn client_main(
             }
         } else if (*&raw const CLIENT_FLAGS).intersects(client_flag::CONTROL) {
             if CLIENT_EXITREASON != client_exitreason::CLIENT_EXIT_NONE {
-                println!("%exit {}", client_exit_message());
+                client_write_all(STDOUT_FILENO, format!("%exit {}\n", client_exit_message()).as_bytes());
             } else {
-                println!("%exit");
+                client_write_all(STDOUT_FILENO, b"%exit\n");
             }
-            // flush stdout (should already be flushed by println! macro)
             if (*&raw const CLIENT_FLAGS).intersects(client_flag::CONTROL_WAITEXIT) {
-                // TODO investigate if buffering mode is correct
-                for line in std::io::stdin().lines() {
-                    match line {
-                        Ok(line_string) => {
-                            if line_string.is_empty() {
-                                break;
-                            }
-                        }
-                        Err(_err) => break,
-                    }
-                }
+                client_wait_exit(STDIN_FILENO);
             }
             if (*&raw const CLIENT_FLAGS).intersects(client_flag::CONTROLCONTROL) {
-                _ = std::io::stdout().lock().write(b"\x1b\\");
-                // flush stdout
+                client_write_all(STDOUT_FILENO, b"\x1b\\");
                 tcsetattr(STDOUT_FILENO, TCSAFLUSH, &raw mut saved_tio);
             }
         } else if CLIENT_EXITREASON != client_exitreason::CLIENT_EXIT_NONE {
-            eprintln!("{}", client_exit_message());
+            client_write_all(STDERR_FILENO, format!("{}\n", client_exit_message()).as_bytes());
         }
 
+        // Restore the streams to blocking.
+        setblocking(STDIN_FILENO, 1);
+        setblocking(STDOUT_FILENO, 1);
+        setblocking(STDERR_FILENO, 1);
+
         CLIENT_EXITVAL
+    }
+}
+
+/// Write all of `data` to `fd`. The client prints its exit message while
+/// stdout may still be non-blocking, where `println!` would panic on
+/// EAGAIN. When the fd would block this waits up to a second for it to
+/// drain and then gives up, so a reader that never reads cannot hang the
+/// client (C's stdio drops the data at once). Other errors also give up.
+fn client_write_all(fd: i32, mut data: &[u8]) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+    while !data.is_empty() {
+        let n = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
+        if n >= 0 {
+            data = &data[n as usize..];
+            continue;
+        }
+        match std::io::Error::last_os_error().raw_os_error() {
+            Some(libc::EINTR) => {}
+            Some(libc::EAGAIN) => {
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                if left.is_zero() {
+                    return;
+                }
+                let mut pfd = libc::pollfd { fd, events: libc::POLLOUT, revents: 0 };
+                unsafe { libc::poll(&raw mut pfd, 1, left.as_millis().max(1) as i32) };
+            }
+            _ => return,
+        }
+    }
+}
+
+/// Wait until the terminal sends an empty line or closes `fd`. A control
+/// client started with the wait-exit flag does this after printing %exit,
+/// so a terminal that wraps tmux (such as iTerm2) can finish reading.
+/// `fd` may be non-blocking, so this polls instead of blocking in read.
+fn client_wait_exit(fd: i32) {
+    let mut buf: Vec<u8> = Vec::new();
+    loop {
+        // Use lines that are already buffered first.
+        if let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+            let empty = pos == 0;
+            buf.drain(..=pos);
+            if empty {
+                break;
+            }
+            continue;
+        }
+
+        let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        if unsafe { libc::poll(&raw mut pfd, 1, -1) } == -1 {
+            if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                continue;
+            }
+            break;
+        }
+
+        let mut chunk = [0u8; 4096];
+        let n = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
+        if n == 0 {
+            break;
+        }
+        if n < 0 {
+            match std::io::Error::last_os_error().raw_os_error() {
+                Some(libc::EAGAIN) | Some(libc::EINTR) => continue,
+                _ => break,
+            }
+        }
+        buf.extend_from_slice(&chunk[..n as usize]);
     }
 }
 
