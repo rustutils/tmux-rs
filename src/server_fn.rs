@@ -77,7 +77,11 @@ pub unsafe fn server_status_session_group(s: *mut session) {
 pub unsafe fn server_redraw_window(w: *mut window) {
     unsafe {
         for c in clients_iter() {
-            if !client_get_session(c).is_null() && winlink_window((*client_get_session(c)).curw) == w {
+            // A session can be without a current window (upstream 77ce0a83).
+            if !client_get_session(c).is_null()
+                && !(*client_get_session(c)).curw.is_null()
+                && winlink_window((*client_get_session(c)).curw) == w
+            {
                 server_redraw_client(c);
             }
         }
@@ -87,7 +91,11 @@ pub unsafe fn server_redraw_window(w: *mut window) {
 pub unsafe fn server_redraw_window_borders(w: *mut window) {
     unsafe {
         for c in clients_iter() {
-            if !client_get_session(c).is_null() && winlink_window((*client_get_session(c)).curw) == w {
+            // A session can be without a current window (upstream 77ce0a83).
+            if !client_get_session(c).is_null()
+                && !(*client_get_session(c)).curw.is_null()
+                && winlink_window((*client_get_session(c)).curw) == w
+            {
                 (*c).flags |= client_flag::REDRAWBORDERS;
             }
         }

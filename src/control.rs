@@ -1093,6 +1093,12 @@ unsafe fn control_check_subs_timer_fire(cid: ClientId) {
             Box::new(move || control_check_subs_timer_fire(cid)),
         );
 
+        // The client may have lost its session before it exits (upstream
+        // 881bec95).
+        if client_get_session(c).is_null() {
+            return;
+        }
+
         for csub in (*cs).subs.values_mut() {
             let csub: *mut control_sub = &mut **csub;
             match (*csub).type_ {

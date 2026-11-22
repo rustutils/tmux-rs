@@ -879,6 +879,11 @@ pub unsafe fn window_copy_resize(wme: NonNull<window_mode_entry>, sx: u32, sy: u
 
         screen_resize(s, sx, sy, 0);
         let mut cx = (*data).cx;
+        // The history may have shrunk below the scroll offset (upstream
+        // 022b5cf1), which would underflow below.
+        if (*data).oy > (*gd).hsize + (*data).cy {
+            (*data).oy = (*gd).hsize + (*data).cy;
+        }
         let mut cy = (*gd).hsize + (*data).cy - (*data).oy;
         let reflow = (*gd).sx != sx;
         if reflow {
@@ -5517,7 +5522,10 @@ pub unsafe fn window_copy_pipe_run(
                 -1,
                 -1,
             );
-            job_write(job, buf.cast(), *len);
+            // job_run fails if fork or socketpair do (upstream 2a5715fa).
+            if !job.is_null() {
+                job_write(job, buf.cast(), *len);
+            }
         }
         buf.cast()
     }

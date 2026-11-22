@@ -412,18 +412,25 @@ pub fn popup_make_pane(pd: *mut popup_data, type_: layout_type) {
 
         window_unzoom(w, 1);
 
+        // The pane may be too small to split (upstream 06468142).
         let lc = layout_split_pane(wp, type_, -1, spawn_flags::empty());
+        if lc.is_null() {
+            return;
+        }
         let hlimit = options_get_number_((*s).options, "history-limit") as u32;
         let new_wp = window_add_pane(window_pane_window(wp), null_mut(), hlimit, spawn_flags::empty());
         layout_assign_pane(lc, new_wp, 0);
 
-        (*new_wp).fd = job_transfer(
-            (*pd).job,
-            &mut (*new_wp).pid,
-            (*new_wp).tty.as_mut_ptr(),
-            TTY_NAME_MAX,
-        );
-        (*pd).job = null_mut();
+        // The popup command may already have exited (upstream 97fe3563).
+        if !(*pd).job.is_null() {
+            (*new_wp).fd = job_transfer(
+                (*pd).job,
+                &mut (*new_wp).pid,
+                (*new_wp).tty.as_mut_ptr(),
+                TTY_NAME_MAX,
+            );
+            (*pd).job = null_mut();
+        }
 
         screen_set_title(&raw mut (*pd).s, (*new_wp).base.title.as_ptr().cast());
         screen_free(&raw mut (*new_wp).base);

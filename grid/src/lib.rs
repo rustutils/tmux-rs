@@ -1798,7 +1798,9 @@ unsafe fn grid_reflow_join(
                 break;
             }
         }
-        if lines == 0 {
+        // Nothing to join, also when every line was empty and wrapped so
+        // no line was ever read (upstream 7cbb9652).
+        if lines == 0 || from.is_null() {
             return;
         }
 
@@ -2863,6 +2865,25 @@ mod tests {
             gc = gd.get_cell(0, 0);
             assert_eq!(gc.data.data[0], b'.');
             drop(gd);
+        }
+    }
+
+    /// A wrapped line followed only by empty wrapped lines up to the end of
+    /// the grid: the join loop counts lines but never reads one, so there is
+    /// nothing to join from (upstream 7cbb9652).
+    #[test]
+    fn grid_reflow_wider_with_only_empty_wrapped_lines_after() {
+        let mut gd = Grid::new(10, 3, 1000);
+        unsafe {
+            let cell = make_cell(b'x', 8, 8);
+            for x in 0..10u32 {
+                gd.set_cell(x, 0, &cell);
+            }
+            for y in 0..3 {
+                (*gd.get_line(y)).flags |= GridLineFlag::WRAPPED;
+            }
+            gd.reflow(40);
+            assert_eq!(gd.get_cell(0, 0).data.data[0], b'x');
         }
     }
 

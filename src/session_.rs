@@ -753,8 +753,13 @@ pub unsafe fn session_group_synchronize1(target: *mut session, s: *mut session) 
         // Fix up the current window.
         if !(*s).curw.is_null() {
             (*s).curw = winlink_find_by_index(&raw mut (*s).windows, (*(*s).curw).idx);
-        } else {
+        } else if !(*target).curw.is_null() {
             (*s).curw = winlink_find_by_index(&raw mut (*s).windows, (*(*target).curw).idx);
+        }
+        // Either may be gone, fall back to the first window (upstream
+        // 1995b555).
+        if (*s).curw.is_null() {
+            (*s).curw = (*s).windows.values().next().copied().unwrap_or(null_mut());
         }
 
         // Fix up the last window stack.
