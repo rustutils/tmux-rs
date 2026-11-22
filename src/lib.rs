@@ -2309,6 +2309,10 @@ type overlay_free_cb = Option<unsafe fn(*mut client, *mut c_void)>;
 type overlay_resize_cb = Option<unsafe fn(*mut client, *mut c_void)>;
 
 bitflags::bitflags! {
+    /// Client state flags. The whole word is exchanged with the peer in
+    /// MSG_IDENTIFY_FLAGS, MSG_IDENTIFY_LONGFLAGS and MSG_FLAGS, so the
+    /// values must match C tmux 3.8. Bits we do not know are kept as they
+    /// are, like C does.
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq)]
     struct client_flag: u64 {
@@ -2341,14 +2345,25 @@ bitflags::bitflags! {
         const CONTROL_NOOUTPUT   = 0x0004000000u64;
         const DEFAULTSOCKET      = 0x0008000000u64;
         const STARTSERVER        = 0x0010000000u64;
-        const REDRAWPANES        = 0x0020000000u64;
+        const REDRAWMENU         = 0x0020000000u64;
         const NOFORK             = 0x0040000000u64;
-        const ACTIVEPANE         = 0x0080000000u64;
+        const REDRAWSCROLLBARS   = 0x0080000000u64;
         const CONTROL_PAUSEAFTER = 0x0100000000u64;
         const CONTROL_WAITEXIT   = 0x0200000000u64;
         const WINDOWSIZECHANGED  = 0x0400000000u64;
-        const CLIPBOARDBUFFER    = 0x0800000000u64;
+        const CONTROL_NEWLAYOUTS = 0x0800000000u64;
         const BRACKETPASTING     = 0x1000000000u64;
+        const ASSUMEPASTING      = 0x2000000000u64;
+        const WRITE_ACK          = 0x4000000000u64;
+        const NO_DETACH_ON_DESTROY = 0x8000000000u64;
+        const CONTROL_DISCARD    = 0x10000000000u64;
+
+        // These were removed in tmux 3.8 and their values reused for other
+        // flags. They are only used inside the server, so they live on
+        // unused bits until the code using them is brought up to 3.8.
+        const REDRAWPANES        = 0x1000000000000u64;
+        const ACTIVEPANE         = 0x2000000000000u64;
+        const CLIPBOARDBUFFER    = 0x4000000000000u64;
     }
 }
 

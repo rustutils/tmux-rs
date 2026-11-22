@@ -321,3 +321,62 @@ fn switch_client_next_previous_no_client() {
         "switch-client -p should fail with no attached client"
     );
 }
+
+/// Build one imsg frame: a 16 byte header (type, length, flags, peer id
+/// carrying the protocol version, pid) followed by the payload.
+fn imsg_frame(msg_type: u32, payload: &[u8]) -> Vec<u8> {
+    const PROTOCOL_VERSION: u32 = 8;
+    let len = (16 + payload.len()) as u16;
+    let mut frame = Vec::with_capacity(len as usize);
+    frame.extend_from_slice(&msg_type.to_ne_bytes());
+    frame.extend_from_slice(&len.to_ne_bytes());
+    frame.extend_from_slice(&0u16.to_ne_bytes());
+    frame.extend_from_slice(&PROTOCOL_VERSION.to_ne_bytes());
+    frame.extend_from_slice(&std::process::id().to_ne_bytes());
+    frame.extend_from_slice(payload);
+    frame
+}
+
+/// A tmux 3.8 client sends identify flags the 3.5a protocol did not have
+/// (WRITE_ACK and others) and the new MSG_WRITE_DONE message. The server
+/// must keep running, and it must also ignore message types it does not
+/// know, as C tmux does.
+#[test]
+fn server_survives_newer_client_messages() {
+    use std::io::Write as _;
+    use std::os::unix::net::UnixStream;
+
+    const MSG_IDENTIFY_FLAGS: u32 = 100;
+    const MSG_IDENTIFY_DONE: u32 = 106;
+    const MSG_IDENTIFY_LONGFLAGS: u32 = 111;
+    const MSG_WRITE_DONE: u32 = 308;
+    const UNKNOWN_TYPE: u32 = 4242;
+    const CLIENT_WRITE_ACK: u64 = 0x4000000000;
+    const CLIENT_NO_DETACH_ON_DESTROY: u64 = 0x8000000000;
+    const UNKNOWN_FLAG: u64 = 1 << 60;
+
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    let mut sock = UnixStream::connect(tmux.socket_path()).expect("connect to server");
+    let longflags = CLIENT_WRITE_ACK | CLIENT_NO_DETACH_ON_DESTROY | UNKNOWN_FLAG;
+    let mut bytes = Vec::new();
+    bytes.extend(imsg_frame(MSG_IDENTIFY_LONGFLAGS, &longflags.to_ne_bytes()));
+    bytes.extend(imsg_frame(MSG_IDENTIFY_FLAGS, &i32::MIN.to_ne_bytes()));
+    bytes.extend(imsg_frame(UNKNOWN_TYPE, &[]));
+    bytes.extend(imsg_frame(MSG_IDENTIFY_DONE, &[]));
+    // msg_write_done for a stream that does not exist: stream 99, error 0.
+    let mut write_done = Vec::new();
+    write_done.extend_from_slice(&99i32.to_ne_bytes());
+    write_done.extend_from_slice(&0i32.to_ne_bytes());
+    bytes.extend(imsg_frame(MSG_WRITE_DONE, &write_done));
+    bytes.extend(imsg_frame(UNKNOWN_TYPE, &[1, 2, 3]));
+    sock.write_all(&bytes).expect("send frames");
+
+    // Give the server time to process the frames before checking on it.
+    std::thread::sleep(Duration::from_millis(200));
+    drop(sock);
+
+    tmux.cmd().args(["has-session"]).run().assert_success();
+}

@@ -94,6 +94,7 @@ pub enum msgtype {
     MSG_WRITE_READY,
     MSG_WRITE_CLOSE,
     MSG_READ_CANCEL,
+    MSG_WRITE_DONE,
 }
 
 /// Error returned by [`msgtype::try_from`] when the numeric value on
@@ -151,6 +152,7 @@ impl TryFrom<u32> for msgtype {
             305 => msgtype::MSG_WRITE_READY,
             306 => msgtype::MSG_WRITE_CLOSE,
             307 => msgtype::MSG_READ_CANCEL,
+            308 => msgtype::MSG_WRITE_DONE,
             _ => return Err(InvalidEnumValue),
         })
     }
@@ -225,4 +227,14 @@ pub struct msg_write_ready {
 #[repr(C)]
 pub struct msg_write_close {
     pub stream: i32,
+}
+
+/// Payload of [`msgtype::MSG_WRITE_DONE`], added in tmux 3.8. Sent by the
+/// client once a write stream is fully written and closed. `error` is 0 or
+/// the errno of the failed write or close. The server only waits for it
+/// when the client set the WRITE_ACK flag.
+#[repr(C)]
+pub struct msg_write_done {
+    pub stream: i32,
+    pub error: i32,
 }

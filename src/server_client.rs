@@ -2913,7 +2913,13 @@ pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
 
         let datalen = (*imsg).hdr.len - IMSG_HEADER_SIZE as u16;
 
-        match msgtype::try_from((*imsg).hdr.type_).expect("unexpected msgtype") {
+        let Ok(msg_type) = msgtype::try_from((*imsg).hdr.type_) else {
+            // Newer peers may send messages we do not know. C tmux ignores
+            // them too.
+            log_debug!("unknown message type {}", (*imsg).hdr.type_);
+            return;
+        };
+        match msg_type {
             msgtype::MSG_IDENTIFY_CLIENTPID
             | msgtype::MSG_IDENTIFY_CWD
             | msgtype::MSG_IDENTIFY_ENVIRON
@@ -3115,7 +3121,11 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
         let data = (*imsg).data;
         let datalen = (*imsg).hdr.len - IMSG_HEADER_SIZE as u16;
 
-        match msgtype::try_from((*imsg).hdr.type_).expect("unexpectd msgtype") {
+        let Ok(msg_type) = msgtype::try_from((*imsg).hdr.type_) else {
+            log_debug!("unknown message type {}", (*imsg).hdr.type_);
+            return;
+        };
+        match msg_type {
             msgtype::MSG_IDENTIFY_FEATURES => {
                 if datalen != size_of::<i32>() as u16 {
                     fatalx("bad MSG_IDENTIFY_FEATURES size");
@@ -3129,7 +3139,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
                     fatalx("bad MSG_IDENTIFY_FLAGS size");
                 }
                 memcpy__(&raw mut flags, data.cast());
-                (*c).flags |= client_flag::from_bits(flags as u64).expect("invalid identify flags");
+                (*c).flags |= client_flag::from_bits_retain(flags as u64);
                 // log_debug("client %p IDENTIFY_FLAGS %#x", c, flags);
             }
             msgtype::MSG_IDENTIFY_LONGFLAGS => {
@@ -3137,8 +3147,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
                     fatalx("bad MSG_IDENTIFY_LONGFLAGS size");
                 }
                 memcpy__(&raw mut longflags, data.cast());
-                (*c).flags |=
-                    client_flag::from_bits(longflags).expect("invalid identify longflags");
+                (*c).flags |= client_flag::from_bits_retain(longflags);
                 // log_debug("client %p IDENTIFY_LONGFLAGS %#llx", c, (unsigned long long)longflags);
             }
             msgtype::MSG_IDENTIFY_TERM => {

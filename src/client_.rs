@@ -719,7 +719,11 @@ unsafe fn client_dispatch_wait(imsg: *mut imsg) {
         let data: *mut u8 = (*imsg).data as _;
         let datalen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
 
-        let msg_hdr_type: msgtype = (*imsg).hdr.type_.try_into().expect("invalid enum variant"); // TODO
+        let Ok(msg_hdr_type) = msgtype::try_from((*imsg).hdr.type_) else {
+            // Like C tmux, ignore message types we do not know.
+            log_debug!("unknown message type {}", (*imsg).hdr.type_);
+            return;
+        };
         match msg_hdr_type {
             msgtype::MSG_EXIT | msgtype::MSG_SHUTDOWN => {
                 client_dispatch_exit_message(data, datalen);
@@ -814,7 +818,11 @@ unsafe fn client_dispatch_attached(imsg: *mut imsg) {
         let data: *mut u8 = (*imsg).data as _;
         let datalen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
 
-        let mht: msgtype = (*imsg).hdr.type_.try_into().expect("invalid enum variant"); // TODO
+        let Ok(mht) = msgtype::try_from((*imsg).hdr.type_) else {
+            // Like C tmux, ignore message types we do not know.
+            log_debug!("unknown message type {}", (*imsg).hdr.type_);
+            return;
+        };
         match mht {
             msgtype::MSG_FLAGS => {
                 if datalen != size_of::<u64>() {
