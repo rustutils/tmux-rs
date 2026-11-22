@@ -3802,9 +3802,6 @@ unsafe fn tty_clipboard_query_fire(cid: ClientId) {
     unsafe {
         let Some(c) = client_from_id(cid) else { return };
 
-        (*c).flags &= !client_flag::CLIPBOARDBUFFER;
-        (*c).clipboard_panes.clear();
-
         (*c).tty.flags &= !tty_flags::TTY_OSC52QUERY;
     }
 }

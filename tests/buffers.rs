@@ -667,3 +667,67 @@ fn load_buffer_from_stdin() {
     content.assert_success();
     assert_eq!(content.stdout_trimmed(), "from stdin");
 }
+
+/// Wait until the terminal of `client` receives an OSC 52 clipboard query.
+fn wait_for_clipboard_query(client: &mut harness::PtyClient) {
+    let start = std::time::Instant::now();
+    let mut seen = Vec::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        seen.extend(client.read_raw());
+        if seen.windows(7).any(|w| w == b"\x1b]52;c;" || w == b"\x1b]52;;?") || seen.windows(5).any(|w| w == b"52;?\x07" || w == b";?\x1b\\\x07") || seen.windows(4).any(|w| w == b";?\x07") {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("no clipboard query sent to the terminal: {:?}", String::from_utf8_lossy(&seen));
+}
+
+/// refresh-client -l asks the terminal for its clipboard and stores the
+/// reply in a paste buffer. A reply that is not valid base64 is dropped.
+/// Unpadded data like that used to be decoded into a buffer that was too
+/// small.
+#[test]
+fn refresh_client_l_stores_clipboard_reply() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd()
+        .args(["set", "-as", "terminal-overrides", ",*:Ms=\\E]52;%p1%s;%p2%s\\007"])
+        .run()
+        .assert_success();
+
+    let mut client = harness::PtyClient::attach(&tmux, 80, 24);
+    tmux.wait_for("#{session_attached}", |v| v == "1", Duration::from_secs(5));
+    let name = tmux.cmd().args(["list-clients", "-F", "#{client_name}"]).run().stdout_trimmed();
+    client.read_raw();
+
+    tmux.cmd().args(["refresh-client", "-l", "-t", &name]).run().assert_success();
+    wait_for_clipboard_query(&mut client);
+    client.write(b"\x1b]52;c;aGVsbG8=\x07");
+    tmux.wait_for("#{buffer_sample}", |v| v == "hello", Duration::from_secs(5));
+
+    tmux.cmd().args(["refresh-client", "-l", "-t", &name]).run().assert_success();
+    wait_for_clipboard_query(&mut client);
+    client.write(b"\x1b]52;c;aGVsbG\x07");
+    std::thread::sleep(Duration::from_millis(300));
+    let buffers = tmux.cmd().args(["list-buffers", "-F", "#{buffer_sample}"]).run();
+    buffers.assert_success();
+    assert_eq!(buffers.stdout_trimmed(), "hello", "invalid reply must not create a buffer");
+}
+
+/// A program in a pane can set the clipboard with OSC 52, which creates a
+/// paste buffer. The base64 decoder used to reject digits and padding, so
+/// this failed for almost any text.
+#[test]
+fn osc52_from_pane_creates_buffer() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["cat"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    // The default (external) only passes the sequence to the terminal.
+    tmux.cmd().args(["set", "-s", "set-clipboard", "on"]).run().assert_success();
+    tmux.cmd()
+        .args(["respawn-pane", "-k", "printf '\\033]52;c;aGVsbG8gMjAyNg==\\007'; cat"])
+        .run()
+        .assert_success();
+    tmux.wait_for("#{buffer_sample}", |v| v == "hello 2026", Duration::from_secs(5));
+}

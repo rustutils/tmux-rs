@@ -1674,8 +1674,6 @@ unsafe fn tty_keys_clipboard(
     size: *mut usize,
 ) -> i32 {
     unsafe {
-        let c = (*tty).client;
-        let mut wp: *mut window_pane;
         let mut end: usize;
         let mut terminator: usize = 0;
 
@@ -1749,42 +1747,38 @@ unsafe fn tty_keys_clipboard(
         buf = buf.add(1);
         end -= 1;
 
-        // If we did not request this, ignore it.
+        // Only a reply to refresh-client -l is used, to create a paste
+        // buffer. tmux 3.8 can also pass replies on to panes (the
+        // get-clipboard option), which is not ported yet.
         if !(*tty).flags.intersects(tty_flags::TTY_OSC52QUERY) {
             return 0;
         }
-        (*tty).flags &= !tty_flags::TTY_OSC52QUERY;
-        (*tty).clipboard_timer = None;
 
         // It has to be a string so copy it.
         let copy: *mut u8 = xmalloc(end + 1).as_ptr().cast();
         libc::memcpy(copy.cast(), buf.cast(), end);
         *copy.add(end) = b'\0';
 
-        // Convert from base64.
-        let needed: usize = (end / 4) * 3;
-        let out: *mut u8 = xmalloc(needed).as_ptr().cast();
-        let outlen: i32 = b64_pton(copy, out.cast(), len);
-        if outlen == -1 {
-            free_(out);
+        // Convert from base64. The output buffer must be big enough for
+        // every 4 characters of input, rounded up, and its size is what
+        // b64_pton may write (it used to be given the input length).
+        let needed: usize = end.div_ceil(4) * 3;
+        if needed == 0 {
             free_(copy);
             return 0;
         }
+        let out: *mut u8 = xmalloc(needed).as_ptr().cast();
+        let outlen: i32 = b64_pton(copy, out.cast(), needed);
         free_(copy);
+        if outlen == -1 {
+            free_(out);
+            return 0;
+        }
 
-        // Create a new paste buffer and forward to panes.
-        // log_debug( c!("%s: %.*s\0"), __func__, outlen, out);
-        if (*c).flags.intersects(client_flag::CLIPBOARDBUFFER) {
-            paste_add(null_mut(), out, outlen as usize);
-            (*c).flags &= !client_flag::CLIPBOARDBUFFER;
-        }
-        for &pane_id in &(*c).clipboard_panes {
-            wp = window_pane_find_by_id(pane_id);
-            if !wp.is_null() {
-                input_reply_clipboard(&raw mut (*wp).event_output, out, outlen as usize, c!("\x1b\\"));
-            }
-        }
-        (*c).clipboard_panes.clear();
+        // Create a paste buffer, which takes ownership of out.
+        paste_add(null_mut(), out, outlen as usize);
+        (*tty).clipboard_timer = None;
+        (*tty).flags &= !tty_flags::TTY_OSC52QUERY;
 
         0
     }

@@ -471,7 +471,6 @@ pub unsafe fn server_client_lost(c: *mut client) {
         // Note: ttyname / term_name / title / path are Option<String> and are
         // dropped automatically when the Box<client> is dropped in
         // server_client_free. Calling drop_in_place here would double-free.
-        // clipboard_panes: Vec<u32> dropped automatically by registry removal
 
         // term_type is Option<String>, dropped automatically by Box drop.
         for &cap in &(*c).term_caps { free_(cap); }

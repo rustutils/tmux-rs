@@ -18,7 +18,7 @@ pub static CMD_REFRESH_CLIENT_ENTRY: cmd_entry = cmd_entry {
     name: "refresh-client",
     alias: Some("refresh"),
 
-    args: args_parse::new("A:B:cC:Df:r:F:l::LRSt:U", 0, 1, None),
+    args: args_parse::new("A:B:cC:Df:r:F:lLRSt:U", 0, 1, None),
     usage: "[-cDlLRSU] [-A pane:state] [-B name:what:format] [-C XxY] [-f flags] [-r pane:report] [-t target-client] [adjustment]",
 
     flags: cmd_flag::CMD_AFTERHOOK.union(cmd_flag::CMD_CLIENT_TFLAG),
@@ -188,38 +188,12 @@ pub unsafe fn cmd_refresh_client_update_offset(tc: *mut client, value: *const u8
     }
 }
 
-pub unsafe fn cmd_refresh_client_clipboard(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
+/// refresh-client -l: ask the terminal for its clipboard and store the
+/// reply in a new paste buffer. tmux 3.8 removed the optional target pane
+/// to forward the reply to (replaced by the get-clipboard option).
+pub unsafe fn cmd_refresh_client_clipboard(_self: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     unsafe {
-        let args = cmd_get_args(self_);
         let tc = cmdq_get_target_client(item);
-        let mut fs: cmd_find_state = zeroed();
-        // const char *p;
-        // u_int i;
-        // struct cmd_find_state fs;
-
-        let p = args_get_(args, 'l');
-        if p.is_null() {
-            if (*tc).flags.intersects(client_flag::CLIPBOARDBUFFER) {
-                return cmd_retval::CMD_RETURN_NORMAL;
-            }
-            (*tc).flags |= client_flag::CLIPBOARDBUFFER;
-        } else {
-            if cmd_find_target(
-                &raw mut fs,
-                item,
-                cstr_to_str_(p),
-                cmd_find_type::CMD_FIND_PANE,
-                cmd_find_flags::empty(),
-            ) != 0
-            {
-                return cmd_retval::CMD_RETURN_ERROR;
-            }
-            let pane_id = fs.wp.map_or(0, |id| id.0);
-            if (*tc).clipboard_panes.contains(&pane_id) {
-                return cmd_retval::CMD_RETURN_NORMAL;
-            }
-            (*tc).clipboard_panes.push(pane_id);
-        }
         tty_clipboard_query(&raw mut (*tc).tty);
     }
     cmd_retval::CMD_RETURN_NORMAL
