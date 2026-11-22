@@ -149,9 +149,9 @@ unsafe fn screen_write_set_client_cb(ttyctx: *mut tty_ctx, c: *mut client) -> i3
         {
             return -1;
         }
-        if (*c).flags.intersects(client_flag::REDRAWPANES) {
-            // Redraw is already deferred to redraw another pane - redraw
-            // this one also when that happens.
+        if (*c).flags.intersects(client_flag::REDRAWWINDOW) {
+            // Redraw is already deferred to redraw the window, which will
+            // redraw this pane too.
             // log_debug("%s: adding %%%u to deferred redraw", __func__, (*wp).id);
             (*wp).flags |= window_pane_flags::PANE_REDRAW;
             return -1;

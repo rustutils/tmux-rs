@@ -2769,9 +2769,6 @@ pub unsafe fn server_client_check_redraw(c: *mut client) {
 
         let mode = (*tty).mode;
         let mut client_flags: client_flag = client_flag::empty();
-        let mut redraw;
-        let mut bit: u32 = 0;
-        let left;
 
         if (*c)
             .flags
@@ -2779,18 +2776,8 @@ pub unsafe fn server_client_check_redraw(c: *mut client) {
         {
             return;
         }
-        if (*c).flags.intersects(CLIENT_ALLREDRAWFLAGS) {
-            // log_debug("%s: redraw%s%s%s%s%s", (*c).name,
-            //           ((*c).flags & CLIENT_REDRAWWINDOW) ? " window" : "",
-            //           ((*c).flags & CLIENT_REDRAWSTATUS) ? " status" : "",
-            //           ((*c).flags & CLIENT_REDRAWBORDERS) ? " borders" : "",
-            //           ((*c).flags & CLIENT_REDRAWOVERLAY) ? " overlay" : "",
-            //           ((*c).flags & CLIENT_REDRAWPANES) ? " panes" : "");
-        }
 
-        // If there is outstanding data, defer the redraw until it has been
-        // consumed. We can just add a timer to get out of the event loop and
-        // end up back here.
+        // Work out if a redraw is actually needed.
         let mut needed = false;
         if (*c).flags.intersects(CLIENT_ALLREDRAWFLAGS) {
             needed = true;
@@ -2798,20 +2785,23 @@ pub unsafe fn server_client_check_redraw(c: *mut client) {
             for &wp in &(*w).panes {
                 if (*wp).flags.intersects(window_pane_flags::PANE_REDRAW) {
                     needed = true;
+                    client_flags |= client_flag::REDRAWWINDOW;
                     break;
                 }
             }
-            if needed {
-                client_flags |= client_flag::REDRAWPANES;
-            }
         }
-        if needed
-            && ({
-                left = (*tty).out.len();
-                left != 0
-            })
-        {
-            // log_debug("%s: redraw deferred (%zu left)", (*c).name, left);
+        if !needed {
+            (*c).flags &= !client_flag::STATUSFORCE;
+            return;
+        }
+
+        // If there is outstanding data, defer the redraw until it has been
+        // consumed. A timer gets us out of the event loop and back here.
+        // A deferred client redraws the whole window rather than keeping
+        // track of which panes changed (as tmux 3.8 does).
+        let left = (*tty).out.len();
+        if left != 0 || (*tty).flags.intersects(tty_flags::TTY_BLOCK) {
+            log_debug!("redraw deferred ({} left)", left);
             if (*(&raw const EV)).is_none() {
                 log_debug!("redraw timer started");
                 (*(&raw mut EV)) = timer_add(
@@ -2819,58 +2809,27 @@ pub unsafe fn server_client_check_redraw(c: *mut client) {
                     Box::new(|| server_client_redraw_timer_fire()),
                 );
             }
-
-            if !(*c).flags.intersects(client_flag::REDRAWWINDOW) {
-                for &wp in &(*w).panes {
-                    if (*wp).flags.intersects(window_pane_flags::PANE_REDRAW) {
-                        // log_debug("%s: pane %%%u needs redraw", (*c).name, (*wp).id);
-                        (*c).redraw_panes |= 1 << bit;
-                    }
-                    bit += 1;
-                    if bit == 64 {
-                        // If more that 64 panes, give up and
-                        // just redraw the window.
-                        client_flags &= client_flag::REDRAWPANES;
-                        client_flags |= client_flag::REDRAWWINDOW;
-                        break;
-                    }
-                }
-                if (*c).redraw_panes != 0 {
-                    (*c).flags |= client_flag::REDRAWPANES;
-                }
-            }
             (*c).flags |= client_flags;
             return;
-        } else if needed {
-            // log_debug("%s: redraw needed", (*c).name);
         }
 
+        // Unfreeze the tty and turn off the cursor.
         let tty_flags_ =
             (*tty).flags & (tty_flags::TTY_BLOCK | tty_flags::TTY_FREEZE | tty_flags::TTY_NOCURSOR);
         (*tty).flags = ((*tty).flags & !(tty_flags::TTY_BLOCK | tty_flags::TTY_FREEZE))
             | tty_flags::TTY_NOCURSOR;
 
+        // If not redrawing the entire window, redraw each pane that needs it.
         if !(*c).flags.intersects(client_flag::REDRAWWINDOW) {
-            // If not redrawing the entire window, check whether each pane
-            // needs to be redrawn.
             for &wp in &(*w).panes {
-                redraw = false;
                 if (*wp).flags.intersects(window_pane_flags::PANE_REDRAW) {
-                    redraw = true;
-                } else if (*c).flags.intersects(client_flag::REDRAWPANES) {
-                    redraw = ((*c).redraw_panes & (1 << bit)) != 0;
+                    screen_redraw_pane(c, wp);
                 }
-                bit += 1;
-                if !redraw {
-                    continue;
-                }
-                // log_debug("%s: redrawing pane %%%u", __func__, (*wp).id);
-                screen_redraw_pane(c, wp);
             }
-            (*c).redraw_panes = 0;
-            (*c).flags &= !client_flag::REDRAWPANES;
         }
 
+        // Set titles and do the redraw if there are redraw flags (and we are
+        // not here just to redraw panes).
         if (*c).flags.intersects(CLIENT_ALLREDRAWFLAGS) {
             if options_get_number_((*s).options, "set-titles") != 0 {
                 server_client_set_title(c);
@@ -2879,6 +2838,7 @@ pub unsafe fn server_client_check_redraw(c: *mut client) {
             screen_redraw_screen(c);
         }
 
+        // Put the tty back how it was.
         (*tty).flags =
             ((*tty).flags & !tty_flags::TTY_NOCURSOR) | (tty_flags_ & tty_flags::TTY_NOCURSOR);
         tty_update_mode(tty, mode, null_mut());
@@ -2886,15 +2846,10 @@ pub unsafe fn server_client_check_redraw(c: *mut client) {
             & !(tty_flags::TTY_BLOCK | tty_flags::TTY_FREEZE | tty_flags::TTY_NOCURSOR))
             | tty_flags_;
 
+        // All the redraw flags can now be cleared. The output buffer was
+        // empty, so record how many bytes the redraw generated.
         (*c).flags &= !(CLIENT_ALLREDRAWFLAGS | client_flag::STATUSFORCE);
-
-        if needed {
-            // We would have deferred the redraw unless the output buffer
-            // was empty, so we can record how many bytes the redraw
-            // generated.
-            (*c).redraw = (*tty).out.len();
-            // log_debug("%s: redraw added %zu bytes", (*c).name, (*c).redraw);
-        }
+        (*c).redraw = (*tty).out.len();
     }
 }
 

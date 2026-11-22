@@ -2355,11 +2355,6 @@ bitflags::bitflags! {
         const WRITE_ACK          = 0x4000000000u64;
         const NO_DETACH_ON_DESTROY = 0x8000000000u64;
         const CONTROL_DISCARD    = 0x10000000000u64;
-
-        // These were removed in tmux 3.8 and their values reused for other
-        // flags. They are only used inside the server, so they live on
-        // unused bits until the code using them is brought up to 3.8.
-        const REDRAWPANES        = 0x1000000000000u64;
     }
 }
 
@@ -2367,8 +2362,7 @@ const CLIENT_ALLREDRAWFLAGS: client_flag = client_flag::REDRAWWINDOW
     .union(client_flag::REDRAWSTATUS)
     .union(client_flag::REDRAWSTATUSALWAYS)
     .union(client_flag::REDRAWBORDERS)
-    .union(client_flag::REDRAWOVERLAY)
-    .union(client_flag::REDRAWPANES);
+    .union(client_flag::REDRAWOVERLAY);
 const CLIENT_UNATTACHEDFLAGS: client_flag = client_flag::DEAD
     .union(client_flag::SUSPENDED)
     .union(client_flag::EXIT);
@@ -2455,7 +2449,6 @@ struct client {
 
     keytable: *mut key_table,
 
-    redraw_panes: u64,
 
     message_ignore_keys: c_int,
     message_ignore_styles: c_int,
