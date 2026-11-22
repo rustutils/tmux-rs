@@ -342,3 +342,33 @@ fn join_pane_in_same_window_keeps_active_pane() {
     tmux.cmd().args(["join-pane", "-d", "-s", ".0", "-t", ".2"]).run().assert_success();
     assert_eq!(tmux.query("#{pane_id}"), active);
 }
+
+/// A pane whose process writes a lot and exits at once keeps all of its
+/// output (upstream 9e3653a6). tmux-rs stopped reading when the process
+/// exited and lost the end of the output.
+#[test]
+fn output_of_exited_pane_is_read_to_the_end() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["-x", "80", "-y", "24", "sleep 1000"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd().args(["set", "-g", "remain-on-exit", "on"]).run().assert_success();
+    tmux.cmd()
+        .args(["new-window", "-d", "-t", ":1", "seq 1 1500 | sed 's/$/ some padding to make the output longer/'"])
+        .run()
+        .assert_success();
+    let start = std::time::Instant::now();
+    while tmux.cmd().args(["display", "-p", "-t", ":1", "#{pane_dead}"]).run().stdout_trimmed() != "1" {
+        assert!(start.elapsed() < Duration::from_secs(5), "pane did not exit");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    let out = tmux.cmd().args(["capture-pane", "-p", "-t", ":1", "-S", "-"]).run().stdout_str();
+    assert!(
+        out.contains("1500 some padding"),
+        "last line missing, capture ends with:\n{}",
+        out.lines().rev().find(|l| !l.is_empty()).unwrap_or("")
+    );
+}

@@ -703,16 +703,18 @@ unsafe fn window_destroy(w: *mut window) {
     }
 }
 
+/// Whether an exited pane can be cleaned up: its process has exited and
+/// everything it wrote has been read and piped. Output still waiting on
+/// the pty must be read first, or the end of it is lost (upstream
+/// 9e3653a6, which checks every pane, not only piped ones).
 pub unsafe fn window_pane_destroy_ready(wp: &window_pane) -> bool {
     let mut n = 0;
     unsafe {
-        if wp.pipe_fd != -1 {
-            if !wp.pipe_output.is_empty() {
-                return false;
-            }
-            if ioctl(wp.fd, FIONREAD, &raw mut n) != -1 && n > 0 {
-                return false;
-            }
+        if wp.pipe_fd != -1 && !wp.pipe_output.is_empty() {
+            return false;
+        }
+        if ioctl(wp.fd, FIONREAD, &raw mut n) != -1 && n > 0 {
+            return false;
         }
 
         if !wp.flags.intersects(window_pane_flags::PANE_EXITED) {
