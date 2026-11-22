@@ -1473,7 +1473,9 @@ unsafe fn window_tree_key(
                 continue 'again;
             }
 
-            match key as u8 {
+            // Keys that do not fit in a byte (with modifiers or special keys) must
+            // not match by their low byte, C compares the whole key code.
+            match u8::try_from(key).unwrap_or(0) {
                 b'<' => (*data).offset -= 1,
                 b'>' => (*data).offset += 1,
                 b'H' => {

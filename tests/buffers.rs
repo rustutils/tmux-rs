@@ -750,3 +750,32 @@ fn file_errors_put_the_path_last() {
     save.assert_failure();
     assert_eq!(save.stderr_str().trim(), format!("No such file or directory: {missing}"));
 }
+
+/// Mode key handlers compare the whole key code. They used to compare only
+/// its low byte, so M-d (which has d as its low byte) deleted a buffer in
+/// buffer mode like d does.
+#[test]
+fn choose_buffer_ignores_modified_key_with_same_low_byte() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd().args(["set-buffer", "-b", "one", "1"]).run().assert_success();
+    tmux.cmd().args(["set-buffer", "-b", "two", "2"]).run().assert_success();
+
+    // An attached client running no shell: keys typed here go to the mode.
+    let mut client = harness::PtyClient::attach(&tmux, 80, 24);
+    tmux.wait_for("#{session_attached}", |v| v == "1", Duration::from_secs(5));
+    tmux.cmd().args(["choose-buffer"]).run().assert_success();
+    tmux.wait_for("#{pane_in_mode}", |v| v == "1", Duration::from_secs(5));
+
+    let count = || tmux.cmd().args(["list-buffers"]).run().stdout_lines().len();
+    client.write(b"\x1bd");
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(count(), 2, "M-d must not delete a buffer");
+    client.write(b"d");
+    let start = std::time::Instant::now();
+    while count() != 1 && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(count(), 1, "d deletes the selected buffer");
+}

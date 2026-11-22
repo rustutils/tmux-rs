@@ -1810,7 +1810,9 @@ pub unsafe fn window_customize_key(
             item = new_item.as_ptr();
         }
 
-        match key as u8 {
+        // Keys that do not fit in a byte (with modifiers or special keys) must
+        // not match by their low byte, C compares the whole key code.
+        match u8::try_from(key).unwrap_or(0) {
             b'\r' | b's' => {
                 if !item.is_null() {
                     if (*item).scope == window_customize_scope::WINDOW_CUSTOMIZE_KEY {

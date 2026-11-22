@@ -570,7 +570,9 @@ pub unsafe fn window_buffer_key(
             }
 
             finished = mode_tree_key(mtd, c, &raw mut key, m, null_mut(), null_mut()) != 0;
-            match key as u8 {
+            // Keys that do not fit in a byte (with modifiers or special keys) must
+            // not match by their low byte, C compares the whole key code.
+            match u8::try_from(key).unwrap_or(0) {
                 b'e' => {
                     let item: NonNull<window_buffer_itemdata> = mode_tree_get_current(mtd).cast();
                     window_buffer_start_edit(data, item.as_ptr(), c);

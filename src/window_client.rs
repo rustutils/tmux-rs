@@ -404,7 +404,9 @@ pub unsafe fn window_client_key(
         let mtd: *mut mode_tree_data = (*data).data;
 
         let mut finished = mode_tree_key(mtd, c, &raw mut key, m, null_mut(), null_mut()) != 0;
-        match key as u8 {
+        // Keys that do not fit in a byte (with modifiers or special keys) must
+        // not match by their low byte, C compares the whole key code.
+        match u8::try_from(key).unwrap_or(0) {
             b'd' | b'x' | b'z' => {
                 let item: NonNull<window_client_itemdata> = mode_tree_get_current(mtd).cast();
                 window_client_do_detach(NonNull::new(data.cast()).unwrap(), item.cast(), c, key);
