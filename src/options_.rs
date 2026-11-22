@@ -1566,10 +1566,10 @@ mod tests {
             init_globals();
             let oo = options_create(null_mut());
 
-            // "mouse" is a flag option, default off (0)
+            // "focus-events" is a flag option, default off (0)
             let oe = OPTIONS_TABLE
                 .iter()
-                .find(|oe| oe.name == "mouse")
+                .find(|oe| oe.name == "focus-events")
                 .unwrap();
             assert_eq!(oe.type_, options_table_type::OPTIONS_TABLE_FLAG);
 
@@ -1737,11 +1737,11 @@ mod tests {
             let oo = options_create(null_mut());
             let oe = OPTIONS_TABLE
                 .iter()
-                .find(|oe| oe.name == "mouse")
+                .find(|oe| oe.name == "focus-events")
                 .unwrap();
             options_default(oo, oe);
 
-            let o = options_get_only(oo, "mouse");
+            let o = options_get_only(oo, "focus-events");
 
             // Default is off
             let s = options_to_string(o, -1, 0);
@@ -1749,7 +1749,7 @@ mod tests {
             free_(s);
 
             // Set to on
-            options_set_number(oo, "mouse", 1);
+            options_set_number(oo, "focus-events", 1);
             let s = options_to_string(o, -1, 0);
             assert_eq!(cstr_to_str(s), "on");
             free_(s);
@@ -1834,16 +1834,16 @@ mod tests {
             let oo = options_create(null_mut());
             let oe = OPTIONS_TABLE
                 .iter()
-                .find(|oe| oe.name == "mouse")
+                .find(|oe| oe.name == "focus-events")
                 .unwrap();
             options_default(oo, oe);
 
             // Toggle: null value flips the flag
-            assert_eq!(options_get_number_(oo, "mouse"), 0);
-            assert!(options_from_string(oo, oe, "mouse", null(), false).is_ok());
-            assert_eq!(options_get_number_(oo, "mouse"), 1);
-            assert!(options_from_string(oo, oe, "mouse", null(), false).is_ok());
-            assert_eq!(options_get_number_(oo, "mouse"), 0);
+            assert_eq!(options_get_number_(oo, "focus-events"), 0);
+            assert!(options_from_string(oo, oe, "focus-events", null(), false).is_ok());
+            assert_eq!(options_get_number_(oo, "focus-events"), 1);
+            assert!(options_from_string(oo, oe, "focus-events", null(), false).is_ok());
+            assert_eq!(options_get_number_(oo, "focus-events"), 0);
 
             options_free(oo);
         }

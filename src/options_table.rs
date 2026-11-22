@@ -665,7 +665,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 190] = [
         name: "mouse",
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_SESSION,
-        default_num: 0,
+        // On by default since tmux 3.8.
+        default_num: 1,
         text: c!(
             "Whether the mouse is recognised and mouse key bindings are executed. Applications inside panes can use the mouse even when 'off'."
         ),
@@ -883,7 +884,9 @@ pub static OPTIONS_TABLE: [options_table_entry; 190] = [
         scope: OPTIONS_TABLE_SESSION,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_str: Some(
-            "DISPLAY KRB5CCNAME SSH_ASKPASS SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY",
+            "DISPLAY KRB5CCNAME MSYSTEM SSH_ASKPASS SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION \
+             WAYLAND_DISPLAY WINDOWID XAUTHORITY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP \
+             XDG_SESSION_TYPE",
         ),
         text: c!(
             "List of environment variables to update in the session environment when a client is attached."
@@ -1348,7 +1351,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 190] = [
         name: "window-status-current-style",
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
-        default_str: Some("default"),
+        default_str: Some("underscore"),
         flags: OPTIONS_TABLE_IS_STYLE,
         separator: c!(","),
         text: c!("Style of the current window in the status line."),
