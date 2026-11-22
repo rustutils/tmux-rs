@@ -17,7 +17,7 @@ description  = "A Rust port of tmux"
 autotests = false
 
 [workspace]
-members = ["compat", "event", "grid", "log", "protocol", "regsub", "types", "utf8"]
+members = ["compat", "event", "grid", "log", "metrics", "protocol", "regsub", "types", "utf8"]
 
 # Note: most of these features are not supported yet
 # they just exist to make matching upstream's

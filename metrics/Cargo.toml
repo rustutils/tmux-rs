@@ -1,0 +1,14 @@
+[package]
+name        = "tmux-metrics"
+version     = "0.0.1"
+edition     = "2024"
+license     = "ISC"
+description = "Counts unsafe code in tmux-rs and checks the per-file limits"
+publish     = false
+
+[dependencies]
+proc-macro2 = { version = "1", features = ["span-locations"] }
+syn         = { version = "2", features = ["full", "visit"] }
+
+[lints.rust]
+unsafe_code = "forbid"

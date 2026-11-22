@@ -1,0 +1,3 @@
+# Functions that the false safe scan reports but that cannot be marked
+# unsafe, such as trait methods. One key per line, as printed by
+# tmux-metrics false-safe, with the reason in a comment.

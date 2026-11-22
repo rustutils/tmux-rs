@@ -794,6 +794,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tmux-metrics"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "syn",
+]
+
+[[package]]
 name = "tmux-protocol"
 version = "0.0.1"
 dependencies = [
