@@ -231,28 +231,44 @@ pub unsafe fn utf8_put_item(data: *const [u8; UTF8_SIZE], size: usize, index: *m
 // Width table and classification
 // ---------------------------------------------------------------------
 
-/// Emoji codepoints that should render as double-width even when
-/// `wcwidth` reports 1. Kept in sorted order so the lookup is a binary
-/// search via [`utf8_in_table`].
-static UTF8_FORCE_WIDE: [wchar_t; 162] = [
-    0x0261D, 0x026F9, 0x0270A, 0x0270B, 0x0270C, 0x0270D, 0x1F1E6, 0x1F1E7, 0x1F1E8, 0x1F1E9,
-    0x1F1EA, 0x1F1EB, 0x1F1EC, 0x1F1ED, 0x1F1EE, 0x1F1EF, 0x1F1F0, 0x1F1F1, 0x1F1F2, 0x1F1F3,
-    0x1F1F4, 0x1F1F5, 0x1F1F6, 0x1F1F7, 0x1F1F8, 0x1F1F9, 0x1F1FA, 0x1F1FB, 0x1F1FC, 0x1F1FD,
-    0x1F1FE, 0x1F1FF, 0x1F385, 0x1F3C2, 0x1F3C3, 0x1F3C4, 0x1F3C7, 0x1F3CA, 0x1F3CB, 0x1F3CC,
-    0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF, 0x1F442, 0x1F443, 0x1F446, 0x1F447, 0x1F448,
-    0x1F449, 0x1F44A, 0x1F44B, 0x1F44C, 0x1F44D, 0x1F44E, 0x1F44F, 0x1F450, 0x1F466, 0x1F467,
-    0x1F468, 0x1F469, 0x1F46B, 0x1F46C, 0x1F46D, 0x1F46E, 0x1F470, 0x1F471, 0x1F472, 0x1F473,
-    0x1F474, 0x1F475, 0x1F476, 0x1F477, 0x1F478, 0x1F47C, 0x1F481, 0x1F482, 0x1F483, 0x1F485,
-    0x1F486, 0x1F487, 0x1F48F, 0x1F491, 0x1F4AA, 0x1F574, 0x1F575, 0x1F57A, 0x1F590, 0x1F595,
-    0x1F596, 0x1F645, 0x1F646, 0x1F647, 0x1F64B, 0x1F64C, 0x1F64D, 0x1F64E, 0x1F64F, 0x1F6A3,
-    0x1F6B4, 0x1F6B5, 0x1F6B6, 0x1F6C0, 0x1F6CC, 0x1F90C, 0x1F90F, 0x1F918, 0x1F919, 0x1F91A,
-    0x1F91B, 0x1F91C, 0x1F91D, 0x1F91E, 0x1F91F, 0x1F926, 0x1F930, 0x1F931, 0x1F932, 0x1F933,
-    0x1F934, 0x1F935, 0x1F936, 0x1F937, 0x1F938, 0x1F939, 0x1F93D, 0x1F93E, 0x1F977, 0x1F9B5,
-    0x1F9B6, 0x1F9B8, 0x1F9B9, 0x1F9BB, 0x1F9CD, 0x1F9CE, 0x1F9CF, 0x1F9D1, 0x1F9D2, 0x1F9D3,
-    0x1F9D4, 0x1F9D5, 0x1F9D6, 0x1F9D7, 0x1F9D8, 0x1F9D9, 0x1F9DA, 0x1F9DB, 0x1F9DC, 0x1F9DD,
-    0x1FAC3, 0x1FAC4, 0x1FAC5, 0x1FAF0, 0x1FAF1, 0x1FAF2, 0x1FAF3, 0x1FAF4, 0x1FAF5, 0x1FAF6,
-    0x1FAF7, 0x1FAF8,
+/// Codepoints whose width tmux sets itself instead of asking
+/// `unicode-width`, as in tmux 3.8: emoji that terminals draw wide, and the
+/// regional indicators, which are narrow until two of them pair up into a
+/// flag. Sorted by codepoint for a binary search.
+static UTF8_DEFAULT_WIDTHS: [(wchar_t, i32); 162] = [
+    (0x0261D, 2), (0x026F9, 2), (0x0270A, 2), (0x0270B, 2), (0x0270C, 2), (0x0270D, 2),
+    (0x1F1E6, 1), (0x1F1E7, 1), (0x1F1E8, 1), (0x1F1E9, 1), (0x1F1EA, 1), (0x1F1EB, 1),
+    (0x1F1EC, 1), (0x1F1ED, 1), (0x1F1EE, 1), (0x1F1EF, 1), (0x1F1F0, 1), (0x1F1F1, 1),
+    (0x1F1F2, 1), (0x1F1F3, 1), (0x1F1F4, 1), (0x1F1F5, 1), (0x1F1F6, 1), (0x1F1F7, 1),
+    (0x1F1F8, 1), (0x1F1F9, 1), (0x1F1FA, 1), (0x1F1FB, 1), (0x1F1FC, 1), (0x1F1FD, 1),
+    (0x1F1FE, 1), (0x1F1FF, 1), (0x1F385, 2), (0x1F3C2, 2), (0x1F3C3, 2), (0x1F3C4, 2),
+    (0x1F3C7, 2), (0x1F3CA, 2), (0x1F3CB, 2), (0x1F3CC, 2), (0x1F3FB, 2), (0x1F3FC, 2),
+    (0x1F3FD, 2), (0x1F3FE, 2), (0x1F3FF, 2), (0x1F442, 2), (0x1F443, 2), (0x1F446, 2),
+    (0x1F447, 2), (0x1F448, 2), (0x1F449, 2), (0x1F44A, 2), (0x1F44B, 2), (0x1F44C, 2),
+    (0x1F44D, 2), (0x1F44E, 2), (0x1F44F, 2), (0x1F450, 2), (0x1F466, 2), (0x1F467, 2),
+    (0x1F468, 2), (0x1F469, 2), (0x1F46B, 2), (0x1F46C, 2), (0x1F46D, 2), (0x1F46E, 2),
+    (0x1F470, 2), (0x1F471, 2), (0x1F472, 2), (0x1F473, 2), (0x1F474, 2), (0x1F475, 2),
+    (0x1F476, 2), (0x1F477, 2), (0x1F478, 2), (0x1F47C, 2), (0x1F481, 2), (0x1F482, 2),
+    (0x1F483, 2), (0x1F485, 2), (0x1F486, 2), (0x1F487, 2), (0x1F48F, 2), (0x1F491, 2),
+    (0x1F4AA, 2), (0x1F574, 2), (0x1F575, 2), (0x1F57A, 2), (0x1F590, 2), (0x1F595, 2),
+    (0x1F596, 2), (0x1F645, 2), (0x1F646, 2), (0x1F647, 2), (0x1F64B, 2), (0x1F64C, 2),
+    (0x1F64D, 2), (0x1F64E, 2), (0x1F64F, 2), (0x1F6A3, 2), (0x1F6B4, 2), (0x1F6B5, 2),
+    (0x1F6B6, 2), (0x1F6C0, 2), (0x1F6CC, 2), (0x1F90C, 2), (0x1F90F, 2), (0x1F918, 2),
+    (0x1F919, 2), (0x1F91A, 2), (0x1F91B, 2), (0x1F91C, 2), (0x1F91D, 2), (0x1F91E, 2),
+    (0x1F91F, 2), (0x1F926, 2), (0x1F930, 2), (0x1F931, 2), (0x1F932, 2), (0x1F933, 2),
+    (0x1F934, 2), (0x1F935, 2), (0x1F936, 2), (0x1F937, 2), (0x1F938, 2), (0x1F939, 2),
+    (0x1F93D, 2), (0x1F93E, 2), (0x1F977, 2), (0x1F9B5, 2), (0x1F9B6, 2), (0x1F9B8, 2),
+    (0x1F9B9, 2), (0x1F9BB, 2), (0x1F9CD, 2), (0x1F9CE, 2), (0x1F9CF, 2), (0x1F9D1, 2),
+    (0x1F9D2, 2), (0x1F9D3, 2), (0x1F9D4, 2), (0x1F9D5, 2), (0x1F9D6, 2), (0x1F9D7, 2),
+    (0x1F9D8, 2), (0x1F9D9, 2), (0x1F9DA, 2), (0x1F9DB, 2), (0x1F9DC, 2), (0x1F9DD, 2),
+    (0x1FAC3, 2), (0x1FAC4, 2), (0x1FAC5, 2), (0x1FAF0, 2), (0x1FAF1, 2), (0x1FAF2, 2),
+    (0x1FAF3, 2), (0x1FAF4, 2), (0x1FAF5, 2), (0x1FAF6, 2), (0x1FAF7, 2), (0x1FAF8, 2),
 ];
+
+/// The width tmux 3.8 gives `wc` by default, if it overrides it.
+pub fn utf8_default_width(wc: wchar_t) -> Option<i32> {
+    UTF8_DEFAULT_WIDTHS.binary_search_by_key(&wc, |&(w, _)| w).ok().map(|i| UTF8_DEFAULT_WIDTHS[i].1)
+}
 
 /// Binary search for `find` in a sorted `wchar_t` table. Used by
 /// [`utf8_width`] to consult the force-wide override list.
@@ -383,7 +399,7 @@ pub unsafe fn utf8_copy(to: *mut Utf8Data, from: *const Utf8Data) {
 }
 
 /// Compute the display width of a character in columns (0, 1, or 2).
-/// Consults the force-wide override first; falls back to
+/// Consults the default width table first, falls back to
 /// `unicode-width` with a final adjustment for C0/C1 control ranges.
 ///
 /// # Safety
@@ -394,8 +410,8 @@ pub unsafe fn utf8_width(ud: *mut Utf8Data, width: *mut i32) -> Utf8State {
         if utf8_towc(ud, &raw mut wc) != Utf8State::Done {
             return Utf8State::Error;
         }
-        if utf8_in_table(wc, &UTF8_FORCE_WIDE) {
-            *width = 2;
+        if let Some(w) = utf8_default_width(wc) {
+            *width = w;
             return Utf8State::Done;
         }
         // `unicode-width` is a pure-Rust replacement for the former
@@ -891,14 +907,17 @@ mod tests {
     }
 
     #[test]
-    fn in_force_wide_table() {
-        // 0x1F600 should NOT be in the force-wide table
-        assert!(!utf8_in_table(0x1F600, &UTF8_FORCE_WIDE));
-        // 0x1F385 should be in the force-wide table (Santa Claus)
-        assert!(utf8_in_table(0x1F385, &UTF8_FORCE_WIDE));
-        // First and last entries
-        assert!(utf8_in_table(0x0261D, &UTF8_FORCE_WIDE));
-        assert!(utf8_in_table(0x1FAF8, &UTF8_FORCE_WIDE));
+    fn default_widths() {
+        // 0x1F600 is not in the table.
+        assert_eq!(utf8_default_width(0x1F600), None);
+        // 0x1F385 (Father Christmas) is forced wide.
+        assert_eq!(utf8_default_width(0x1F385), Some(2));
+        // First and last entries.
+        assert_eq!(utf8_default_width(0x0261D), Some(2));
+        assert_eq!(utf8_default_width(0x1FAF8), Some(2));
+        // Regional indicators are narrow until they pair up into a flag.
+        assert_eq!(utf8_default_width(0x1F1E6), Some(1));
+        assert_eq!(utf8_default_width(0x1F1FF), Some(1));
     }
 
     // ---------------------------------------------------------------

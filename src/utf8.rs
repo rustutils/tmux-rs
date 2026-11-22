@@ -39,7 +39,7 @@ use crate::*;
 // the freestanding underscore-prefix fns are kept only for use inside
 // this file's own vis/cstring helpers.
 pub(crate) use tmux_utf8::{
-    UTF8_SIZE, Utf8Data, Utf8State, utf8_append, utf8_in_table, utf8_isvalid, utf8_open,
+    UTF8_SIZE, Utf8Data, Utf8State, utf8_append, utf8_isvalid, utf8_open,
     utf8_set,
 };
 

@@ -2300,6 +2300,8 @@ pub unsafe fn screen_write_combine(ctx: *mut screen_write_ctx, gc: *const GridCe
         if utf8_is_zwj(ud) {
             zero_width = 1;
         } else if utf8_is_vs(ud) {
+            // tmux 3.8 makes this depend on variation-selector-always-wide,
+            // which defaults to on (Track 3: new options).
             zero_width = 1;
             force_wide = 1;
         } else if (*ud).width == 0 {
@@ -2323,23 +2325,27 @@ pub unsafe fn screen_write_combine(ctx: *mut screen_write_ctx, gc: *const GridCe
             return zero_width;
         }
 
-        // Check if we need to combine characters. This could be zero width
-        // (set above), a modifier character (with an existing Unicode
-        // character) or a previous ZWJ.
+        // Check if we need to combine characters. This could be a Korean
+        // Hangul Jamo character, zero width (set above), a modifier
+        // character (with an existing Unicode character) or a previous ZWJ.
         if zero_width == 0 {
-            if utf8_is_modifier(ud) {
-                if last.data.size < 2 {
-                    return 0;
+            match hanguljamo_check_state(&last.data, &*ud) {
+                HangulJamoState::NotComposable => return 1,
+                HangulJamoState::Choseong => return 0,
+                HangulJamoState::Composable => (),
+                HangulJamoState::NotHangulJamo => {
+                    if utf8_should_combine(&last.data, &*ud) || utf8_should_combine(&*ud, &last.data) {
+                        force_wide = 1;
+                    } else if !utf8_has_zwj(&raw mut last.data) {
+                        return 0;
+                    }
                 }
-                force_wide = 1;
-            } else if !utf8_has_zwj(&raw mut last.data) {
-                return 0;
             }
         }
 
         // Check if this combined character would be too long.
-        if last.data.size + (*ud).size > UTF8_SIZE as u8 {
-            return 0;
+        if last.data.size as usize + (*ud).size as usize > UTF8_SIZE {
+            return zero_width;
         }
 
         // Combining; flush any pending output.
