@@ -253,3 +253,24 @@ fn unbind_nonexistent_key_does_not_error() {
     // Some implementations may error; just verify it doesn't crash
     let _ = result.success();
 }
+
+/// Keys sent with send-keys -K run before the commands that follow
+/// send-keys (upstream b6be437b).
+#[test]
+fn send_keys_k_runs_keys_in_order() {
+    let t = Duration::from_secs(5);
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["-x", "80", "-y", "24", "sleep 1000"]).run().assert_success();
+    tmux.wait_ready(t);
+    tmux.cmd().args(["bind", "-n", "F11", "set", "-g", "@x", "a"]).run().assert_success();
+    tmux.cmd().args(["bind", "-n", "F12", "set", "-ga", "@x", "b"]).run().assert_success();
+    let _pty = harness::PtyClient::attach(&tmux, 80, 24);
+    tmux.wait_for("#{session_attached}", |v| v == "1", t);
+    let client = tmux.cmd().args(["list-clients", "-F", "#{client_name}"]).run().stdout_trimmed();
+    let out = tmux
+        .cmd()
+        .args(["send-keys", "-K", "-c", &client, "F11", "F12", ";", "display", "-p", "#{@x}"])
+        .run();
+    out.assert_success();
+    assert_eq!(out.stdout_trimmed(), "ab");
+}

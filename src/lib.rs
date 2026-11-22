@@ -1758,6 +1758,10 @@ struct mouse_event {
 /// Key event.
 
 struct key_event {
+    /// The client to handle the key for, holding a reference, when the
+    /// key was queued after another item instead of on the client's own
+    /// queue (send-keys -K). Null otherwise.
+    client: *mut client,
     key: key_code,
     m: mouse_event,
 }

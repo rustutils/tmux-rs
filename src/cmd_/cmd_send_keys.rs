@@ -64,12 +64,20 @@ pub unsafe fn cmd_send_keys_inject_key(
                 return item;
             }
             let event = Box::leak(Box::new(key_event {
+                client: null_mut(),
                 key: key | KEYC_SENT,
                 m: zeroed(),
             })) as *mut key_event;
-            if server_client_handle_key(tc, event) == 0 {
-                free_(event);
+            // Queue the key after the previous one, so keys and the
+            // commands they run happen in order (upstream b6be437b).
+            if after.is_null() {
+                if server_client_handle_key(tc, event) != 0 {
+                    return item;
+                }
+            } else if let Some(new_after) = server_client_handle_key_after(tc, event, after) {
+                return new_after;
             }
+            free_(event);
             return item;
         }
 
@@ -223,8 +231,9 @@ pub unsafe fn cmd_send_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             if args_has(args, 'N') || args_has(args, 'R') {
                 return cmd_retval::CMD_RETURN_NORMAL;
             }
+            after = if args_has(args, 'K') { item } else { null_mut() };
             while np != 0 {
-                cmd_send_keys_inject_key(item, null_mut(), args, (*event).key);
+                after = cmd_send_keys_inject_key(item, after, args, (*event).key);
                 np -= 1;
             }
             return cmd_retval::CMD_RETURN_NORMAL;

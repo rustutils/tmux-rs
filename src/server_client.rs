@@ -1892,8 +1892,9 @@ pub unsafe fn server_client_update_latest(c: *mut client) {
 /// Handle data key input from client. This owns and can modify the key event it is given and is responsible for freeing it.
 pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void) -> cmd_retval {
     unsafe {
-        let c = cmdq_get_client(item);
         let event = data as *mut key_event;
+        let ec = (*event).client;
+        let c = if ec.is_null() { cmdq_get_client(item) } else { ec };
         let mut key = (*event).key;
         let m = &raw mut (*event).m;
         let s = client_get_session(c);
@@ -2168,19 +2169,43 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
         if !s.is_null() && key != keyc::KEYC_FOCUS_OUT as u64 {
             server_client_update_latest(c);
         }
+        if !ec.is_null() {
+            server_client_unref(ec);
+        }
         free_(event);
         cmd_retval::CMD_RETURN_NORMAL
     }
 }
 
-/// Handle a key event.
+/// Handle a key event. Returns 1 if the event was queued and is now owned
+/// by the queue, 0 if the caller still owns it.
 pub unsafe fn server_client_handle_key(c: *mut client, event: *mut key_event) -> i32 {
+    unsafe { server_client_handle_key0(c, event, null_mut()).is_some() as i32 }
+}
+
+/// Handle a key event like `server_client_handle_key`, but queue it after
+/// `after` instead of at the end of the client's queue, so it runs in order
+/// with the commands around it. Returns the queued item, or None if the
+/// caller still owns the event.
+pub unsafe fn server_client_handle_key_after(
+    c: *mut client,
+    event: *mut key_event,
+    after: *mut cmdq_item,
+) -> Option<*mut cmdq_item> {
+    unsafe { server_client_handle_key0(c, event, after) }
+}
+
+unsafe fn server_client_handle_key0(
+    c: *mut client,
+    event: *mut key_event,
+    after: *mut cmdq_item,
+) -> Option<*mut cmdq_item> {
     unsafe {
         let s = client_get_session(c);
 
         // Check the client is good to accept input.
         if s.is_null() || (*c).flags.intersects(CLIENT_UNATTACHEDFLAGS) {
-            return 0;
+            return None;
         }
 
         // Key presses in overlay mode and the command prompt are a special
@@ -2189,30 +2214,35 @@ pub unsafe fn server_client_handle_key(c: *mut client, event: *mut key_event) ->
         if !(*c).flags.intersects(client_flag::READONLY) {
             if (*c).message_string.is_some() {
                 if (*c).message_ignore_keys != 0 {
-                    return 0;
+                    return None;
                 }
                 status_message_clear(NonNull::new_unchecked(c));
             }
             if let Some(overlay_key) = (*c).overlay_key {
                 match overlay_key(c, (*c).overlay_data, event) {
-                    0 => return 0,
+                    0 => return None,
                     1 => {
                         server_client_clear_overlay(c);
-                        return 0;
+                        return None;
                     }
                     _ => (),
                 }
             }
             server_client_clear_overlay(c);
             if (*c).prompt_string.is_some() && status_prompt_key(c, (*event).key) == 0 {
-                return 0;
+                return None;
             }
         }
 
         // Add the key to the queue so it happens after any commands queued by previous keys.
         let item = cmdq_get_callback!(server_client_key_callback, event.cast());
+        if !after.is_null() {
+            (*event).client = c;
+            (*c).references += 1;
+            return Some(cmdq_insert_after(after, item.as_ptr()));
+        }
         cmdq_append(c, item.as_ptr());
-        1
+        Some(item.as_ptr())
     }
 }
 
@@ -2631,6 +2661,7 @@ unsafe fn server_client_click_timer_fire(cid: ClientId) {
 
         if (*c).flags.intersects(client_flag::TRIPLECLICK) {
             let event = Box::leak(Box::new(key_event {
+                client: null_mut(),
                 key: keyc::KEYC_DOUBLECLICK as u64,
                 m: (*c).click_event,
             })) as *mut key_event;
