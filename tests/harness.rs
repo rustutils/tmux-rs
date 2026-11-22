@@ -293,6 +293,12 @@ impl<'a> TmuxCommandBuilder<'a> {
         cmd.arg("-f/dev/null");
         cmd.args(&self.extra_args);
         cmd.env("TERM", "screen");
+        // Panes run a plain POSIX shell with no history and no startup
+        // file, never the user's own shell with their real history: keys
+        // sent to a pane (Up, Enter) must not rerun real commands.
+        cmd.env("SHELL", "/bin/sh");
+        cmd.env("HISTFILE", "/dev/null");
+        cmd.env_remove("ENV");
         // Keep nesting detection and custom socket paths from leaking in.
         cmd.env_remove("TMUX");
         cmd.env_remove("TMUX_CONF");
@@ -447,6 +453,9 @@ impl PtyClient {
             .args(["-S", harness.socket_path(), "-f/dev/null"])
             .args(args)
             .env("TERM", "screen")
+            .env("SHELL", "/bin/sh")
+            .env("HISTFILE", "/dev/null")
+            .env_remove("ENV")
             .env_remove("TMUX")
             .env_remove("TMUX_CONF")
             .env_remove("TMUX_TMPDIR")
