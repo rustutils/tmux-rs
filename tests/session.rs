@@ -37,9 +37,9 @@ fn new_session_with_command() {
     tmux.new_session().args(["--", "cat"]).run().assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
-    // The command should be 'cat'
-    let cmd = tmux.query("#{pane_current_command}");
-    assert_eq!(cmd, "cat");
+    // The command should become 'cat'. Right after the session starts the
+    // pane process may not have run exec yet, so wait for it.
+    tmux.wait_for("#{pane_current_command}", |c| c == "cat", Duration::from_secs(5));
 }
 
 // Ported from regress/has-session-return.sh

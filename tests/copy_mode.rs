@@ -500,15 +500,15 @@ fn copy_mode_emacs_word_navigation() {
     x("copy-selection");
     assert_eq!(buf(), "A", "next-word-end should land on single-letter word A");
 
-    // next-word-end wraps around indented line breaks. Note: the upstream
-    // regress script asserts "words\n\tIndented" but the tab in
-    // copy-mode-test.txt is rendered as 8 spaces in the Grid (both C tmux
-    // 3.5a and tmux-rs do this), so the captured selection contains spaces.
+    // next-word-end wraps around indented line breaks. The line is
+    // indented with a tab. tmux 3.8 copies it as a tab, older tmux and
+    // tmux-rs as spaces. This test is about navigation, so compare with
+    // tabs expanded. copy_mode_keeps_tabs checks the tab itself.
     x("next-word"); x("next-word"); x("next-word");
     x("begin-selection");
     x("next-word-end"); x("next-word-end");
     x("copy-selection");
-    assert_eq!(buf(), "words\n        Indented");
+    assert_eq!(buf().replace('\t', "        "), "words\n        Indented");
 
     // next-word wraps around un-indented line breaks.
     x("next-word");
@@ -1124,4 +1124,24 @@ fn search_backward_positions_cursor_vi() {
     assert_eq!(pane_in_mode(&tmux), "1", "should remain in copy mode after search");
 
     send_copy_cmd(&tmux, "cancel");
+}
+
+/// tmux 3.8 keeps tabs in the grid, so copying a line with a tab gives the
+/// tab back instead of spaces.
+#[test]
+#[ignore = "tmux 3.8 keeps tabs when copying, not ported yet"]
+fn copy_mode_keeps_tabs() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["-x", "40", "-y", "10", "printf 'a\\tb\\n'; cat"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.wait_for("#{cursor_y}", |y| y == "1", Duration::from_secs(5));
+
+    tmux.cmd().args(["copy-mode"]).run().assert_success();
+    for cmd in ["history-top", "start-of-line", "begin-selection", "end-of-line", "copy-selection"] {
+        send_copy_cmd(&tmux, cmd);
+    }
+    assert_eq!(show_buffer(&tmux), "a\tb");
 }
