@@ -2897,7 +2897,8 @@ pub unsafe fn server_client_set_path(c: *mut client) {
     }
 }
 
-/// Dispatch message from client.
+/// Dispatch message from client. A malformed message drops that client
+/// (like C tmux 3.8) instead of taking the whole server down.
 pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
     unsafe {
         let c: *mut client = arg.cast();
@@ -2911,13 +2912,24 @@ pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
             return;
         }
 
+        if server_client_dispatch_message(c, imsg) != 0 {
+            log_debug!("client {:p} invalid message type {}", c, (*imsg).hdr.type_);
+            proc_kill_peer((*c).peer);
+        }
+    }
+}
+
+/// Handle one message from a client. Returns -1 if the message is
+/// malformed, so the caller drops the client.
+unsafe fn server_client_dispatch_message(c: *mut client, imsg: *mut imsg) -> i32 {
+    unsafe {
         let datalen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
 
         let Ok(msg_type) = msgtype::try_from((*imsg).hdr.type_) else {
             // Newer peers may send messages we do not know. C tmux ignores
             // them too.
             log_debug!("unknown message type {}", (*imsg).hdr.type_);
-            return;
+            return 0;
         };
         match msg_type {
             msgtype::MSG_IDENTIFY_CLIENTPID
@@ -2931,11 +2943,11 @@ pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
             | msgtype::MSG_IDENTIFY_TERM
             | msgtype::MSG_IDENTIFY_TERMINFO
             | msgtype::MSG_IDENTIFY_TTYNAME
-            | msgtype::MSG_IDENTIFY_DONE => server_client_dispatch_identify(c, imsg),
-            msgtype::MSG_COMMAND => server_client_dispatch_command(c, imsg),
+            | msgtype::MSG_IDENTIFY_DONE => return server_client_dispatch_identify(c, imsg),
+            msgtype::MSG_COMMAND => return server_client_dispatch_command(c, imsg),
             msgtype::MSG_RESIZE => {
                 if datalen != 0 {
-                    fatalx("bad MSG_RESIZE size");
+                    return -1;
                 }
 
                 if !(*c).flags.intersects(client_flag::CONTROL) {
@@ -2956,7 +2968,7 @@ pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
             }
             msgtype::MSG_EXITING => {
                 if datalen != 0 {
-                    fatalx("bad MSG_EXITING size");
+                    return -1;
                 }
                 server_client_set_session(c, null_mut());
                 recalculate_sizes();
@@ -2965,16 +2977,16 @@ pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
             }
             msgtype::MSG_WAKEUP | msgtype::MSG_UNLOCK => {
                 if datalen != 0 {
-                    fatalx("bad MSG_WAKEUP size");
+                    return -1;
                 }
 
                 if !(*c).flags.intersects(client_flag::SUSPENDED) {
-                    return;
+                    return 0;
                 }
                 (*c).flags &= !client_flag::SUSPENDED;
 
                 if (*c).fd == -1 || client_get_session(c).is_null() {
-                    return;
+                    return 0;
                 } /* exited already */
                 let s = client_get_session(c);
 
@@ -2992,22 +3004,18 @@ pub unsafe fn server_client_dispatch(imsg: *mut imsg, arg: *mut c_void) {
             }
             msgtype::MSG_SHELL => {
                 if datalen != 0 {
-                    fatalx("bad MSG_SHELL size");
+                    return -1;
                 }
 
                 server_client_dispatch_shell(c);
             }
-            msgtype::MSG_WRITE_READY => file_write_ready(&raw mut (*c).files, imsg),
-            msgtype::MSG_WRITE_DONE => {
-                if file_write_done(&raw mut (*c).files, imsg) != 0 {
-                    log_debug!("client {:p} invalid message type {}", c, (*imsg).hdr.type_);
-                    proc_kill_peer((*c).peer);
-                }
-            }
-            msgtype::MSG_READ => file_read_data(&raw mut (*c).files, imsg),
-            msgtype::MSG_READ_DONE => file_read_done(&raw mut (*c).files, imsg),
+            msgtype::MSG_WRITE_READY => return file_write_ready(&raw mut (*c).files, imsg),
+            msgtype::MSG_WRITE_DONE => return file_write_done(&raw mut (*c).files, imsg),
+            msgtype::MSG_READ => return file_read_data(&raw mut (*c).files, imsg),
+            msgtype::MSG_READ_DONE => return file_read_done(&raw mut (*c).files, imsg),
             _ => (),
         }
+        0
     }
 }
 
@@ -3036,8 +3044,8 @@ pub unsafe fn server_client_command_done(item: *mut cmdq_item, _data: *mut c_voi
     }
 }
 
-/// Handle command message.
-pub unsafe fn server_client_dispatch_command(c: *mut client, imsg: *mut imsg) {
+/// Handle command message. Returns -1 if the message is malformed.
+pub unsafe fn server_client_dispatch_command(c: *mut client, imsg: *mut imsg) -> i32 {
     unsafe {
         let mut data: msg_command = zeroed();
         let buf;
@@ -3050,25 +3058,29 @@ pub unsafe fn server_client_dispatch_command(c: *mut client, imsg: *mut imsg) {
 
         'error: {
             if (*c).flags.intersects(client_flag::EXIT) {
-                return;
+                return 0;
             }
 
             if (*imsg).hdr.len as usize - IMSG_HEADER_SIZE < size_of::<msg_command>() {
-                fatalx("bad MSG_COMMAND size");
+                return -1;
             }
             memcpy__(&raw mut data, (*imsg).data.cast());
 
             buf = (*imsg).data.cast::<u8>().add(size_of::<msg_command>());
             len = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE - size_of::<msg_command>();
             if len > 0 && *buf.add(len - 1) != b'\0' {
-                fatalx("bad MSG_COMMAND string");
+                return -1;
             }
 
-            argc = data.argc;
-            if cmd_unpack_argv(buf, len, argc, &raw mut argv) != 0 {
+            // argc stays 0 until unpacking worked: on failure
+            // cmd_unpack_argv has already freed argv, so the error path
+            // must not free it again.
+            argc = 0;
+            if cmd_unpack_argv(buf, len, data.argc, &raw mut argv) != 0 {
                 cause = xstrdup(c!("command too long")).as_ptr();
                 break 'error;
             }
+            argc = data.argc;
 
             if argc == 0 {
                 argc = 1;
@@ -3101,7 +3113,7 @@ pub unsafe fn server_client_dispatch_command(c: *mut client, imsg: *mut imsg) {
             );
 
             cmd_list_free(cmdlist);
-            return;
+            return 0;
         }
         // error:
         cmd_free_argv(argc, argv);
@@ -3110,18 +3122,20 @@ pub unsafe fn server_client_dispatch_command(c: *mut client, imsg: *mut imsg) {
         free_(cause);
 
         (*c).flags |= client_flag::EXIT;
+        0
     }
 }
 
-/// Handle identify message.
-pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
+/// Handle identify message. Returns -1 if the message is malformed or
+/// arrives after identification finished.
+pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) -> i32 {
     unsafe {
         let mut feat: i32 = 0;
         let mut flags: i32 = 0;
         let mut longflags: u64 = 0;
 
         if (*c).flags.intersects(client_flag::IDENTIFIED) {
-            fatalx("out-of-order identify message");
+            return -1;
         }
 
         let data = (*imsg).data;
@@ -3129,12 +3143,12 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
 
         let Ok(msg_type) = msgtype::try_from((*imsg).hdr.type_) else {
             log_debug!("unknown message type {}", (*imsg).hdr.type_);
-            return;
+            return 0;
         };
         match msg_type {
             msgtype::MSG_IDENTIFY_FEATURES => {
                 if datalen != size_of::<i32>() {
-                    fatalx("bad MSG_IDENTIFY_FEATURES size");
+                    return -1;
                 }
                 memcpy__(&raw mut feat, data.cast());
                 (*c).term_features |= feat;
@@ -3142,7 +3156,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
             }
             msgtype::MSG_IDENTIFY_FLAGS => {
                 if datalen != size_of::<i32>() {
-                    fatalx("bad MSG_IDENTIFY_FLAGS size");
+                    return -1;
                 }
                 memcpy__(&raw mut flags, data.cast());
                 (*c).flags |= client_flag::from_bits_retain(flags as u64);
@@ -3150,7 +3164,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
             }
             msgtype::MSG_IDENTIFY_LONGFLAGS => {
                 if datalen != size_of::<u64>() {
-                    fatalx("bad MSG_IDENTIFY_LONGFLAGS size");
+                    return -1;
                 }
                 memcpy__(&raw mut longflags, data.cast());
                 (*c).flags |= client_flag::from_bits_retain(longflags);
@@ -3158,7 +3172,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
             }
             msgtype::MSG_IDENTIFY_TERM => {
                 if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
-                    fatalx("bad MSG_IDENTIFY_TERM string");
+                    return -1;
                 }
                 let bytes = std::slice::from_raw_parts(data.cast::<u8>(), (datalen - 1) as usize);
                 let name = if bytes.is_empty() {
@@ -3171,14 +3185,14 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
             }
             msgtype::MSG_IDENTIFY_TERMINFO => {
                 if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
-                    fatalx("bad MSG_IDENTIFY_TERMINFO string");
+                    return -1;
                 }
                 (*c).term_caps.push(xstrdup(data.cast()).as_ptr());
                 // log_debug("client %p IDENTIFY_TERMINFO %s", c, data);
             }
             msgtype::MSG_IDENTIFY_TTYNAME => {
                 if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
-                    fatalx("bad MSG_IDENTIFY_TTYNAME string");
+                    return -1;
                 }
                 // datalen includes trailing NUL
                 let bytes = std::slice::from_raw_parts(data.cast::<u8>(), (datalen - 1) as usize);
@@ -3190,7 +3204,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
             }
             msgtype::MSG_IDENTIFY_CWD => {
                 if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
-                    // fatalx("bad MSG_IDENTIFY_CWD string");
+                    return -1;
                 }
                 if libc::access(data.cast(), libc::X_OK) == 0 {
                     let bytes = std::ffi::CStr::from_ptr(data.cast())
@@ -3206,21 +3220,21 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
             }
             msgtype::MSG_IDENTIFY_STDIN => {
                 if datalen != 0 {
-                    fatalx("bad MSG_IDENTIFY_STDIN size");
+                    return -1;
                 }
                 (*c).fd = imsg_get_fd(imsg);
                 // log_debug("client %p IDENTIFY_STDIN %d", c, (*c).fd);
             }
             msgtype::MSG_IDENTIFY_STDOUT => {
                 if datalen != 0 {
-                    fatalx("bad MSG_IDENTIFY_STDOUT size");
+                    return -1;
                 }
                 (*c).out_fd = imsg_get_fd(imsg);
                 // log_debug("client %p IDENTIFY_STDOUT %d", c, (*c).out_fd);
             }
             msgtype::MSG_IDENTIFY_ENVIRON => {
                 if datalen == 0 || *data.cast::<u8>().add((datalen - 1) as usize) != b'\0' {
-                    fatalx("bad MSG_IDENTIFY_ENVIRON string");
+                    return -1;
                 }
                 if !libc::strchr(data.cast(), b'=' as i32).is_null() {
                     environ_put(&mut *(*c).environ, data.cast(), environ_flags::empty());
@@ -3229,7 +3243,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
             }
             msgtype::MSG_IDENTIFY_CLIENTPID => {
                 if datalen != size_of::<i32>() {
-                    fatalx("bad MSG_IDENTIFY_CLIENTPID size");
+                    return -1;
                 }
                 memcpy__(&raw mut (*c).pid, data.cast());
                 // log_debug("client %p IDENTIFY_CLIENTPID %ld", c, (long)(*c).pid);
@@ -3238,7 +3252,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
         }
 
         if (*imsg).hdr.type_ != msgtype::MSG_IDENTIFY_DONE as u32 {
-            return;
+            return 0;
         }
         (*c).flags |= client_flag::IDENTIFIED;
 
@@ -3277,6 +3291,7 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) {
         {
             start_cfg();
         }
+        0
     }
 }
 

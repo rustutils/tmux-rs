@@ -331,6 +331,12 @@ pub unsafe fn cmd_unpack_argv(
         if argc == 0 {
             return 0;
         }
+        // The count comes from the client, so limit it like tmux 3.8. An
+        // empty buffer cannot hold any arguments (C tmux 3.8 would write
+        // before the buffer here).
+        if !(0..=1000).contains(&argc) || len == 0 {
+            return -1;
+        }
         *argv = xcalloc_::<*mut u8>(argc as usize).as_ptr();
 
         *buf.add(len - 1) = b'\0';

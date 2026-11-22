@@ -380,3 +380,104 @@ fn server_survives_newer_client_messages() {
 
     tmux.cmd().args(["has-session"]).run().assert_success();
 }
+
+/// A malformed message from a client drops that client, as in tmux 3.8.
+/// Before, most of these killed the whole server with fatalx, and a short
+/// MSG_READ or a CWD without a terminating NUL read out of bounds.
+#[test]
+fn server_drops_client_on_malformed_message() {
+    use std::io::{Read as _, Write as _};
+    use std::os::unix::net::UnixStream;
+
+    const IDENTIFY_DONE: u32 = 106;
+    let identify_done = || imsg_frame(IDENTIFY_DONE, &[]);
+    // (description, frames to send). Messages other than identify are
+    // sent after a minimal identify so the client is fully set up.
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("IDENTIFY_FLAGS size", imsg_frame(100, &[1, 2])),
+        ("IDENTIFY_TERM without NUL", imsg_frame(101, b"xterm")),
+        ("IDENTIFY_TTYNAME without NUL", imsg_frame(102, b"tty")),
+        ("IDENTIFY_STDIN with data", imsg_frame(104, &[1])),
+        ("IDENTIFY_ENVIRON without NUL", imsg_frame(105, b"A=B")),
+        ("IDENTIFY_CLIENTPID size", imsg_frame(107, &[1])),
+        ("IDENTIFY_CWD without NUL", imsg_frame(108, b"/tmp")),
+        ("IDENTIFY_FEATURES size", imsg_frame(109, &[1])),
+        ("IDENTIFY_STDOUT with data", imsg_frame(110, &[1])),
+        ("IDENTIFY_LONGFLAGS size", imsg_frame(111, &[1, 2, 3])),
+        ("IDENTIFY_TERMINFO without NUL", imsg_frame(112, b"x")),
+        ("identify after DONE", [identify_done(), imsg_frame(100, &0i32.to_ne_bytes())].concat()),
+        ("COMMAND too short", [identify_done(), imsg_frame(200, &[1])].concat()),
+        (
+            "COMMAND string without NUL",
+            [identify_done(), imsg_frame(200, &[1, 0, 0, 0, b'l', b's'])].concat(),
+        ),
+        ("EXITING with data", [identify_done(), imsg_frame(205, &[1])].concat()),
+        ("RESIZE with data", [identify_done(), imsg_frame(208, &[1])].concat()),
+        ("SHELL with data", [identify_done(), imsg_frame(209, &[1])].concat()),
+        ("UNLOCK with data", [identify_done(), imsg_frame(215, &[1])].concat()),
+        ("WAKEUP with data", [identify_done(), imsg_frame(216, &[1])].concat()),
+        ("READ too short", [identify_done(), imsg_frame(301, &[1])].concat()),
+        ("READ_DONE size", [identify_done(), imsg_frame(302, &[1])].concat()),
+        ("WRITE_READY size", [identify_done(), imsg_frame(305, &[1])].concat()),
+        ("WRITE_DONE size", [identify_done(), imsg_frame(308, &[1])].concat()),
+    ];
+
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    for (what, frames) in cases {
+        let mut sock = UnixStream::connect(tmux.socket_path()).expect("connect to server");
+        sock.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        sock.write_all(&frames).expect("send frames");
+        // The server must close this connection. Anything it sends first
+        // is read and ignored.
+        let mut buf = [0u8; 4096];
+        loop {
+            match sock.read(&mut buf) {
+                Ok(0) => break,
+                Ok(_) => continue,
+                Err(e) => panic!("{what}: server kept the connection open ({e})"),
+            }
+        }
+        let alive = tmux.cmd().args(["has-session"]).run();
+        assert!(alive.success(), "{what}: server died");
+    }
+}
+
+/// MSG_COMMAND carries an argument count from the client. Bad counts must
+/// not crash the server: a negative or huge count, more arguments claimed
+/// than sent (this used to free the argument list twice), and a count with
+/// no argument data at all.
+#[test]
+fn server_survives_bad_command_argument_counts() {
+    use std::io::Write as _;
+    use std::os::unix::net::UnixStream;
+
+    const IDENTIFY_DONE: u32 = 106;
+    const COMMAND: u32 = 200;
+    let command = |argc: i32, args: &[u8]| {
+        let mut payload = argc.to_ne_bytes().to_vec();
+        payload.extend_from_slice(args);
+        imsg_frame(COMMAND, &payload)
+    };
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("negative argc", command(-1, b"ls\0")),
+        ("huge argc", command(i32::MAX, b"ls\0")),
+        ("more arguments than sent", command(3, b"ls\0")),
+        ("argc without arguments", command(1, b"")),
+    ];
+
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    for (what, frame) in cases {
+        let mut sock = UnixStream::connect(tmux.socket_path()).expect("connect to server");
+        sock.write_all(&[imsg_frame(IDENTIFY_DONE, &[]), frame].concat()).expect("send frames");
+        std::thread::sleep(Duration::from_millis(200));
+        drop(sock);
+        let alive = tmux.cmd().args(["has-session"]).run();
+        assert!(alive.success(), "{what}: server died");
+    }
+}

@@ -1011,19 +1011,21 @@ pub unsafe fn file_write_done(files: *mut client_files, imsg: *mut imsg) -> i32 
     }
 }
 
-pub unsafe fn file_write_ready(files: *mut client_files, imsg: *mut imsg) {
+/// Handle MSG_WRITE_READY from a client (server side). Returns -1 for a
+/// malformed message.
+pub unsafe fn file_write_ready(files: *mut client_files, imsg: *mut imsg) -> i32 {
     unsafe {
         let msg = (*imsg).data as *mut msg_write_ready;
         let msglen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
 
         if msglen != size_of::<msg_write_ready>() {
-            fatalx("bad MSG_WRITE_READY size");
+            return -1;
         }
         let cf = (*files)
             .get_mut(&(*msg).stream)
             .map_or(null_mut(), |cf| &mut **cf as *mut client_file);
         if cf.is_null() {
-            return;
+            return 0;
         }
         if (*msg).error != 0 {
             (*cf).error = (*msg).error;
@@ -1031,24 +1033,27 @@ pub unsafe fn file_write_ready(files: *mut client_files, imsg: *mut imsg) {
         } else {
             file_push(cf);
         }
+        0
     }
 }
 
-pub unsafe fn file_read_data(files: *mut client_files, imsg: *mut imsg) {
+/// Handle MSG_READ data from a client (server side). Returns -1 for a
+/// malformed message.
+pub unsafe fn file_read_data(files: *mut client_files, imsg: *mut imsg) -> i32 {
     unsafe {
         let msg = (*imsg).data as *mut msg_read_data;
         let msglen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
-        let bdata: *mut c_void = msg.add(1).cast();
-        let bsize = msglen - size_of::<msg_read_data>();
 
         if msglen < size_of::<msg_read_data>() {
-            fatalx("bad MSG_READ_DATA size");
+            return -1;
         }
+        let bdata: *mut c_void = msg.add(1).cast();
+        let bsize = msglen - size_of::<msg_read_data>();
         let cf = (*files)
             .get_mut(&(*msg).stream)
             .map_or(null_mut(), |cf| &mut **cf as *mut client_file);
         if cf.is_null() {
-            return;
+            return 0;
         }
 
         log_debug!("file {} read {} bytes", (*cf).stream, bsize);
@@ -1060,26 +1065,30 @@ pub unsafe fn file_read_data(files: *mut client_files, imsg: *mut imsg) {
                 file_fire_read(cf);
             }
         }
+        0
     }
 }
 
-pub unsafe fn file_read_done(files: *mut client_files, imsg: *mut imsg) {
+/// Handle MSG_READ_DONE from a client (server side). Returns -1 for a
+/// malformed message.
+pub unsafe fn file_read_done(files: *mut client_files, imsg: *mut imsg) -> i32 {
     unsafe {
         let msg = (*imsg).data as *mut msg_read_done;
         let msglen = (*imsg).hdr.len as usize - IMSG_HEADER_SIZE;
 
         if msglen != size_of::<msg_read_done>() {
-            fatalx("bad MSG_READ_DONE size");
+            return -1;
         }
         let cf = (*files)
             .get_mut(&(*msg).stream)
             .map_or(null_mut(), |cf| &mut **cf as *mut client_file);
         if cf.is_null() {
-            return;
+            return 0;
         }
 
         log_debug!("file {} read done", (*cf).stream);
         (*cf).error = (*msg).error;
         file_fire_done(cf);
+        0
     }
 }
