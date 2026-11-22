@@ -33,7 +33,6 @@ fn capture_pane_sgr0_reset() {
 // Ported from regress/capture-pane-hyperlink.sh
 // capture-pane -e should preserve OSC 8 hyperlinks.
 #[test]
-#[ignore = "tmux-rs hyperlink capture may differ; needs verification"]
 fn capture_pane_hyperlink_with_id() {
     let tmux = TmuxTestHarness::new();
     let cmd = "printf '\\033]8;id=1;https://github.com\\033\\\\test1\\033]8;;\\033\\\\\\n'; sleep 5";
@@ -49,12 +48,12 @@ fn capture_pane_hyperlink_with_id() {
         .args(["capture-pane", "-pe", "-S", "0", "-E", "1"])
         .run()
         .stdout_str();
-    let expected = "\u{1b}]8;id=1;https://github.com\u{1b}\\test1\u{1b}]8;;\u{1b}\\\n";
+    // -E1 captures two lines, the second is empty.
+    let expected = "\u{1b}]8;id=1;https://github.com\u{1b}\\test1\u{1b}]8;;\u{1b}\\\n\n";
     assert_eq!(captured, expected);
 }
 
 #[test]
-#[ignore = "tmux-rs hyperlink capture may differ; needs verification"]
 fn capture_pane_hyperlink_without_id() {
     let tmux = TmuxTestHarness::new();
     let cmd = "printf '\\033]8;;https://github.com/tmux/tmux\\033\\\\test1\\033]8;;\\033\\\\\\n'; sleep 5";
@@ -71,7 +70,7 @@ fn capture_pane_hyperlink_without_id() {
         .run()
         .stdout_str();
     let expected =
-        "\u{1b}]8;;https://github.com/tmux/tmux\u{1b}\\test1\u{1b}]8;;\u{1b}\\\n";
+        "\u{1b}]8;;https://github.com/tmux/tmux\u{1b}\\test1\u{1b}]8;;\u{1b}\\\n\n";
     assert_eq!(captured, expected);
 }
 

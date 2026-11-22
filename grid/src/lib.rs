@@ -136,9 +136,10 @@ use tmux_utf8::{utf8_build_one, utf8_set, utf8_to_data};
 pub struct Hyperlink<'a> {
     /// Destination URL (the `uri=` part of the OSC-8 sequence).
     pub uri: &'a [u8],
-    /// Optional external id (the `id=` parameter). Empty when the
-    /// hyperlink has no caller-supplied id.
-    pub external_id: &'a [u8],
+    /// The id the application gave in the `id=` parameter, empty when it
+    /// gave none. This is what capture-pane prints, not the unique id
+    /// tmux sends to terminals.
+    pub internal_id: &'a [u8],
 }
 
 /// Context trait: the Grid crate doesn't own the hyperlinks registry,
@@ -1017,7 +1018,7 @@ impl Grid {
 
             if flags.intersects(GridStringFlags::GRID_STRING_WITH_SEQUENCES) {
                 let last = lastgc.as_ref().expect("seeded above");
-                has_link = grid_string_cells_code(last, &gc, &mut buf, flags, hl);
+                grid_string_cells_code(last, &gc, &mut buf, flags, hl, &mut has_link);
                 *lastgc = Some(gc);
             }
 
@@ -1555,8 +1556,9 @@ fn grid_string_cells_add_hyperlink(
 
 /// Emit the ANSI escape sequences required to transition from the previous
 /// cell style (`lastgc`) to the current cell style (`gc`). Appends to `buf`
-/// without clearing it. Returns `true` if a hyperlink-open sequence was
-/// emitted — the caller is responsible for emitting the matching close.
+/// without clearing it. `has_link` says whether a hyperlink is open. It
+/// carries over from cell to cell and is updated when a link opens or
+/// closes, the caller closes a link still open at the end.
 ///
 /// `hyperlinks` is the pane-local registry used to resolve `gc.link` into
 /// an OSC-8 URI+id. Pass `None` to disable hyperlink emission entirely
@@ -1567,11 +1569,11 @@ fn grid_string_cells_code(
     buf: &mut Vec<u8>,
     flags: GridStringFlags,
     hl: Option<&dyn HyperlinkLookup>,
-) -> bool {
+    has_link: &mut bool,
+) {
     let mut s: Vec<i32> = Vec::with_capacity(16);
     let attr = gc.attr;
     let mut lastattr = lastgc.attr;
-    let mut has_link = false;
 
     static ATTRS: [(GridAttr, u32); 13] = [
         (GridAttr::GRID_ATTR_BRIGHT, 1),
@@ -1673,13 +1675,12 @@ fn grid_string_cells_code(
         && lastgc.link != gc.link
     {
         if let Some(link) = lookup.hyperlink(gc.link) {
-            has_link = grid_string_cells_add_hyperlink(buf, link.external_id, link.uri, flags);
-        } else if has_link {
+            *has_link = grid_string_cells_add_hyperlink(buf, link.internal_id, link.uri, flags);
+        } else if *has_link {
             grid_string_cells_add_hyperlink(buf, b"", b"", flags);
-            has_link = false;
+            *has_link = false;
         }
     }
-    has_link
 }
 
 /// Mark line as dead. Caller must ensure the line's Vec fields have already

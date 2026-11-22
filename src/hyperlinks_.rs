@@ -49,14 +49,14 @@ pub struct hyperlinks {
 impl HyperlinkLookup for hyperlinks {
     fn hyperlink(&self, id: u32) -> Option<Hyperlink<'_>> {
         let hlu = self.by_inner.get(&id)?;
-        // SAFETY: `uri` and `external_id` are NUL-terminated C strings
+        // SAFETY: `uri` and `internal_id` are NUL-terminated C strings
         // owned by the Box whose lifetime is tied to `&self`. The
         // returned byte slices borrow from the Box and are valid for
         // the duration of this borrow.
         unsafe {
             Some(Hyperlink {
                 uri: std::ffi::CStr::from_ptr(hlu.uri.cast()).to_bytes(),
-                external_id: std::ffi::CStr::from_ptr(hlu.external_id.cast()).to_bytes(),
+                internal_id: std::ffi::CStr::from_ptr(hlu.internal_id.cast()).to_bytes(),
             })
         }
     }
