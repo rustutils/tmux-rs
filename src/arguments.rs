@@ -18,7 +18,9 @@
 //! and whether they take arguments (`:` suffix, `::` for optional).
 //!
 //! An [`args`] set contains:
-//! - **Flags**: stored in a `HashMap<u8, Box<args_entry>>`, keyed by flag character.
+//! - **Flags**: stored in a `BTreeMap<u8, Box<args_entry>>`, keyed by flag character.
+//!   The map is ordered by flag byte like the C tree, so flags print in the
+//!   same order as C tmux (`args_print`).
 //!   Each entry tracks a count (for repeated flags like `-vvv`) and optional values.
 //! - **Positional arguments**: a count + pointer to an array of [`args_value`].
 //!
@@ -26,7 +28,7 @@
 //! none (`ARGS_NONE`). The `args_escape` function handles shell quoting for
 //! display/serialization.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ffi::CStr;
 
 use crate::*;
@@ -41,7 +43,7 @@ pub struct args_entry {
 }
 
 pub struct args {
-    pub tree: HashMap<u8, Box<args_entry>>,
+    pub tree: BTreeMap<u8, Box<args_entry>>,
     pub values: Vec<args_value>,
 }
 
@@ -95,7 +97,7 @@ pub unsafe fn args_value_as_string(value: &args_value) -> *const u8 {
 impl args {
     fn create() -> Box<Self> {
         Box::new(Self {
-            tree: HashMap::new(),
+            tree: BTreeMap::new(),
             values: Vec::new(),
         })
     }
@@ -1007,6 +1009,23 @@ mod tests {
             let args = args_create();
             assert_eq!(args_count(args), 0);
             assert!(!args_has(args, 'v'));
+            args_free(args);
+        }
+    }
+
+    /// Flags print in byte order, single flags first, as C tmux does,
+    /// whatever order they were set in.
+    #[test]
+    fn print_orders_flags_like_c() {
+        unsafe {
+            let args = args_create();
+            args_set(args, b'p', Some(args_value::new_string(xstrdup_(c"x").as_ptr())), 0);
+            args_set(args, b'P', None, 0);
+            args_set(args, b'I', Some(args_value::new_string(xstrdup_(c"1").as_ptr())), 0);
+            args_set(args, b'N', None, 0);
+            let printed = args_print(args);
+            assert_eq!(cstr_to_str(printed), "-NP -I 1 -p x");
+            free_(printed);
             args_free(args);
         }
     }
