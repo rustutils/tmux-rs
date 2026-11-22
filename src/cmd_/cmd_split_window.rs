@@ -97,7 +97,7 @@ unsafe fn cmd_split_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
 
         let lc = layout_split_pane(wp, type_, size, flags);
         if lc.is_null() {
-            cmdq_error!(item, "no space for new pane");
+            cmdq_error!(item, "no space for a new pane");
             return cmd_retval::CMD_RETURN_ERROR;
         }
 

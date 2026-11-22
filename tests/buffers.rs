@@ -731,3 +731,22 @@ fn osc52_from_pane_creates_buffer() {
         .assert_success();
     tmux.wait_for("#{buffer_sample}", |v| v == "hello 2026", Duration::from_secs(5));
 }
+
+/// File errors give the error first and the path last (tmux 3.8), so
+/// capitalising the first letter of a message never changes the path.
+#[test]
+fn file_errors_put_the_path_last() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    let missing = "/nonexistent-tmux-rs-test/file";
+    let load = tmux.cmd().args(["load-buffer", missing]).run();
+    load.assert_failure();
+    assert_eq!(load.stderr_str().trim(), format!("No such file or directory: {missing}"));
+
+    tmux.cmd().args(["set-buffer", "x"]).run().assert_success();
+    let save = tmux.cmd().args(["save-buffer", missing]).run();
+    save.assert_failure();
+    assert_eq!(save.stderr_str().trim(), format!("No such file or directory: {missing}"));
+}
