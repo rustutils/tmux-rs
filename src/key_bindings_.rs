@@ -341,7 +341,7 @@ unsafe fn key_bindings_init_done(_item: *mut cmdq_item, _data: *mut c_void) -> c
 
 pub unsafe fn key_bindings_init() {
     #[rustfmt::skip]
-    static DEFAULTS: [&str; 262] = [
+    static DEFAULTS: [&str; 264] = [
         // Prefix keys.
         "bind -N 'Send the prefix key' C-b { send-prefix }",
         "bind -N 'Rotate through the panes' C-o { rotate-window }",
@@ -353,12 +353,12 @@ pub unsafe fn key_bindings_init() {
         "bind -N 'Rename current session' '$' { command-prompt -I'#S' { rename-session -- '%%' } }",
         "bind -N 'Split window horizontally' % { split-window -h }",
         "bind -N 'Kill current window' & { confirm-before -p\"kill-window #W? (y/n)\" kill-window }",
-        "bind -N 'Prompt for window index to select' \"'\" { command-prompt -T window-target -pindex { select-window -t ':%%' } }",
+        "bind -N 'Prompt for window index to select' \"'\" { command-prompt -pindex { select-window -t ':%%' } }",
         "bind -N 'Switch to previous client' ( { switch-client -p }",
         "bind -N 'Switch to next client' ) { switch-client -n }",
         "bind -N 'Rename current window' , { command-prompt -I'#W' { rename-window -- '%%' } }",
         "bind -N 'Delete the most recent paste buffer' - { delete-buffer }",
-        "bind -N 'Move the current window' . { command-prompt -T target { move-window -t '%%' } }",
+        "bind -N 'Move the current window' . { command-prompt { move-window -t '%%' } }",
         "bind -N 'Describe key binding' '/' { command-prompt -kpkey  { list-keys -1N '%%' } }",
         "bind -N 'Select window 0' 0 { select-window -t:=0 }",
         "bind -N 'Select window 1' 1 { select-window -t:=1 }",
@@ -378,6 +378,7 @@ pub unsafe fn key_bindings_init() {
         "bind -N 'Spread panes out evenly' E { select-layout -E }",
         "bind -N 'Switch to the last client' L { switch-client -l }",
         "bind -N 'Clear the marked pane' M { select-pane -M }",
+        "bind -N 'Change the pane title' T { command-prompt -I'#T' { select-pane -T '%%' } }",
         "bind -N 'Enter copy mode' [ { copy-mode }",
         "bind -N 'Paste the most recent paste buffer' ] { paste-buffer -p }",
         "bind -N 'Create a new window' c { new-window }",
@@ -443,10 +444,12 @@ pub unsafe fn key_bindings_init() {
         "bind -n DoubleClick1Pane { select-pane -t=; if -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' { send -M } { copy-mode -H; send -X select-word; run -d0.3; send -X copy-pipe-and-cancel } }",
         /* Mouse button 1 triple click on pane. */
         "bind -n TripleClick1Pane { select-pane -t=; if -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' { send -M } { copy-mode -H; send -X select-line; run -d0.3; send -X copy-pipe-and-cancel } }",
+        /* Mouse button 1 on border. */
+        "bind -n MouseDown1Border { select-pane -t= }",
         /* Mouse button 1 drag on border. */
         "bind -n MouseDrag1Border { resize-pane -M }",
         /* Mouse button 1 down on status line. */
-        "bind -n MouseDown1Status { select-window -t= }",
+        "bind -n MouseDown1Status { switch-client -t= }",
         /* Mouse wheel down on status line. */
         "bind -n WheelDownStatus { next-window }",
         /* Mouse wheel up on status line. */

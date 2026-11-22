@@ -37,7 +37,11 @@ unsafe fn cmd_switch_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
 
         let type_: cmd_find_type;
         let flags: cmd_find_flags;
-        if !tflag.is_null() && *tflag.add(strcspn(tflag, c!(":.%"))) != b'\0' {
+        // A target with a window or pane part, or the mouse target "=",
+        // selects a pane, so a click on the status line picks a window.
+        if !tflag.is_null()
+            && (*tflag.add(strcspn(tflag, c!(":.%"))) != b'\0' || cstr_to_str_(tflag) == Some("="))
+        {
             type_ = cmd_find_type::CMD_FIND_PANE;
             flags = cmd_find_flags::empty();
         } else {

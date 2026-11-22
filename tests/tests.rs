@@ -24,3 +24,4 @@ mod cursor;
 mod capture_pane;
 mod style;
 mod timers;
+mod mouse;

@@ -513,6 +513,20 @@ impl PtyClient {
         self.write(bytes);
     }
 
+    /// Send an SGR mouse event at column `x` and row `y` (both from 0).
+    /// `button` is the SGR button code (0 left, 2 right, 64 wheel up),
+    /// `press` chooses press or release.
+    pub fn mouse(&mut self, button: u32, x: u16, y: u16, press: bool) {
+        let end = if press { 'M' } else { 'm' };
+        self.write_str(&format!("\x1b[<{button};{};{}{end}", x + 1, y + 1));
+    }
+
+    /// Click the left button at column `x` and row `y` (both from 0).
+    pub fn click(&mut self, x: u16, y: u16) {
+        self.mouse(0, x, y, true);
+        self.mouse(0, x, y, false);
+    }
+
     /// Read all currently available output from the terminal.
     /// Returns the raw bytes (including escape sequences).
     pub fn read_raw(&mut self) -> Vec<u8> {
