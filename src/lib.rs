@@ -1012,6 +1012,9 @@ struct window_mode {
     free: unsafe fn(NonNull<window_mode_entry>),
     resize: unsafe fn(NonNull<window_mode_entry>, u32, u32),
     update: Option<unsafe fn(NonNull<window_mode_entry>)>,
+    /// Called when the pane's styles may have changed, so the mode can
+    /// redraw what it drew with them.
+    style_changed: Option<unsafe fn(NonNull<window_mode_entry>)>,
     key: Option<
         unsafe fn(
             NonNull<window_mode_entry>,

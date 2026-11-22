@@ -50,6 +50,7 @@ pub static WINDOW_BUFFER_MODE: window_mode = window_mode {
     free: window_buffer_free,
     resize: window_buffer_resize,
     update: Some(window_buffer_update),
+    style_changed: None,
     key: Some(window_buffer_key),
     key_table: None,
     command: None,

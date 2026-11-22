@@ -38,6 +38,7 @@ pub static WINDOW_CLIENT_MODE: window_mode = window_mode {
     free: window_client_free,
     resize: window_client_resize,
     update: Some(window_client_update),
+    style_changed: None,
     key: Some(window_client_key),
     key_table: None,
     command: None,

@@ -25,6 +25,7 @@ pub static WINDOW_CLOCK_MODE: window_mode = window_mode {
     key: Some(window_clock_key),
     default_format: None,
     update: None,
+    style_changed: None,
     key_table: None,
     command: None,
     formats: None,

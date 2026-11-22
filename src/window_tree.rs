@@ -73,6 +73,7 @@ pub static WINDOW_TREE_MODE: window_mode = window_mode {
     free: window_tree_free,
     resize: window_tree_resize,
     update: Some(window_tree_update),
+    style_changed: None,
     key: Some(window_tree_key),
     key_table: None,
     command: None,

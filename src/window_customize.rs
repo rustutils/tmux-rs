@@ -44,6 +44,7 @@ pub static WINDOW_CUSTOMIZE_MODE: window_mode = window_mode {
     resize: window_customize_resize,
     key: Some(window_customize_key),
     update: None,
+    style_changed: None,
     key_table: None,
     command: None,
     formats: None,

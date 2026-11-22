@@ -1173,3 +1173,33 @@ fn copy_pipe_runs_in_server_directory() {
     let here = std::env::current_dir().unwrap();
     assert_eq!(pwd.trim_end(), here.to_str().unwrap());
 }
+
+/// Copy mode redraws its selection when mode-style changes through a user
+/// option (upstream 588013bb).
+#[test]
+fn selection_follows_mode_style() {
+    let t = Duration::from_secs(5);
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["-x", "40", "-y", "10", "printf 'hello world\\n'; exec sleep 1000"]).run().assert_success();
+    tmux.wait_ready(t);
+    tmux.wait_for("#{cursor_y}", |y| y == "1", t);
+    tmux.cmd().args(["set", "-g", "@c", "blue"]).run().assert_success();
+    tmux.cmd().args(["set", "-g", "mode-style", "bg=#{@c}"]).run().assert_success();
+    let mut pty = PtyClient::attach(&tmux, 40, 10);
+    tmux.wait_for("#{session_attached}", |v| v == "1", t);
+    tmux.cmd().args(["copy-mode"]).run().assert_success();
+    for cmd in ["history-top", "start-of-line", "begin-selection", "end-of-line"] {
+        send_copy_cmd(&tmux, cmd);
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    pty.read_raw();
+    tmux.cmd().args(["set", "-g", "@c", "red"]).run().assert_success();
+    // Red background is SGR 41.
+    let start = std::time::Instant::now();
+    let mut out = Vec::new();
+    while !out.windows(3).any(|w| w == b"41m") {
+        assert!(start.elapsed() < t, "selection was not redrawn with the new style");
+        out.extend(pty.read_raw());
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}

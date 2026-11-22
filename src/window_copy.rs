@@ -26,6 +26,7 @@ pub static WINDOW_COPY_MODE: window_mode = window_mode {
     formats: Some(window_copy_formats),
     default_format: None,
     update: None,
+    style_changed: Some(window_copy_style_changed),
     key: None,
 };
 
@@ -39,6 +40,7 @@ pub static WINDOW_VIEW_MODE: window_mode = window_mode {
     formats: Some(window_copy_formats),
     default_format: None,
     update: None,
+    style_changed: Some(window_copy_style_changed),
     key: None,
 };
 
@@ -5082,6 +5084,19 @@ pub unsafe fn window_copy_redraw_lines(wme: *mut window_mode_entry, py: u32, ny:
         }
         screen_write_cursormove(&raw mut ctx, (*data).cx as i32, (*data).cy as i32, 0);
         screen_write_stop(&raw mut ctx);
+    }
+}
+
+/// Redraw after a style change, recomputing the selection so it uses the
+/// new mode-style.
+pub unsafe fn window_copy_style_changed(wme: NonNull<window_mode_entry>) {
+    unsafe {
+        let wme = wme.as_ptr();
+        let data: *mut window_copy_mode_data = (*wme).data.cast();
+        if (*data).screen.sel.is_some() {
+            window_copy_set_selection(wme, 0, 1);
+        }
+        window_copy_redraw_screen(wme);
     }
 }
 

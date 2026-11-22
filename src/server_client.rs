@@ -2224,6 +2224,18 @@ pub unsafe fn server_client_loop() {
             server_client_check_window_resize(w);
         }
 
+        // Notify modes that pane styles may have changed.
+        for w in windows_iter() {
+            for &wp in (*w).panes.clone().iter() {
+                if (*wp).flags.intersects(window_pane_flags::PANE_STYLECHANGED)
+                    && let Some(wme) = (*wp).modes.first().copied().and_then(NonNull::new)
+                    && let Some(style_changed) = (*wme.as_ptr()).mode.as_ref().unwrap().style_changed
+                {
+                    style_changed(wme);
+                }
+            }
+        }
+
         // Check clients.
         for c in clients_iter() {
             server_client_check_exit(c, false);
