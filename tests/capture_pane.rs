@@ -74,3 +74,4 @@ fn capture_pane_hyperlink_without_id() {
         "\u{1b}]8;;https://github.com/tmux/tmux\u{1b}\\test1\u{1b}]8;;\u{1b}\\\n";
     assert_eq!(captured, expected);
 }
+

@@ -71,8 +71,16 @@ impl TmuxTestHarness {
     }
 
     /// Run a tmux command using the *client* binary against this harness's server.
+    ///
+    /// A command that starts the server, because nothing listens on the
+    /// socket yet, uses the server binary instead, so TMUX_SERVER_BIN also
+    /// applies to tests that start their server this way.
     pub fn cmd(&self) -> TmuxCommandBuilder<'_> {
-        self.client_cmd()
+        if std::path::Path::new(&self.socket_path).exists() {
+            self.client_cmd()
+        } else {
+            self.server_cmd()
+        }
     }
 
     /// Run `display-message -p` with the given format string and return the output.
