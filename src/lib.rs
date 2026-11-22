@@ -146,7 +146,7 @@ use crate::{
     client_::*,
     cmd_::{
         cmd_attach_session::cmd_attach_session, cmd_find::*, cmd_log_argv, cmd_queue::*,
-        cmd_wait_for::cmd_wait_for_flush, *,
+        cmd_wait_for::{cmd_wait_for_client_lost, cmd_wait_for_flush}, *,
     },
     cmd_parse::*,
     colour::*,

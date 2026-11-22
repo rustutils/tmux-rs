@@ -354,3 +354,40 @@ fn run_shell_sets_pwd() {
     out.assert_success();
     assert_eq!(out.stdout_trimmed(), link.to_str().unwrap());
 }
+
+/// A client killed while it waits in wait-for is released, and the
+/// channel keeps working for other clients (upstream ed2b349c).
+#[test]
+fn wait_for_survives_killed_client() {
+    let t = Duration::from_secs(5);
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(t);
+    let spawn_wait = || {
+        std::process::Command::new(harness::client_bin())
+            .args(["-S", tmux.socket_path(), "wait-for", "chan"])
+            .env_remove("TMUX")
+            .spawn()
+            .unwrap()
+    };
+    let mut first = spawn_wait();
+    std::thread::sleep(Duration::from_millis(300));
+    first.kill().unwrap();
+    first.wait().unwrap();
+
+    tmux.cmd().args(["wait-for", "-S", "chan"]).run().assert_success();
+    tmux.cmd().args(["has-session"]).run().assert_success();
+
+    let mut second = spawn_wait();
+    std::thread::sleep(Duration::from_millis(300));
+    tmux.cmd().args(["wait-for", "-S", "chan"]).run().assert_success();
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(status) = second.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        assert!(start.elapsed() < t, "second waiter was not woken");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}

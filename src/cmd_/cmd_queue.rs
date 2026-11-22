@@ -620,6 +620,13 @@ pub unsafe fn cmdq_fire_command(item: *mut cmdq_item) -> cmd_retval {
         let mut quiet = 0;
         let flags;
 
+        // Commands of a client that has gone away do not run.
+        if let Some(c) = (*item).client.and_then(|id| client_from_id(id))
+            && (*c).flags.intersects(client_flag::DEAD)
+        {
+            return cmd_retval::CMD_RETURN_ERROR;
+        }
+
         'out: {
             if CFG_FINISHED.load(atomic::Ordering::Acquire) {
                 cmdq_add_message(item);

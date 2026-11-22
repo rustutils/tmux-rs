@@ -458,6 +458,11 @@ pub unsafe fn server_client_lost(c: *mut client) {
 
         log_debug!("lost client {:p} ({:?})", c, (*c).id);
 
+        // Let commands waiting in wait-for go, so they and the client are
+        // freed instead of waiting forever.
+        cmd_wait_for_client_lost(c);
+        cmdq_next(c);
+
         if (*c).flags.intersects(client_flag::ATTACHED) {
             server_client_attached_lost(c);
             notify_client(c"client-detached", c);

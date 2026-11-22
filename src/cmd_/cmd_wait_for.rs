@@ -209,6 +209,25 @@ pub unsafe fn cmd_wait_for_unlock(
     cmd_retval::CMD_RETURN_NORMAL
 }
 
+/// Release the items of a client that has gone away from every channel
+/// they wait on, so the client and its queue can be freed. The items are
+/// continued and then fail when they run, since their client is dead.
+pub unsafe fn cmd_wait_for_client_lost(c: *mut client) {
+    unsafe {
+        for wc in (*(&raw mut WAIT_CHANNELS)).values_mut() {
+            for list in [&mut wc.waiters, &mut wc.lockers] {
+                list.retain(|&wi| {
+                    if cmdq_get_client(wi) != c {
+                        return true;
+                    }
+                    cmdq_continue(wi);
+                    false
+                });
+            }
+        }
+    }
+}
+
 pub unsafe fn cmd_wait_for_flush() {
     unsafe {
         let keys: Vec<String> = (*(&raw mut WAIT_CHANNELS)).keys().cloned().collect();
