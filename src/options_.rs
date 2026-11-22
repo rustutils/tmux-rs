@@ -1117,7 +1117,9 @@ pub unsafe fn options_string_to_style(
         log_debug!("{}: {} is '{}'", _s(__func__), name, _s(s));
 
         style_set(&mut (*o).style, &GRID_DEFAULT_CELL);
-        (*o).cached = cstr_to_str(s).contains("#{") as i32;
+        // A style without formats can be cached, one with formats must be
+        // expanded again each time.
+        (*o).cached = (!cstr_to_str(s).contains("#{")) as i32;
 
         if !ft.is_null() && (*o).cached == 0 {
             let expanded = format_expand(ft, s);
@@ -1365,6 +1367,14 @@ pub unsafe fn options_push_changes(name: &str) {
         if name == "window-style" || name == "window-active-style" {
             for wp in (*(&raw mut ALL_WINDOW_PANES)).values().map(|wp| NonNull::new(*wp).unwrap()) {
                 (*wp.as_ptr()).flags |= window_pane_flags::PANE_STYLECHANGED;
+            }
+        }
+
+        // A style can refer to a user option, so recheck styles when one
+        // changes.
+        if name.starts_with('@') {
+            for wp in (*(&raw mut ALL_WINDOW_PANES)).values().copied() {
+                (*wp).flags |= window_pane_flags::PANE_STYLECHANGED;
             }
         }
 

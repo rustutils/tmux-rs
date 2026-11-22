@@ -355,3 +355,36 @@ fn capture_pane_target() {
         "capture-pane -t should capture the targeted pane, got: {output}"
     );
 }
+
+/// Read PTY output until it contains `needle` or the timeout passes.
+fn pty_output_contains(pty: &mut PtyClient, needle: &[u8], timeout: Duration) -> bool {
+    let start = std::time::Instant::now();
+    let mut out = Vec::new();
+    while start.elapsed() < timeout {
+        out.extend(pty.read_raw());
+        if out.windows(needle.len()).any(|w| w == needle) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    false
+}
+
+/// A window-style that uses a user option is redrawn when the user option
+/// changes (upstream 818745a6).
+#[test]
+fn window_style_follows_user_option() {
+    let t = Duration::from_secs(5);
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["-x", "80", "-y", "24", "sleep 1000"]).run().assert_success();
+    tmux.wait_ready(t);
+    tmux.cmd().args(["set", "-g", "@c", "default"]).run().assert_success();
+    tmux.cmd().args(["set", "-g", "window-style", "bg=#{@c}"]).run().assert_success();
+    let mut pty = PtyClient::attach(&tmux, 80, 24);
+    tmux.wait_for("#{session_attached}", |v| v == "1", t);
+    std::thread::sleep(Duration::from_millis(200));
+    pty.read_raw();
+    tmux.cmd().args(["set", "-g", "@c", "red"]).run().assert_success();
+    // Red background is SGR 41.
+    assert!(pty_output_contains(&mut pty, b"41m", t), "pane was not redrawn with the new style");
+}
