@@ -11,3 +11,6 @@ libc     = { version = "0.2.174" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
+
+[lints.clippy]
+missing_safety_doc = "allow" # most unsafe fns go away in Track 2, new ones need a Safety section

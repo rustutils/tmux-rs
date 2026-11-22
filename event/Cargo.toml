@@ -18,3 +18,6 @@ calloop  = { version = "0.14.4", features = ["signals"] }
 calloop      = { version = "0.14.4" }
 rustix       = { version = "1.1", features = ["pipe"] }
 signal-hook  = { version = "0.4.4", default-features = false }
+
+[lints.clippy]
+missing_safety_doc = "allow" # most unsafe fns go away in Track 2, new ones need a Safety section
