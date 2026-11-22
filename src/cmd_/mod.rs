@@ -829,65 +829,117 @@ pub unsafe fn cmd_mouse_pane(
     }
 }
 
-/// Replace the first %% or %idx in template by s.
+/// Replace the first `%%` and every `%idx` in `template` by `s`, returning
+/// a new string allocated with xmalloc. See `template_replace`.
 pub unsafe fn cmd_template_replace(template: *const u8, s: Option<&str>, idx: c_int) -> *mut u8 {
     unsafe {
-        let quote = c!("\"\\$;~");
-
-        if strchr(template, b'%' as i32).is_null() {
-            return xstrdup(template).as_ptr();
-        }
-
-        let mut buf: *mut u8 = xcalloc1::<u8>();
-        let mut len = 0;
-        let mut replaced = 0;
-
-        let mut ptr = template;
-        'outer: while *ptr != b'\0' {
-            let ch = *ptr;
-            ptr = ptr.add(1);
-            'switch: {
-                if matches!(ch, b'%') {
-                    if *ptr < b'1' || *ptr > b'9' || *ptr as i32 - b'0' as i32 != idx {
-                        if *ptr != b'%' || replaced != 0 {
-                            break 'switch;
-                        }
-                        replaced = 1;
-                    }
-                    ptr = ptr.add(1);
-
-                    let quoted = *ptr == b'%';
-                    if quoted {
-                        ptr = ptr.add(1);
-                    }
-
-                    buf = xrealloc_(buf, len + (s.map(str::len).unwrap_or_default() * 3) + 1)
-                        .as_ptr();
-                    for c in s.unwrap_or_default().chars() {
-                        if quoted && !strchr(quote, c as i32).is_null() {
-                            *buf.add(len) = b'\\';
-                            len += 1;
-                        }
-                        *buf.add(len) = c as u8;
-                        len += 1;
-                    }
-                    *buf.add(len) = b'\0';
-                    continue 'outer;
-                }
-            } // 'switch
-            buf = xrealloc_(buf, len + 2).as_ptr();
-            *buf.add(len) = ch;
-            len += 1;
-            *buf.add(len) = b'\0';
-        }
-
-        buf
+        let template = std::ffi::CStr::from_ptr(template.cast()).to_bytes();
+        let mut out = template_replace(template, s.unwrap_or("").as_bytes(), idx);
+        // The result goes back to C-style callers, it cannot hold a NUL.
+        out.retain(|&b| b != 0);
+        let out = std::ffi::CString::new(out).unwrap();
+        xstrdup(out.as_ptr().cast()).as_ptr()
     }
+}
+
+/// Replace the first `%%` and every `%idx` (a digit 1 to 9 equal to
+/// `idx`) in `template` by `s`. Like tmux 3.8, the form decides the
+/// quoting. `%%` is meant for single quotes, so each `'` in `s` becomes
+/// `'\''`. `%%%` and `%idx%` are meant for double quotes, so the characters
+/// `"\$;~` get a backslash. Plain `%idx` is not escaped. Escaping `'` stops
+/// a session or window name from ending a quoted section and injecting
+/// commands (upstream a177d0f5).
+pub fn template_replace(template: &[u8], s: &[u8], idx: c_int) -> Vec<u8> {
+    #[derive(PartialEq)]
+    enum Quote {
+        None,
+        Single,
+        Double,
+    }
+
+    let mut out = Vec::with_capacity(template.len());
+    let mut replaced = false;
+    let mut i = 0;
+    while i < template.len() {
+        let ch = template[i];
+        i += 1;
+        if ch != b'%' {
+            out.push(ch);
+            continue;
+        }
+        let mut quote = match template.get(i).copied() {
+            Some(d @ b'1'..=b'9') if c_int::from(d - b'0') == idx => {
+                i += 1;
+                Quote::None
+            }
+            Some(b'%') if !replaced => {
+                replaced = true;
+                i += 1;
+                Quote::Single
+            }
+            _ => {
+                out.push(ch);
+                continue;
+            }
+        };
+        if template.get(i) == Some(&b'%') {
+            quote = Quote::Double;
+            i += 1;
+        }
+        for &c in s {
+            if quote == Quote::Single && c == b'\'' {
+                out.extend_from_slice(br"'\''");
+                continue;
+            }
+            if quote == Quote::Double && br#""\$;~"#.contains(&c) {
+                out.push(b'\\');
+            }
+            out.push(c);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    fn tr(template: &str, s: &str, idx: i32) -> String {
+        String::from_utf8(template_replace(template.as_bytes(), s.as_bytes(), idx)).unwrap()
+    }
+
+    #[test]
+    fn template_single_quote_escapes_quote() {
+        assert_eq!(
+            tr("switch-client -t '%%'", "a';x;'", 1),
+            r"switch-client -t 'a'\'';x;'\'''"
+        );
+        assert_eq!(tr("'%%'", "plain", 1), "'plain'");
+    }
+
+    #[test]
+    fn template_double_quote_escapes_specials() {
+        assert_eq!(tr(r#""%%%""#, r#"a"b$c;d~e\f'g"#, 1), r#""a\"b\$c\;d\~e\\f'g""#);
+        assert_eq!(tr(r#""%1%""#, "$x", 1), r#""\$x""#);
+    }
+
+    #[test]
+    fn template_index_is_unescaped_and_replaced_everywhere() {
+        assert_eq!(tr("%1 %1 %2", "a'b", 1), "a'b a'b %2");
+        assert_eq!(tr("%2", "x", 2), "x");
+    }
+
+    #[test]
+    fn template_only_first_percent_percent() {
+        assert_eq!(tr("%% %%", "x", 1), "x %%");
+        assert_eq!(tr("100%", "x", 1), "100%");
+        assert_eq!(tr("no percent", "x", 1), "no percent");
+    }
+
+    #[test]
+    fn template_keeps_utf8() {
+        assert_eq!(tr("'%%'", "s\u{e9}ance \u{1f600}", 1), "'s\u{e9}ance \u{1f600}'");
+    }
 
     // <https://github.com/richardscollin/tmux-rs/issues/50>
     #[test]
