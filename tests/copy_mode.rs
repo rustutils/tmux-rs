@@ -1145,3 +1145,31 @@ fn copy_mode_keeps_tabs() {
     }
     assert_eq!(show_buffer(&tmux), "a\tb");
 }
+
+/// copy-pipe runs its command in the server's directory, not the home
+/// directory (upstream b21b1ee9).
+#[test]
+fn copy_pipe_runs_in_server_directory() {
+    let t = Duration::from_secs(5);
+    let out = std::env::temp_dir().join(format!("tmux-copy-pipe-{}", std::process::id()));
+    let _ = std::fs::remove_file(&out);
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["-x", "40", "-y", "10", "printf 'x\\n'; exec sleep 1000"]).run().assert_success();
+    tmux.wait_ready(t);
+    tmux.wait_for("#{cursor_y}", |y| y == "1", t);
+    tmux.cmd().args(["copy-mode"]).run().assert_success();
+    send_copy_cmd(&tmux, "begin-selection");
+    let cmd = format!("pwd > {}", out.display());
+    tmux.cmd().args(["send-keys", "-X", "copy-pipe", &cmd]).run().assert_success();
+    let start = std::time::Instant::now();
+    let pwd = loop {
+        if let Ok(s) = std::fs::read_to_string(&out) && s.ends_with('\n') {
+            break s;
+        }
+        assert!(start.elapsed() < t, "copy-pipe command did not run");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let _ = std::fs::remove_file(&out);
+    let here = std::env::current_dir().unwrap();
+    assert_eq!(pwd.trim_end(), here.to_str().unwrap());
+}

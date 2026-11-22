@@ -11,7 +11,6 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use std::path::Path;
 
 use crate::compat::{closefrom, fdforkpty::fdforkpty};
 use crate::libc::{
@@ -172,13 +171,19 @@ pub unsafe fn job_run(
                     sigprocmask(SIG_SETMASK, oldset.as_mut_ptr(), null_mut());
                     proc_unblock_signals();
 
-                    if (cwd.is_null() || std::env::set_current_dir(cstr_to_str(cwd)).is_err())
-                        && find_home().is_none_or(|home| {
-                            std::env::set_current_dir(home.to_str().expect("TODO")).is_err()
-                        })
-                        && std::env::set_current_dir(Path::new("/")).is_err()
-                    {
-                        fatal("chdir failed");
+                    // Without a cwd the job stays in the server's directory.
+                    // Otherwise try cwd, then home, then the root, and tell
+                    // the job where it ended up in PWD.
+                    if !cwd.is_null() {
+                        let home = find_home().and_then(|h| h.to_str().ok());
+                        let dir = [Some(cstr_to_str(cwd)), home, Some("/")]
+                            .into_iter()
+                            .flatten()
+                            .find(|dir| std::env::set_current_dir(dir).is_ok());
+                        match dir {
+                            Some(dir) => environ_set_(&mut *env, "PWD", environ_flags::empty(), dir.into()),
+                            None => fatal("chdir failed"),
+                        }
                     }
 
                     environ_push(&*env);

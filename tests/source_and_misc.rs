@@ -335,3 +335,22 @@ fn wait_for_lock_unlock_cycle() {
     let val = tmux.query("#{@lock_held}");
     assert_eq!(val, "yes");
 }
+
+/// Jobs get PWD set to the directory they run in, as in C tmux. A
+/// symbolic link shows it: the shell keeps a PWD that names its directory,
+/// and without one it works out the real path.
+#[test]
+fn run_shell_sets_pwd() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().args(["sleep 1000"]).run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    let base = std::env::temp_dir().join(format!("tmux-pwd-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(base.join("real")).unwrap();
+    std::os::unix::fs::symlink(base.join("real"), base.join("link")).unwrap();
+    let link = base.join("link");
+    let out = tmux.cmd().args(["run-shell", "-c", link.to_str().unwrap(), "echo $PWD"]).run();
+    let _ = std::fs::remove_dir_all(&base);
+    out.assert_success();
+    assert_eq!(out.stdout_trimmed(), link.to_str().unwrap());
+}
