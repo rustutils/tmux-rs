@@ -6,84 +6,126 @@ pub unsafe fn b64_ntop(src: *const u8, srclength: usize, target: *mut u8, targsi
     let src = unsafe { std::slice::from_raw_parts(src, srclength) };
     let dst = unsafe { std::slice::from_raw_parts_mut(target.cast::<MaybeUninit<u8>>(), targsize) };
 
+    // Like C, the length returned does not include the terminating NUL.
     match ntop(src, dst) {
-        Ok(out) => (out.len() - 1) as i32,
-        Err(()) => -1,
-    }
-}
-
-/// skips all whitespace anywhere.
-/// converts characters, four at a time, starting at (or after)
-/// src from base - 64 numbers into three 8 bit bytes in the target area.
-/// it returns the number of data bytes stored at the target, or -1 on error.
-pub unsafe fn b64_pton(src: *const u8, target: *mut u8, targsize: usize) -> i32 {
-    let srclength: usize = unsafe { libc::strlen(src.cast()) };
-    let src = unsafe { std::slice::from_raw_parts(src.cast::<u8>(), srclength) };
-    let dst = unsafe { std::slice::from_raw_parts_mut(target.cast::<MaybeUninit<u8>>(), targsize) };
-
-    match pton(src, dst) {
         Ok(out) => out.len() as i32,
         Err(()) => -1,
     }
 }
 
-/// minimum ascii value used in encoded format
+/// Decode base64 from the NUL-terminated `src` into `target`, which has
+/// room for `targsize` bytes. Whitespace anywhere is skipped and `=`
+/// padding is accepted. Returns the number of bytes stored, or -1 if the
+/// input is not valid base64 or does not fit. Same behaviour as the BSD
+/// `b64_pton` that C tmux uses. No terminating NUL is written.
+///
+/// # Safety
+///
+/// `src` must be NUL terminated and `target` valid for `targsize` bytes.
+pub unsafe fn b64_pton(src: *const u8, target: *mut u8, targsize: usize) -> i32 {
+    let srclength: usize = unsafe { libc::strlen(src.cast()) };
+    let src = unsafe { std::slice::from_raw_parts(src.cast::<u8>(), srclength) };
+    let dst = unsafe { std::slice::from_raw_parts_mut(target, targsize) };
+
+    match pton(src, dst) {
+        Ok(n) => n as i32,
+        Err(()) => -1,
+    }
+}
+
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const REVERSE: [u8; u8::MAX as usize] = const {
-    let mut tmp = [u8::MAX; u8::MAX as usize];
+const PAD: u8 = b'=';
 
-    let mut i: u8 = 0;
-    while i < ALPHABET.len() as u8 {
-        tmp[ALPHABET[i as usize] as usize] = i;
-        i += 1;
-    }
+/// Value of a base64 character, or None if it is not one.
+fn value(ch: u8) -> Option<u8> {
+    ALPHABET.iter().position(|&a| a == ch).map(|v| v as u8)
+}
 
-    tmp
-};
+/// C `isspace` in the C locale.
+fn is_space(ch: u8) -> bool {
+    matches!(ch, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r')
+}
 
-/// decode
-fn pton<'out>(src: &'_ [u8], dst: &'out mut [MaybeUninit<u8>]) -> Result<&'out mut [u8], ()> {
-    // dst must be at least 3/4 of src, and room for NUL byte
-    if src.len().div_ceil(4) * 3 + 1 > dst.len() {
-        return Err(());
-    }
-
-    let mut i = 0;
-    let mut it = src.iter().copied().filter(|b| !b.is_ascii_whitespace());
+/// Decode `src` into `dst`, a port of the BSD `b64_pton` state machine.
+/// Returns the number of bytes written.
+fn pton(src: &[u8], dst: &mut [u8]) -> Result<usize, ()> {
+    let mut state = 0;
+    let mut tarindex = 0;
+    let mut it = src.iter().copied();
+    let mut pad = false;
 
     while let Some(ch) = it.next() {
-        let chunk: [u8; 4] = [
-            ch,
-            it.next().ok_or(())?,
-            it.next().ok_or(())?,
-            it.next().ok_or(())?, // TODO consider special handling for missing =
-        ];
+        if is_space(ch) {
+            continue;
+        }
+        if ch == PAD {
+            pad = true;
+            break;
+        }
+        let v = value(ch).ok_or(())?;
+        if tarindex >= dst.len() {
+            return Err(());
+        }
+        match state {
+            0 => {
+                dst[tarindex] = v << 2;
+                state = 1;
+            }
+            1 => {
+                dst[tarindex] |= v >> 4;
+                let nextbyte = (v & 0x0f) << 4;
+                if tarindex + 1 < dst.len() {
+                    dst[tarindex + 1] = nextbyte;
+                } else if nextbyte != 0 {
+                    return Err(());
+                }
+                tarindex += 1;
+                state = 2;
+            }
+            2 => {
+                dst[tarindex] |= v >> 2;
+                let nextbyte = (v & 0x03) << 6;
+                if tarindex + 1 < dst.len() {
+                    dst[tarindex + 1] = nextbyte;
+                } else if nextbyte != 0 {
+                    return Err(());
+                }
+                tarindex += 1;
+                state = 3;
+            }
+            _ => {
+                dst[tarindex] |= v;
+                tarindex += 1;
+                state = 0;
+            }
+        }
+    }
 
-        for g in chunk {
-            if !matches!(g, b'A'..=b'Z' | b'a'..=b'z' | b'+' | b'/') {
+    if !pad {
+        // Ended at the end of the input: no partial byte may be left.
+        return if state == 0 { Ok(tarindex) } else { Err(()) };
+    }
+
+    // A pad character: one byte of information after two characters (needs
+    // a second =), two bytes after three. Only whitespace may follow.
+    match state {
+        2 => {
+            let next = it.by_ref().find(|&ch| !is_space(ch));
+            if next != Some(PAD) {
                 return Err(());
             }
         }
-
-        let a = REVERSE[chunk[0] as usize];
-        let b = REVERSE[chunk[1] as usize];
-        let c = REVERSE[chunk[2] as usize];
-        let d = REVERSE[chunk[3] as usize];
-
-        //        a                 b                 c                 d
-        // X X 0 0 0 0 0 0 | X X 0 0 0 0 0 0 | X X 0 0 0 0 0 0 | X X 0 0 0 0 0 0
-        //
-        // ( a << 2  ) ( b >> 4 )    (b<<4) (    c >> 2    )     (c<<4)(      d       )
-        // 0  0  0  0  0  0  0  0  |  0  0  0  0  0  0  0  0  |  0  0  0  0  0  0  0  0
-        //
-        dst[i] = MaybeUninit::new(a << 2 | b >> 4);
-        dst[i + 1] = MaybeUninit::new(b << 4 | c >> 2);
-        dst[i + 2] = MaybeUninit::new(c << 6 | d);
-        i += 3;
+        3 => {}
+        _ => return Err(()),
     }
-
-    dst[i] = MaybeUninit::new(0);
-    Ok(unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr().cast::<u8>(), i) })
+    if it.any(|ch| !is_space(ch)) {
+        return Err(());
+    }
+    // The bits past the last full byte must be zero.
+    if tarindex < dst.len() && dst[tarindex] != 0 {
+        return Err(());
+    }
+    Ok(tarindex)
 }
 
 /// encode
@@ -137,39 +179,75 @@ fn ntop<'out>(src: &'_ [u8], dst: &'out mut [MaybeUninit<u8>]) -> Result<&'out m
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_b64_pton_valid() {
-        let input = c"TWFu".as_ptr().cast();
-        let mut output = [0u8; 4];
-        let expected = [b'M', b'a', b'n', 0];
-
-        unsafe {
-            let result = b64_pton(input, output.as_mut_ptr(), output.len());
-            assert_eq!(&output, &expected);
-            assert_eq!(result, 3);
-        }
+    /// Decode with a target of `size` bytes, None on error.
+    fn decode(input: &std::ffi::CStr, size: usize) -> Option<Vec<u8>> {
+        let mut out = vec![0u8; size];
+        let n = unsafe { b64_pton(input.as_ptr().cast(), out.as_mut_ptr(), size) };
+        (n >= 0).then(|| {
+            out.truncate(n as usize);
+            out
+        })
     }
 
     #[test]
-    fn test_b64_pton_invalid() {
-        let input = c"****".as_ptr().cast();
-        let mut output = [0u8; 3];
-
-        unsafe {
-            let result = b64_pton(input, output.as_mut_ptr(), output.len());
-            assert_eq!(result, -1);
-        }
+    fn pton_full_groups() {
+        assert_eq!(decode(c"TWFu", 3).as_deref(), Some(&b"Man"[..]));
+        assert_eq!(decode(c"aGVsbG8gd29ybGQh", 12).as_deref(), Some(&b"hello world!"[..]));
     }
 
     #[test]
-    fn test_b64_pton_partial() {
-        let input = c"TWE=".as_ptr().cast();
-        let mut output = [0u8; 2];
-        // TODO currently not supporting missing =, but we could
+    fn pton_accepts_digits_and_symbols() {
+        // "\xfb\xff\xbf" encodes with + and /, "09" with digits.
+        assert_eq!(decode(c"+/+/", 3).as_deref(), Some(&[0xfb, 0xff, 0xbf][..]));
+        assert_eq!(decode(c"MDk=", 3).as_deref(), Some(&b"09"[..]));
+    }
 
-        unsafe {
-            let result = b64_pton(input, output.as_mut_ptr(), output.len());
-            assert_eq!(result, -1);
+    #[test]
+    fn pton_padding() {
+        assert_eq!(decode(c"TWE=", 2).as_deref(), Some(&b"Ma"[..]));
+        assert_eq!(decode(c"TQ==", 1).as_deref(), Some(&b"M"[..]));
+        assert_eq!(decode(c"aGVsbG8=", 6).as_deref(), Some(&b"hello"[..]));
+        assert_eq!(decode(c"TQ= =  ", 3).as_deref(), Some(&b"M"[..]));
+    }
+
+    #[test]
+    fn pton_skips_whitespace() {
+        assert_eq!(decode(c" TW\nFu\t", 3).as_deref(), Some(&b"Man"[..]));
+    }
+
+    #[test]
+    fn pton_rejects_invalid() {
+        assert_eq!(decode(c"****", 3), None);
+        // Missing padding leaves a partial byte.
+        assert_eq!(decode(c"aGVsbG", 6), None);
+        // = in the first or second position of a group.
+        assert_eq!(decode(c"=AAA", 3), None);
+        assert_eq!(decode(c"T===", 3), None);
+        // Single = after two characters needs a second one.
+        assert_eq!(decode(c"TQ=", 3), None);
+        // Data after the padding.
+        assert_eq!(decode(c"TQ==TQ==", 6), None);
+        // Non-zero bits after the last byte.
+        assert_eq!(decode(c"TR==", 3), None);
+    }
+
+    #[test]
+    fn pton_rejects_too_small_target() {
+        assert_eq!(decode(c"TWFu", 2), None);
+        assert_eq!(decode(c"aGVsbG8=", 4), None);
+    }
+
+    #[test]
+    fn ntop_round_trip_and_length() {
+        for data in [&b""[..], b"M", b"Ma", b"Man", b"hello world!"] {
+            let size = data.len().div_ceil(3) * 4 + 1;
+            let mut enc = vec![0u8; size];
+            let n = unsafe { b64_ntop(data.as_ptr(), data.len(), enc.as_mut_ptr(), size) };
+            assert_eq!(n as usize, size - 1, "length without the NUL for {data:?}");
+            assert_eq!(enc[n as usize], 0);
+            let mut dec = vec![0u8; data.len().max(1) + 2];
+            let m = unsafe { b64_pton(enc.as_ptr(), dec.as_mut_ptr(), dec.len()) };
+            assert_eq!(&dec[..m as usize], data);
         }
     }
 }
