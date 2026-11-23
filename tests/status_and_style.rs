@@ -171,6 +171,10 @@ fn window_status_current_format() {
 }
 
 #[test]
+#[expect(
+    clippy::literal_string_with_formatting_args,
+    reason = "tmux format string, not a Rust one"
+)]
 fn status_left_with_session_name_variable() {
     let tmux = setup();
 

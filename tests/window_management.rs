@@ -932,6 +932,10 @@ fn join_pane_same_window_fails() {
         .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "tmux format string, not a Rust one"
+    )]
     let pane_id = tmux.query("#{pane_id}");
 
     // Trying to join a pane into its own window should fail

@@ -275,6 +275,10 @@ fn format_pane_variables() {
     let tmux = setup();
 
     // pane_id should start with %
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "tmux format string, not a Rust one"
+    )]
     let pane_id = tmux.query("#{pane_id}");
     assert!(
         pane_id.starts_with('%'),
@@ -282,6 +286,10 @@ fn format_pane_variables() {
     );
 
     // pane_pid should be a number
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "tmux format string, not a Rust one"
+    )]
     let pane_pid = tmux.query("#{pane_pid}");
     assert!(
         pane_pid.parse::<u32>().is_ok(),
@@ -384,6 +392,10 @@ fn format_nested_conditional_with_variables() {
 fn format_string_length() {
     let tmux = setup();
     // n: returns length — but it operates on the format variable name's value length
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "tmux format string, not a Rust one"
+    )]
     let result = tmux.query("#{n:pane_width}");
     // pane_width is "80", which has length 2
     assert_eq!(result, "2");

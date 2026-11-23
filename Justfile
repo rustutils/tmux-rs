@@ -37,8 +37,8 @@ format:
 # run static linters
 check:
   cargo +nightly fmt --all --check
-  RUSTDOCFLAGS="-Dwarnings" cargo doc --no-deps
-  cargo clippy -- -Dwarnings
+  RUSTDOCFLAGS="-Dwarnings" cargo doc --no-deps --workspace
+  cargo clippy --workspace --all-targets -- -Dwarnings
 
 # run tmux-rs under valgrind, in release mode (for manual testing)
 valgrind:

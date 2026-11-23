@@ -34,7 +34,6 @@ fn cargo_bin() -> PathBuf {
     env!("CARGO_BIN_EXE_tmux-rs").into()
 }
 
-#[expect(dead_code)]
 /// A test harness that manages a tmux server with an isolated socket.
 ///
 /// Each instance gets a unique socket path so tests can run in parallel
@@ -48,7 +47,12 @@ pub struct TmuxTestHarness {
     server_started: bool,
 }
 
-#[expect(dead_code)]
+impl Default for TmuxTestHarness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TmuxTestHarness {
     /// Create a new harness with a unique socket path. Does not start a server yet.
     pub fn new() -> Self {
@@ -131,7 +135,7 @@ impl TmuxTestHarness {
     /// Pipe input to `tmux -C` (control mode) and return all output lines.
     pub fn control_mode(&self, input: &str) -> TmuxResult {
         let bin = client_bin();
-        let child = Command::new(bin)
+        let mut child = Command::new(bin)
             .args(["-S", &self.socket_path, "-C", "attach"])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -140,8 +144,10 @@ impl TmuxTestHarness {
             .expect("failed to spawn control mode client");
 
         use std::io::Write;
-        let mut stdin = child.stdin.unwrap();
-        stdin.write_all(input.as_bytes()).ok();
+        let mut stdin = child.stdin.take().unwrap();
+        // A write error means the client already exited. Its output is
+        // still collected below.
+        let _ = stdin.write_all(input.as_bytes());
         drop(stdin);
 
         let output = Command::new("true") // dummy — we just need the Output struct
@@ -149,22 +155,24 @@ impl TmuxTestHarness {
             .unwrap();
 
         // Read with timeout
-        let stdout_handle = child.stdout.unwrap();
-        let stderr_handle = child.stderr.unwrap();
+        let stdout_handle = child.stdout.take().unwrap();
+        let stderr_handle = child.stderr.take().unwrap();
 
         let stdout_reader = std::thread::spawn(move || {
             let mut buf = Vec::new();
-            std::io::Read::read_to_end(&mut BufReader::new(stdout_handle), &mut buf).ok();
+            let _ = std::io::Read::read_to_end(&mut BufReader::new(stdout_handle), &mut buf);
             buf
         });
         let stderr_reader = std::thread::spawn(move || {
             let mut buf = Vec::new();
-            std::io::Read::read_to_end(&mut BufReader::new(stderr_handle), &mut buf).ok();
+            let _ = std::io::Read::read_to_end(&mut BufReader::new(stderr_handle), &mut buf);
             buf
         });
 
         let stdout = stdout_reader.join().unwrap_or_default();
         let stderr = stderr_reader.join().unwrap_or_default();
+        // Both pipes are closed, so the client has exited. Reap it.
+        let _ = child.wait();
 
         TmuxResult {
             output: Output {
@@ -250,7 +258,6 @@ impl Drop for TmuxTestHarness {
     }
 }
 
-#[expect(dead_code)]
 /// Builder for a tmux command invocation.
 pub struct TmuxCommandBuilder<'a> {
     harness: &'a TmuxTestHarness,
@@ -260,7 +267,6 @@ pub struct TmuxCommandBuilder<'a> {
     stdin_data: Option<String>,
 }
 
-#[expect(dead_code)]
 impl<'a> TmuxCommandBuilder<'a> {
     pub fn args<I, S>(mut self, args: I) -> Self
     where
@@ -312,12 +318,8 @@ impl<'a> TmuxCommandBuilder<'a> {
                 .spawn()
                 .expect("failed to spawn tmux");
             use std::io::Write;
-            child
-                .stdin
-                .as_mut()
-                .unwrap()
-                .write_all(data.as_bytes())
-                .ok();
+            // A write error means tmux exited early, which the output shows.
+            let _ = child.stdin.as_mut().unwrap().write_all(data.as_bytes());
             let output = child.wait_with_output().expect("failed to wait on tmux");
             TmuxResult { output }
         } else {
@@ -337,7 +339,6 @@ pub struct TmuxResult {
     pub output: Output,
 }
 
-#[expect(dead_code)]
 impl TmuxResult {
     pub fn success(&self) -> bool {
         self.output.status.success()
@@ -392,13 +393,11 @@ impl TmuxResult {
 ///                                      │ tmux server   │
 ///                                      └──────────────┘
 /// ```
-#[expect(dead_code)]
 pub struct PtyClient {
     master: OwnedFd,
     child: std::process::Child,
 }
 
-#[expect(dead_code)]
 impl PtyClient {
     /// Attach to an existing session on the given harness.
     ///
@@ -472,6 +471,10 @@ impl PtyClient {
     }
 
     /// Write raw bytes to the client's terminal input.
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "writing to the terminal changes the client, so callers hold it exclusively"
+    )]
     pub fn write(&mut self, data: &[u8]) {
         let mut f = std::fs::File::from(self.master.try_clone().unwrap());
         f.write_all(data).expect("failed to write to PTY master");
@@ -524,6 +527,10 @@ impl PtyClient {
 
     /// Read all currently available output from the terminal.
     /// Returns the raw bytes (including escape sequences).
+    #[expect(
+        clippy::needless_pass_by_ref_mut,
+        reason = "reading consumes terminal output, so callers hold the client exclusively"
+    )]
     pub fn read_raw(&mut self) -> Vec<u8> {
         let mut buf = vec![0u8; 65536];
         let mut output = Vec::new();

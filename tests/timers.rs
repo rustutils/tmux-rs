@@ -233,7 +233,7 @@ fn run_shell_delay_timer() {
     let marker_path = marker.path().to_str().unwrap().to_string();
     // Remove the file so we can detect when it gets created.
     drop(marker);
-    std::fs::remove_file(&marker_path).ok();
+    let _ = std::fs::remove_file(&marker_path);
 
     tmux.cmd()
         .args([
@@ -271,7 +271,7 @@ fn run_shell_delay_timer() {
     );
 
     // Clean up.
-    std::fs::remove_file(&marker_path).ok();
+    let _ = std::fs::remove_file(&marker_path);
 }
 
 /// Verify that clock mode renders (the clock-mode timer fires and draws).

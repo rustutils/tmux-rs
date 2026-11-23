@@ -21,6 +21,10 @@ fn check(tmux: &TmuxTestHarness, fmt: &str, expected_value: &str) {
 
 // Ported from regress/style-trim.sh (format-side only)
 #[test]
+#[expect(
+    clippy::literal_string_with_formatting_args,
+    reason = "tmux format string, not a Rust one"
+)]
 fn style_trim_format_strings() {
     let mut tmux = TmuxTestHarness::new();
     tmux.new_session().run().assert_success();

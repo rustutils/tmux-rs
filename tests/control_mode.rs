@@ -418,6 +418,7 @@ fn control_mode_exits_after_toggling_no_output() {
     let exited = wait_for_exit(&mut child, Duration::from_secs(5));
     if !exited {
         let _ = child.kill();
+        let _ = child.wait();
     }
     tmux.kill_server();
     assert!(exited, "control client did not exit after its input closed");
@@ -434,6 +435,10 @@ fn server_exits_despite_stuck_control_client() {
         .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
+    #[expect(
+        clippy::literal_string_with_formatting_args,
+        reason = "tmux format string, not a Rust one"
+    )]
     let pid: i32 = tmux.query("#{pid}").parse().expect("server pid");
 
     // Keep stdout open but never read it, so the pipe fills up.
@@ -454,6 +459,7 @@ fn server_exits_despite_stuck_control_client() {
         std::thread::sleep(Duration::from_millis(200));
     }
     let _ = child.kill();
+    let _ = child.wait();
     assert!(gone, "server still running 25 seconds after kill-server");
 }
 
@@ -546,6 +552,7 @@ fn window_changed_notification_after_kill_session() {
         .run()
         .success();
     let _ = child.kill();
+    let _ = child.wait();
     assert!(alive, "server died");
 }
 
