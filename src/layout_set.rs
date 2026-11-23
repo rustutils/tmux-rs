@@ -227,6 +227,10 @@ pub unsafe fn layout_set_main_h(w: *mut window) {
             s = options_get_string_((*w).options, "other-pane-height");
             let parsed = args_string_percentage(s, 0, sy as i64, sy as i64).ok();
             otherh = parsed.unwrap_or(0) as u32;
+            #[expect(
+                clippy::if_same_then_else,
+                reason = "mirrors C, where the first branch also frees the error"
+            )]
             if parsed.is_none() || otherh == 0 {
                 otherh = sy - mainh;
             } else if otherh > sy || sy - otherh < mainh {
@@ -325,6 +329,10 @@ pub unsafe fn layout_set_main_h_mirrored(w: *mut window) {
             let s = options_get_string_((*w).options, "other-pane-height");
             let parsed = args_string_percentage(s, 0, sy as i64, sy as i64).ok();
             otherh = parsed.unwrap_or(0) as u32;
+            #[expect(
+                clippy::if_same_then_else,
+                reason = "mirrors C, where the first branch also frees the error"
+            )]
             if parsed.is_none() || otherh == 0 {
                 otherh = sy - mainh;
             } else if otherh > sy || sy - otherh < mainh {
@@ -423,6 +431,10 @@ pub unsafe fn layout_set_main_v(w: *mut window) {
             let s = options_get_string_((*w).options, "other-pane-width");
             let parsed = args_string_percentage(s, 0, sx as i64, sx as i64).ok();
             otherw = parsed.unwrap_or(0) as u32;
+            #[expect(
+                clippy::if_same_then_else,
+                reason = "mirrors C, where the first branch also frees the error"
+            )]
             if parsed.is_none() || otherw == 0 {
                 otherw = sx - mainw;
             } else if otherw > sx || sx - otherw < mainw {
@@ -520,6 +532,10 @@ pub unsafe fn layout_set_main_v_mirrored(w: *mut window) {
             let s = options_get_string_((*w).options, "other-pane-width");
             let parsed = args_string_percentage(s, 0, sx as i64, sx as i64).ok();
             otherw = parsed.unwrap_or(0) as u32;
+            #[expect(
+                clippy::if_same_then_else,
+                reason = "mirrors C, where the first branch also frees the error"
+            )]
             if parsed.is_none() || otherw == 0 {
                 otherw = sx - mainw;
             } else if otherw > sx || sx - otherw < mainw {

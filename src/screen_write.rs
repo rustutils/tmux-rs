@@ -632,13 +632,11 @@ pub unsafe fn screen_write_fast_copy(
             return;
         }
 
-        let mut cy = (*s).cy;
-        for yy in py..(py + ny) {
+        for (cy, yy) in ((*s).cy..).zip(py..(py + ny)) {
             if yy >= (*gd).hsize + (*gd).sy {
                 break;
             }
-            let mut cx = (*s).cx;
-            for xx in px..(px + nx) {
+            for (cx, xx) in ((*s).cx..).zip(px..(px + nx)) {
                 if xx as usize >= (*gd).get_line(yy).celldata.len() {
                     break;
                 }
@@ -647,9 +645,7 @@ pub unsafe fn screen_write_fast_copy(
                     break;
                 }
                 (*(*ctx).s).grid.view_set_cell(cx, cy, &gc);
-                cx += 1;
             }
-            cy += 1;
         }
     }
 }

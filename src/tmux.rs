@@ -140,13 +140,8 @@ unsafe fn expand_path(path: *const u8, home: Option<&CStr>) -> Option<CString> {
             };
             let envent = environ_find_raw(&*GLOBAL_ENVIRON, name);
             free_(name);
-            let Some(envent) = envent else {
-                return None;
-            };
-            let val = match envent.value {
-                Some(ref v) => String::from_utf8_lossy(v),
-                None => return None,
-            };
+            let envent = envent?;
+            let val = String::from_utf8_lossy(envent.value.as_ref()?);
             if end.is_null() {
                 end = c!("");
             }

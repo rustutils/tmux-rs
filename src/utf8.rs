@@ -151,9 +151,7 @@ pub fn utf8_sanitize_(src: &[u8]) -> Vec<u8> {
                 j += 1;
             }
             if more == Utf8State::Done {
-                for _ in 0..ud.width {
-                    dst.push(b'_');
-                }
+                dst.extend(std::iter::repeat_n(b'_', ud.width as usize));
                 i = j;
                 continue;
             }

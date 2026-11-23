@@ -999,10 +999,10 @@ pub unsafe fn file_write_done(files: *mut client_files, imsg: *mut imsg) -> i32 
             return -1;
         }
         let msg = (*imsg).data as *const msg_write_done;
-        let Some(cf) = (*files).get_mut(&(*msg).stream) else {
+        let Some(cf_box) = (*files).get_mut(&(*msg).stream) else {
             return 0;
         };
-        let cf: *mut client_file = &mut **cf;
+        let cf: *mut client_file = &mut **cf_box;
         if (*cf).c.is_null() || !(*(*cf).c).flags.intersects(client_flag::WRITE_ACK) {
             return 0;
         }

@@ -270,7 +270,7 @@ pub unsafe fn key_bindings_reset(name: *const u8, key: key_code) {
         (*bd).cmdlist = (*dd).cmdlist;
         (*(*bd).cmdlist).references += 1;
 
-        (*bd).note = (*dd).note.clone();
+        (*bd).note.clone_from(&(*dd).note);
         (*bd).flags = (*dd).flags;
     }
 }

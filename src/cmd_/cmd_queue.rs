@@ -788,10 +788,7 @@ pub unsafe fn cmdq_next(c: *mut client) -> u32 {
             }
 
             log_debug!("{} {}: enter", __func__, _s(name));
-            loop {
-                let Some(&first) = (*queue).list.first() else {
-                    break;
-                };
+            while let Some(&first) = (*queue).list.first() {
                 (*queue).item = first;
                 let item = (*queue).item;
                 if item.is_null() {

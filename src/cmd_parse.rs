@@ -976,9 +976,8 @@ unsafe fn yylex_(ps: &mut cmd_parse_state) -> Option<Tok> {
             }
 
             // Otherwise this is a token.
-            let buf = match yylex_token(ps, ch) {
-                None => return Some(Tok::Error),
-                Some(buf) => buf,
+            let Some(buf) = yylex_token(ps, ch) else {
+                return Some(Tok::Error);
             };
 
             if buf.contains(&b'=') && !buf.is_empty() && yylex_is_var(buf[0], true) {
@@ -1357,7 +1356,7 @@ unsafe fn yylex_token_escape(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> boo
             yylex_append1(buf, ch as u8);
             return true;
         } // unicode:
-        for i in 0..size {
+        for slot in &mut s[..size] {
             let ch = yylex_getc(ps);
             if ch == libc::EOF || ch == '\n' as i32 {
                 return false;
@@ -1366,7 +1365,7 @@ unsafe fn yylex_token_escape(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> boo
                 yyerror!(ps, "invalid \\{} argument", type_ as u8 as char);
                 return false;
             }
-            s[i] = ch as u8;
+            *slot = ch as u8;
         }
         s[size] = b'\0';
 

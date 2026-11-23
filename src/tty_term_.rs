@@ -25,7 +25,10 @@ pub static mut TTY_TERMS: tty_terms = Vec::new();
 #[repr(i32)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub enum tty_code_type {
-    #[allow(dead_code)] // used in pattern matching, constructed only via zeroed() in static table
+    #[expect(
+        dead_code,
+        reason = "used in pattern matching, constructed only via zeroed() in the static table"
+    )]
     None = 0,
     String,
     Number,
@@ -387,7 +390,7 @@ pub unsafe fn tty_term_apply(term: *mut tty_term, capabilities: &str, quiet: i32
         let mut value;
         let mut s;
 
-        let name = (*term).name.as_ptr() as *const u8;
+        let name = (*term).name.as_ptr().cast::<u8>();
 
         while {
             s = tty_term_override_next(capabilities, &raw mut offset);
@@ -696,7 +699,7 @@ pub unsafe fn tty_term_create(
 
 pub unsafe fn tty_term_free(term: *mut tty_term) {
     unsafe {
-        log_debug!("removing term {}", _s((*term).name.as_ptr() as *const u8));
+        log_debug!("removing term {}", _s((*term).name.as_ptr().cast::<u8>()));
 
         // Free string values inside codes (raw *mut u8, no Drop impl).
         for code in &(*term).codes {
@@ -708,7 +711,7 @@ pub unsafe fn tty_term_free(term: *mut tty_term) {
         // Remove the Box from TTY_TERMS — Box drop handles name, codes Vec,
         // and the allocation itself.
         let terms = &mut *(&raw mut TTY_TERMS);
-        let pos = terms.iter().position(|b| &raw const **b == term as *const tty_term);
+        let pos = terms.iter().position(|b| std::ptr::eq(&raw const **b, term));
         if let Some(i) = pos {
             terms.remove(i);
         }

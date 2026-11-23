@@ -876,8 +876,8 @@ pub unsafe fn control_discard(c: *mut client) {
 
 pub unsafe fn control_stop(c: *mut client) {
     unsafe {
-        let Some(cs) = (*c).control_state.as_mut() else { return };
-        let cs: *mut control_state = &mut **cs;
+        let Some(cs_box) = (*c).control_state.as_mut() else { return };
+        let cs: *mut control_state = &mut **cs_box;
         // Drop IoHandles (deregisters from calloop).
         (*cs).read_io = None;
         (*cs).write_io = None;
@@ -1099,8 +1099,8 @@ unsafe fn control_check_subs_timer_fire(cid: ClientId) {
             return;
         }
 
-        for csub in (*cs).subs.values_mut() {
-            let csub: *mut control_sub = &mut **csub;
+        for csub_box in (*cs).subs.values_mut() {
+            let csub: *mut control_sub = &mut **csub_box;
             match (*csub).type_ {
                 control_sub_type::CONTROL_SUB_SESSION => control_check_subs_session(c, csub),
                 control_sub_type::CONTROL_SUB_PANE => control_check_subs_pane(c, csub),
@@ -1124,11 +1124,6 @@ pub unsafe fn control_add_sub(
     unsafe {
         let Some(cs_box) = (*c).control_state.as_mut() else { return; };
         let cs = &raw mut **cs_box;
-        let _tv = timeval {
-            tv_sec: 1,
-            tv_usec: 0,
-        };
-
         let key = cstr_to_str(name).to_string();
         control_free_sub(cs, &key);
 

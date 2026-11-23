@@ -488,7 +488,6 @@ pub unsafe fn cmd_find_get_window_with_session(fs: *mut cmd_find_state, window: 
 
         (*fs).wl = null_mut();
         for &wl in (*(&raw mut (*(*fs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut())).windows)).values() {
-            #[expect(clippy::disallowed_methods)]
             let w_iter = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
             if !w_iter.is_null() && (*w_iter).name.as_deref().is_some_and(|n| n.starts_with(window)) {
                 if !(*fs).wl.is_null() {

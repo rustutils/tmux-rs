@@ -259,7 +259,7 @@ pub unsafe fn screen_set_title(s: *mut screen, title: *const u8) -> c_int {
         if !utf8_isvalid(title) {
             return 0;
         }
-        (*s).title = CStr::from_ptr(title.cast()).to_owned();
+        CStr::from_ptr(title.cast()).clone_into(&mut (*s).title);
         1
     }
 }
@@ -288,7 +288,7 @@ pub unsafe fn screen_pop_title(s: *mut screen) {
     unsafe {
         if !(*s).titles.is_empty() {
             let text = (*s).titles.remove(0);
-            screen_set_title(s, text.as_ptr() as *const u8);
+            screen_set_title(s, text.as_ptr().cast::<u8>());
         }
     }
 }

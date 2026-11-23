@@ -1056,7 +1056,7 @@ pub unsafe fn popup_editor(
             null(),
             null(),
             Some(popup_editor_close_cb),
-            pe as *mut popup_editor as *mut c_void,
+            pe as *mut c_void,
         ) != 0
         {
             popup_editor_free(pe);

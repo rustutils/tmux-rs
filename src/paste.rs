@@ -290,7 +290,7 @@ pub fn paste_rename(oldname: Option<&str>, newname: Option<&str>) -> Result<(), 
         let oldname = oldname.unwrap();
         let newname = newname.unwrap();
 
-        if (*(&raw mut PASTE_BY_NAME)).get(oldname).is_none() {
+        if !(*(&raw mut PASTE_BY_NAME)).contains_key(oldname) {
             return Err(format!("no buffer {oldname}"));
         }
 

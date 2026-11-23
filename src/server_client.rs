@@ -57,11 +57,6 @@ pub unsafe fn server_client_set_overlay(
             server_client_clear_overlay(c);
         }
 
-        let _tv: libc::timeval = libc::timeval {
-            tv_sec: delay as i64 / 1000,
-            tv_usec: ((delay % 1000) * 1000) as libc::suseconds_t,
-        };
-
         (*c).overlay_timer = None;
         if delay != 0 {
             let cid = (*c).id;
@@ -2985,7 +2980,7 @@ pub unsafe fn server_client_set_path(c: *mut client) {
         }
         let active = window_active_pane(winlink_window((*s).curw));
         let path_ptr = match (*active).base.path.as_ref() {
-            Some(p) => p.as_ptr() as *const u8,
+            Some(p) => p.as_ptr().cast::<u8>(),
             None => c!(""),
         };
         let new_path = std::ffi::CStr::from_ptr(path_ptr.cast())

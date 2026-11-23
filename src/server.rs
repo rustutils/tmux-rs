@@ -194,10 +194,6 @@ pub unsafe fn server_start(
 
         let mut c: *mut client = null_mut();
         let mut cause: *mut u8 = null_mut();
-        let _tv: timeval = timeval {
-            tv_sec: 3600,
-            tv_usec: 0,
-        };
 
         sigfillset(&raw mut set);
         sigprocmask(SIG_BLOCK, &raw const set, &raw mut oldset);

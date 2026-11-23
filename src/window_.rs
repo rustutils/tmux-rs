@@ -47,7 +47,7 @@ pub static NEXT_WINDOW_PANE_ID: AtomicU32 = AtomicU32::new(0);
 ///
 /// Uses `ALL_WINDOW_PANES` (alive set), not `PANE_REGISTRY`, because
 /// destroyed panes remain in the registry until reclaimed.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "not used yet")]
 #[inline]
 pub unsafe fn panes_iter() -> impl Iterator<Item = *mut window_pane> {
     unsafe {
@@ -293,9 +293,8 @@ pub unsafe fn pane_ptr_from_id(id: Option<PaneId>) -> *mut window_pane {
 /// resolves to a live arena slot.
 pub unsafe fn pane_layout_cell(wp: *mut window_pane) -> *mut layout_cell {
     unsafe {
-        let id = match (*wp).layout_cell {
-            Some(id) => id,
-            None => return null_mut(),
+        let Some(id) = (*wp).layout_cell else {
+            return null_mut();
         };
         let w = window_pane_window(wp);
         if w.is_null() {
@@ -396,9 +395,8 @@ pub unsafe fn window_set_saved_layout_root(w: *mut window, lc: *mut layout_cell)
 /// stored id through the pane's current window's arena.
 pub unsafe fn pane_saved_layout_cell(wp: *mut window_pane) -> *mut layout_cell {
     unsafe {
-        let id = match (*wp).saved_layout_cell {
-            Some(id) => id,
-            None => return null_mut(),
+        let Some(id) = (*wp).saved_layout_cell else {
+            return null_mut();
         };
         let w = window_pane_window(wp);
         if w.is_null() {
@@ -1198,13 +1196,12 @@ pub unsafe fn window_remove_pane(w: *mut window, wp: *mut window_pane) {
 
 pub unsafe fn window_pane_at_index(w: &window, idx: u32) -> *mut window_pane {
     unsafe {
-        let mut n: u32 = options_get_number___::<u32>(&*w.options, "pane-base-index");
+        let base: u32 = options_get_number___::<u32>(&*w.options, "pane-base-index");
 
-        for &wp in &w.panes {
+        for (n, &wp) in (base..).zip(&w.panes) {
             if n == idx {
                 return wp;
             }
-            n += 1;
         }
 
         null_mut()
@@ -1876,7 +1873,7 @@ pub unsafe fn window_pane_search(
             }
 
             let cline = CString::new(line).unwrap_or_default();
-            log_debug!("{}: {}", "window_pane_search", _s(cline.as_ptr() as *const u8));
+            log_debug!("{}: {}", "window_pane_search", _s(cline.as_ptr().cast::<u8>()));
             let found = if regex == 0 {
                 fnmatch(new, cline.as_ptr().cast(), flags) == 0
             } else {

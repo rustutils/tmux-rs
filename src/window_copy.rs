@@ -336,7 +336,7 @@ pub unsafe fn window_copy_common_init(wme: *mut window_mode_entry) -> *mut windo
         if (*wp).searchstr.is_some() {
             (*data).searchtype = window_copy::WINDOW_COPY_SEARCHUP;
             (*data).searchregex = (*wp).searchregex;
-            (*data).searchstr = (*wp).searchstr.clone();
+            (*data).searchstr.clone_from(&(*wp).searchstr);
         } else {
             (*data).searchtype = window_copy::WINDOW_COPY_OFF;
             (*data).searchregex = 0;

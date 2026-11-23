@@ -1404,8 +1404,30 @@ pub unsafe fn options_push_changes(name: &str) {
     }
 }
 
+/// Removes an option, or resets it to its default for a global option with a
+/// table entry. With `idx` other than -1, only clears that array element.
+///
+/// Unlike the C version this allocates the error message on failure.
+pub unsafe fn options_remove_or_default(o: *mut options_entry, idx: i32) -> Result<(), CString> {
+    unsafe {
+        let oo = (*o).owner;
+
+        if idx == -1 {
+            if !(*o).tableentry.is_null()
+                && (oo == GLOBAL_OPTIONS || oo == GLOBAL_S_OPTIONS || oo == GLOBAL_W_OPTIONS)
+            {
+                options_default(oo, (*o).tableentry);
+            } else {
+                options_remove(o);
+            }
+        } else {
+            options_array_set(o, idx as u32, None, false)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
-#[allow(dangerous_implicit_autorefs, unsafe_op_in_unsafe_fn)]
 mod tests {
     use super::*;
     use crate::options_table::OPTIONS_TABLE;
@@ -2117,25 +2139,5 @@ mod tests {
             options_free(child);
             options_free(parent);
         }
-    }
-}
-
-// note one difference was that this function previously could avoid allocation on error
-pub unsafe fn options_remove_or_default(o: *mut options_entry, idx: i32) -> Result<(), CString> {
-    unsafe {
-        let oo = (*o).owner;
-
-        if idx == -1 {
-            if !(*o).tableentry.is_null()
-                && (oo == GLOBAL_OPTIONS || oo == GLOBAL_S_OPTIONS || oo == GLOBAL_W_OPTIONS)
-            {
-                options_default(oo, (*o).tableentry);
-            } else {
-                options_remove(o);
-            }
-        } else {
-            options_array_set(o, idx as u32, None, false)?;
-        }
-        Ok(())
     }
 }

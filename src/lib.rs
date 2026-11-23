@@ -11,7 +11,6 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-#![expect(rustdoc::broken_intra_doc_links, reason = "github markdown callout")]
 #![cfg_attr(doc, doc = include_str!("../README.md"))]
 #![cfg_attr(
     fuzzing,
@@ -831,7 +830,6 @@ enum screen_cursor_style {
 }
 
 /// Virtual screen.
-
 struct screen {
     title: CString,
     path: Option<CString>,
@@ -1000,7 +998,6 @@ type menu_choice_cb = Option<unsafe fn(*mut menu, u32, key_code, *mut c_void)>;
 #[expect(clippy::type_complexity)]
 /// Window mode. Windows can be in several modes and this is used to call the
 /// right function to handle input and output.
-
 struct window_mode {
     name: &'static str,
     default_format: Option<&'static str>,
@@ -1088,7 +1085,6 @@ bitflags::bitflags! {
 }
 
 /// Child window structure.
-
 struct window_pane {
     id: u32,
     active_point: u32,
@@ -1193,7 +1189,6 @@ const WINDOW_ALERTFLAGS: window_flag = window_flag::BELL
     .union(window_flag::SILENCE);
 
 /// Window structure.
-
 struct window {
     id: u32,
     latest: *mut c_void,
@@ -1369,7 +1364,7 @@ pub struct LayoutArena {
     saved_root: Option<LayoutCellId>,
 }
 
-#[allow(dead_code)] // wired up incrementally in Phase 2.5
+#[expect(dead_code, reason = "some methods are not used yet")]
 impl LayoutArena {
     pub(crate) fn new() -> Self {
         Self::default()
@@ -1608,7 +1603,6 @@ struct EnvironEntry {
 }
 
 /// Client session.
-
 struct session_group {
     name: Cow<'static, str>,
     sessions: Vec<*mut session>,
@@ -1746,7 +1740,6 @@ struct mouse_event {
 }
 
 /// Key event.
-
 struct key_event {
     /// The client to handle the key for, holding a reference, when the
     /// key was queued after another item instead of on the client's own
@@ -1775,7 +1768,6 @@ bitflags::bitflags! {
 }
 
 /// Terminal definition.
-
 struct tty_term {
     name: CString,
     tty: *mut tty,
@@ -1812,7 +1804,6 @@ const TTY_ALL_REQUEST_FLAGS: tty_flags = tty_flags::TTY_HAVEDA
     .union(tty_flags::TTY_HAVEXDA);
 
 /// Client terminal.
-
 struct tty {
     client: *mut client,
     start_timer: Option<TimerHandle>,
@@ -1938,7 +1929,7 @@ type MessageLog = Vec<MessageEntry>;
 /// owns its allocation via `CString`; the commands variant carries a refcounted
 /// `*mut cmd_list` and a lazily-populated cached printable form.
 enum args_value {
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), expect(dead_code, reason = "only the tests construct it"))]
     None,
     String {
         string: std::ffi::CString,
@@ -2539,7 +2530,7 @@ type options_array = BTreeMap<u32, options_array_item>;
 union options_value {
     string: *mut u8,
     number: c_longlong,
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "kept to mirror the C struct")]
     style: style,
     array: *mut options_array,
     cmdlist: *mut cmd_list,
@@ -2572,7 +2563,7 @@ unsafe impl Sync for options_table_entry {}
 
 struct options_table_entry {
     name: &'static str,
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "kept to mirror the C struct")]
     alternative_name: *mut u8,
     type_: options_table_type,
     scope: i32,
@@ -2661,7 +2652,6 @@ const SPAWN_EMPTY: spawn_flags = spawn_flags::SPAWN_EMPTY;
 const SPAWN_ZOOM: spawn_flags = spawn_flags::SPAWN_ZOOM;
 
 /// Spawn common context.
-
 struct spawn_context {
     item: *mut cmdq_item,
 

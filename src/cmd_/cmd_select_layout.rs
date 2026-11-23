@@ -106,7 +106,7 @@ unsafe fn cmd_select_layout_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
                 let layoutname = if args_count(args) != 0 {
                     args_string(args, 0)
                 } else if args_has(args, 'o') {
-                    oldlayout.as_ref().map_or(null(), |s| s.as_ptr() as *const u8)
+                    oldlayout.as_ref().map_or(null(), |s| s.as_ptr().cast::<u8>())
                 } else {
                     null()
                 };

@@ -164,7 +164,7 @@ pub unsafe fn args_parse_flags(
             return Ok(1);
         };
 
-        let mut string = string_cs.as_ptr() as *const u8;
+        let mut string = string_cs.as_ptr().cast::<u8>();
         log_debug!("{}: next {}", __func__, _s(string));
         if ({
             let tmp = *string != b'-';
@@ -629,11 +629,19 @@ pub unsafe fn args_values<'a>(args: *mut args) -> &'a [args_value] {
 }
 
 /// Get a single argument value by index, or `None` if out of range.
+#[expect(
+    clippy::needless_borrow,
+    reason = "the explicit borrow avoids the dangerous_implicit_autorefs lint"
+)]
 pub unsafe fn args_value<'a>(args: *mut args, idx: u32) -> Option<&'a args_value> {
     unsafe { (&(*args).values).get(idx as usize) }
 }
 
 /// Return argument as string. Returns null if `idx` is out of range.
+#[expect(
+    clippy::needless_borrow,
+    reason = "the explicit borrow avoids the dangerous_implicit_autorefs lint"
+)]
 pub unsafe fn args_string(args: *mut args, idx: u32) -> *const u8 {
     unsafe {
         match (&(*args).values).get(idx as usize) {
@@ -688,7 +696,7 @@ pub unsafe fn args_make_commands_prepare<'a>(
                     (*(*state).cmdlist).references += 1;
                     return state;
                 }
-                args_value::String { string } => string.as_ptr() as *const u8,
+                args_value::String { string } => string.as_ptr().cast::<u8>(),
                 args_value::None => {
                     if default_command.is_null() {
                         fatalx("argument out of range");

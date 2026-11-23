@@ -989,10 +989,10 @@ pub unsafe fn input_free(ictx: *mut input_ctx) {
 
 // Reset input state and clear screen.
 
-pub unsafe fn input_reset(ictx: *mut input_ctx, clear: i32) {
-    // SAFETY: caller guarantees `ictx` was returned by `input_init` and
+pub unsafe fn input_reset(ictx_ptr: *mut input_ctx, clear: i32) {
+    // SAFETY: caller guarantees `ictx_ptr` was returned by `input_init` and
     // is exclusively borrowed here.
-    let ictx = unsafe { &mut *ictx };
+    let ictx = unsafe { &mut *ictx_ptr };
 
     let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
     // SAFETY: `wp` comes from a registry lookup; checked for null below.
@@ -1151,7 +1151,7 @@ pub unsafe fn input_parse_buffer(wp: *mut window_pane, buf: *mut u8, len: usize)
 
 /// Parse given input for screen.
 pub unsafe fn input_parse_screen(
-    ictx: *mut input_ctx,
+    ictx_ptr: *mut input_ctx,
     s: *mut screen,
     cb: screen_write_init_ctx_cb,
     arg: *mut c_void,
@@ -1163,7 +1163,7 @@ pub unsafe fn input_parse_screen(
     }
     // SAFETY: caller passes a valid `*mut input_ctx`; exclusive borrow
     // for the duration of the parse.
-    let ictx = unsafe { &mut *ictx };
+    let ictx = unsafe { &mut *ictx_ptr };
     let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
 
     unsafe {
@@ -1205,9 +1205,8 @@ fn input_split(ictx: &mut input_ctx) -> i32 {
         } else if part.contains(&b':') {
             InputParam::String(part.to_vec())
         } else {
-            let s = match std::str::from_utf8(part) {
-                Ok(s) => s,
-                Err(_) => return -1,
+            let Ok(s) = std::str::from_utf8(part) else {
+                return -1;
             };
             match s.parse::<i32>() {
                 Ok(n) if n >= 0 => InputParam::Number(n),
@@ -2141,9 +2140,9 @@ fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, idx: u32) {
     unsafe {
         let gc = &raw mut ictx.cell.cell;
         let plist = &ictx.param_list;
-        let s = match &plist[idx as usize] {
-            InputParam::String(s) => s,
-            _ => return, // Only string params are dispatched here.
+        // Only string params are dispatched here.
+        let InputParam::String(s) = &plist[idx as usize] else {
+            return;
         };
 
         // Parse `:`-delimited sub-parameters into a fixed-size buffer.
@@ -2153,9 +2152,8 @@ fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, idx: u32) {
         let mut n: usize = 0;
         for part in s.split(|&b| b == b':') {
             if !part.is_empty() {
-                let part_str = match std::str::from_utf8(part) {
-                    Ok(s) => s,
-                    Err(_) => return,
+                let Ok(part_str) = std::str::from_utf8(part) else {
+                    return;
                 };
                 match part_str.parse::<i32>() {
                     Ok(x) if x >= 0 => p[n] = x,
@@ -3182,7 +3180,11 @@ pub fn fuzz_input_parse(data: &[u8]) {
 }
 
 #[cfg(test)]
-#[allow(dangerous_implicit_autorefs, unsafe_op_in_unsafe_fn)]
+#[expect(
+    dangerous_implicit_autorefs,
+    unsafe_op_in_unsafe_fn,
+    reason = "the tests reach the parser through raw pointers like the code they test"
+)]
 mod tests {
     use super::*;
 
@@ -3943,14 +3945,19 @@ mod tests {
 
         impl Parser {
             fn new(cols: u32, rows: u32) -> Self {
-                let _guard = lock();
+                let guard = lock();
                 unsafe {
                     init_globals();
                     let palette = Box::into_raw(Box::new(colour_palette_init()));
                     let ictx = input_init(null_mut(), null_mut(), palette);
                     let screen = Box::into_raw(Box::new(screen_placeholder()));
                     screen_init(screen, cols, rows, 0);
-                    Parser { ictx, screen, palette, _guard }
+                    Parser {
+                        ictx,
+                        screen,
+                        palette,
+                        _guard: guard,
+                    }
                 }
             }
 

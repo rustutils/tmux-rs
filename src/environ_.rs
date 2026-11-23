@@ -217,6 +217,60 @@ pub fn environ_log_(env: &Environ, args: std::fmt::Arguments) {
     }
 }
 
+/// Builds the environment for a new process in session `s`: the global
+/// environment, then the session environment, then `TERM`, `TERM_PROGRAM` and
+/// `TMUX`. `TERM` is left out when `no_term` is nonzero.
+pub unsafe fn environ_for_session(s: *mut session, no_term: c_int) -> *mut Environ {
+    let env: *mut Environ = environ_create().as_ptr();
+
+    unsafe {
+        environ_copy(&*GLOBAL_ENVIRON, &mut *env);
+        if !s.is_null() {
+            environ_copy(&(*s).environ, &mut *env);
+        }
+
+        if no_term == 0 {
+            let value = options_get_string_(GLOBAL_OPTIONS, "default-terminal");
+            environ_set!(env, c!("TERM"), environ_flags::empty(), "{}", _s(value));
+            environ_set!(
+                env,
+                c!("TERM_PROGRAM"),
+                environ_flags::empty(),
+                "{}",
+                "tmux"
+            );
+            environ_set!(
+                env,
+                c!("TERM_PROGRAM_VERSION"),
+                environ_flags::empty(),
+                "{}",
+                getversion()
+            );
+        }
+
+        #[cfg(feature = "systemd")]
+        {
+            environ_clear(&mut *env, "LISTEN_PID");
+            environ_clear(&mut *env, "LISTEN_FDS");
+            environ_clear(&mut *env, "LISTEN_FDNAMES");
+        }
+
+        let idx = if !s.is_null() { (*s).id as i32 } else { -1 };
+
+        environ_set!(
+            env,
+            c!("TMUX"),
+            environ_flags::empty(),
+            "{},{},{}",
+            _s(SOCKET_PATH),
+            std::process::id(),
+            idx,
+        );
+
+        env
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -396,56 +450,5 @@ mod tests {
 
             environ_free(env);
         }
-    }
-}
-
-pub unsafe fn environ_for_session(s: *mut session, no_term: c_int) -> *mut Environ {
-    let env: *mut Environ = environ_create().as_ptr();
-
-    unsafe {
-        environ_copy(&*GLOBAL_ENVIRON, &mut *env);
-        if !s.is_null() {
-            environ_copy(&(*s).environ, &mut *env);
-        }
-
-        if no_term == 0 {
-            let value = options_get_string_(GLOBAL_OPTIONS, "default-terminal");
-            environ_set!(env, c!("TERM"), environ_flags::empty(), "{}", _s(value));
-            environ_set!(
-                env,
-                c!("TERM_PROGRAM"),
-                environ_flags::empty(),
-                "{}",
-                "tmux"
-            );
-            environ_set!(
-                env,
-                c!("TERM_PROGRAM_VERSION"),
-                environ_flags::empty(),
-                "{}",
-                getversion()
-            );
-        }
-
-        #[cfg(feature = "systemd")]
-        {
-            environ_clear(&mut *env, "LISTEN_PID");
-            environ_clear(&mut *env, "LISTEN_FDS");
-            environ_clear(&mut *env, "LISTEN_FDNAMES");
-        }
-
-        let idx = if !s.is_null() { (*s).id as i32 } else { -1 };
-
-        environ_set!(
-            env,
-            c!("TMUX"),
-            environ_flags::empty(),
-            "{},{},{}",
-            _s(SOCKET_PATH),
-            std::process::id(),
-            idx,
-        );
-
-        env
     }
 }

@@ -110,19 +110,17 @@ pub unsafe fn tty_resize(tty: *mut tty) {
         let ypixel: u32;
 
         if libc::ioctl((*c).fd, libc::TIOCGWINSZ, &raw mut ws) != -1 {
+            // A zero size means the terminal did not report one. Use 80x24
+            // and no pixel size then.
             sx = ws.ws_col as u32;
+            xpixel = (ws.ws_xpixel as u32).checked_div(sx).unwrap_or(0);
             if sx == 0 {
                 sx = 80;
-                xpixel = 0;
-            } else {
-                xpixel = ws.ws_xpixel as u32 / sx;
             }
             sy = ws.ws_row as u32;
+            ypixel = (ws.ws_ypixel as u32).checked_div(sy).unwrap_or(0);
             if sy == 0 {
                 sy = 24;
-                ypixel = 0;
-            } else {
-                ypixel = ws.ws_ypixel as u32 / sy;
             }
         } else {
             sx = 80;
@@ -1872,11 +1870,8 @@ pub unsafe fn tty_draw_line(
             }
 
             tty_check_overlay_range(tty, atx + ux, aty, (*gcp).data.width as u32, &raw mut r);
-            let mut hidden = 0;
-            for j in 0..OVERLAY_MAX_RANGES {
-                hidden += r.nx[j];
-            }
-            hidden = (*gcp).data.width as u32 - hidden;
+            let visible: u32 = r.nx.iter().sum();
+            let hidden = (*gcp).data.width as u32 - visible;
             if hidden != 0 && hidden == (*gcp).data.width as u32 {
                 if !(*gcp).flags.intersects(GridFlag::PADDING) {
                     ux += (*gcp).data.width as u32;
@@ -2612,9 +2607,7 @@ pub unsafe fn tty_cmd_cell(tty: *mut tty, ctx: *const tty_ctx) {
         // Handle partially obstructed wide characters.
         if (*gcp).data.width > 1 {
             tty_check_overlay_range(tty, px, py, (*gcp).data.width as u32, &raw mut r);
-            for i in 0..OVERLAY_MAX_RANGES {
-                vis += r.nx[i];
-            }
+            vis += r.nx.iter().sum::<u32>();
             if vis < (*gcp).data.width as u32 {
                 tty_draw_line(
                     tty,
