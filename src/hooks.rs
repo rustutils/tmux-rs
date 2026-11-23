@@ -42,6 +42,39 @@ struct HookData<'a> {
     fs: cmd_find_state,
     /// The hook_* variables for the commands.
     formats: *mut format_tree,
+    /// The tree the hook is in, or null to look for it from the target.
+    oo: *mut options,
+    /// The client the event came from, or null.
+    client: *mut client,
+    /// Whether a user hook's command is expanded as a format before it is
+    /// parsed (monitor hooks).
+    expand: bool,
+}
+
+/// Parses a user hook's command, first expanding it with the target and
+/// the hook_* variables if the hook asks for it.
+///
+/// # Safety
+/// The target in `fs` must name live entities or be empty, `hd.formats`
+/// and `hd.client` valid or null.
+unsafe fn hooks_parse(hd: &HookData, fs: &cmd_find_state, value: &str) -> cmd_parse_result {
+    unsafe {
+        if !hd.expand {
+            return cmd_parse_from_string(value, None);
+        }
+        let s = fs.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+        let wp = fs.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
+        let ft = format_create_defaults(null_mut(), hd.client, s, fs.wl, wp);
+        if !hd.formats.is_null() {
+            format_merge(ft, hd.formats);
+        }
+        let value = CString::new(value).unwrap_or_default();
+        let expanded = format_expand(ft, value.as_ptr().cast());
+        format_free(ft);
+        let result = cmd_parse_from_string(&cstr_to_string_lossy(expanded), None);
+        free_(expanded);
+        result
+    }
 }
 
 /// Queues one hook command list after `item`, or at the end of the global
@@ -92,20 +125,27 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, hd: &mut HookData) {
             cmd_find_copy_state(&raw mut fs, &raw const hd.fs);
         }
 
-        let mut oo = match fs.s.and_then(|id| session_from_id(id)) {
-            Some(s) => (*s).options,
-            None => GLOBAL_S_OPTIONS,
-        };
-        let mut o = options_get(&mut *oo, hd.name);
-        if o.is_null()
-            && let Some(wp) = fs.wp.and_then(|id| pane_from_id(id))
-        {
-            oo = (*wp).options;
+        let mut oo;
+        let mut o;
+        if !hd.oo.is_null() {
+            oo = hd.oo;
+            o = options_get_only(oo, hd.name);
+        } else {
+            oo = match fs.s.and_then(|id| session_from_id(id)) {
+                Some(s) => (*s).options,
+                None => GLOBAL_S_OPTIONS,
+            };
             o = options_get(&mut *oo, hd.name);
-        }
-        if o.is_null() && !fs.wl.is_null() {
-            oo = (*winlink_window(fs.wl)).options;
-            o = options_get(&mut *oo, hd.name);
+            if o.is_null()
+                && let Some(wp) = fs.wp.and_then(|id| pane_from_id(id))
+            {
+                oo = (*wp).options;
+                o = options_get(&mut *oo, hd.name);
+            }
+            if o.is_null() && !fs.wl.is_null() {
+                oo = (*winlink_window(fs.wl)).options;
+                o = options_get(&mut *oo, hd.name);
+            }
         }
         if o.is_null() {
             log_debug!("{}: hook {} not found", __func__, hd.name);
@@ -122,8 +162,8 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, hd: &mut HookData) {
         cmdq_add_formats(state, hd.formats);
 
         if hd.name.starts_with('@') {
-            let value = options_get_string(oo, hd.name);
-            match cmd_parse_from_string(&cstr_to_string_lossy(value), None) {
+            let value = cstr_to_string_lossy(options_get_string(oo, hd.name));
+            match hooks_parse(hd, &fs, &value) {
                 Err(error) => {
                     log_debug!(
                         "{}: can't parse hook {}: {}",
@@ -151,7 +191,13 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, hd: &mut HookData) {
 /// # Safety
 /// `item` must be null or valid, and the payload's entities valid or gone
 /// from their registries.
-unsafe fn hooks_insert_event(item: *mut cmdq_item, name: &str, payload: &Payload) {
+unsafe fn hooks_insert_event(
+    item: *mut cmdq_item,
+    name: &str,
+    payload: &Payload,
+    oo: *mut options,
+    expand: bool,
+) {
     unsafe {
         if !item.is_null()
             && cmdq_get_flags(item).intersects(cmdq_state_flags::CMDQ_STATE_NOHOOKS)
@@ -174,6 +220,9 @@ unsafe fn hooks_insert_event(item: *mut cmdq_item, name: &str, payload: &Payload
             name,
             fs: zeroed(),
             formats: ft,
+            oo,
+            client: c,
+            expand,
         };
         cmd_find_clear_state(&raw mut hd.fs, cmd_find_flags::empty());
         payload_get_target(payload, &raw mut hd.fs);
@@ -194,15 +243,19 @@ unsafe fn hooks_insert_event(item: *mut cmdq_item, name: &str, payload: &Payload
 /// from their registries.
 pub unsafe fn hooks_event(name: &str, payload: &Payload, item: *mut cmdq_item) {
     unsafe {
+        // Monitor events go to the monitor's own sink.
+        if payload.get("_hooks_monitor").is_some() {
+            return;
+        }
         if !item.is_null() {
-            hooks_insert_event(item, name, payload);
+            hooks_insert_event(item, name, payload, null_mut(), false);
             return;
         }
         let running = cmdq_running(null_mut());
         if running.is_null()
             || !cmdq_get_flags(running).intersects(cmdq_state_flags::CMDQ_STATE_NOHOOKS)
         {
-            hooks_insert_event(null_mut(), name, payload);
+            hooks_insert_event(null_mut(), name, payload, null_mut(), false);
         }
     }
 }
@@ -246,6 +299,9 @@ pub unsafe fn hooks_run(item: *mut cmdq_item, name: &str) {
             name,
             fs: zeroed(),
             formats: format_create(null_mut(), null_mut(), 0, format_flags::FORMAT_NOJOBS),
+            oo: null_mut(),
+            client: cmdq_get_client(item),
+            expand: false,
         };
         cmd_find_copy_state(&raw mut hd.fs, cmdq_get_target(item));
         format_add!(hd.formats, "hook", "{}", name);

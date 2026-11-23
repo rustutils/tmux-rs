@@ -105,7 +105,7 @@
 60 src/file.rs
 453 src/format.rs
 28 src/format_draw_.rs
-10 src/hooks.rs
+12 src/hooks.rs
 14 src/hyperlinks_.rs
 12 src/image_.rs
 32 src/image_sixel.rs
