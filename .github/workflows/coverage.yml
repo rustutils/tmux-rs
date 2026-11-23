@@ -1,49 +1,74 @@
 ---
+# Coverage of the unit and integration tests and the upstream regress
+# scripts, uploaded to Codecov.
 name: Coverage
 
 on:
-  push
+  push:
+    branches: [main, tmux-3.8]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
 
 jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 45
 
     steps:
+      - uses: actions/checkout@v5
+
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: llvm-tools
 
-      - name: Install system dependencies (ubuntu)
+      - name: Install terminfo entries
         run: |
           sudo apt-get update
-          sudo apt-get install -y libncurses-dev
+          sudo apt-get install -y ncurses-term
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-llvm-cov@0.6.21,cargo-nextest@0.9.114
+          tool: cargo-llvm-cov,cargo-nextest
 
-      - uses: actions/checkout@v5
-
-      - name: Coverage
+      - name: Tests
         run: |
-          cargo +nightly llvm-cov --no-report nextest --profile ci
-          mv ./target/nextest/ci/junit.xml junit.xml
+          cargo llvm-cov --no-report nextest --workspace --profile ci
 
-          source <(cargo llvm-cov show-env --export-prefix --branch)
-          cargo +nightly build
+      # Most regress scripts do not pass yet and the Makefile ignores
+      # their exit codes. They only add coverage, so a hanging script
+      # must not hold up the job.
+      - name: Regress scripts
+        timeout-minutes: 15
+        continue-on-error: true
+        run: |
+          source <(cargo llvm-cov show-env --sh)
+          cargo build
           make -C regress
 
-          cargo llvm-cov report --lcov --output-path lcov.info
+      - name: Report
+        if: ${{ !cancelled() }}
+        run: cargo llvm-cov report --lcov --output-path lcov.info
 
       - name: Upload results to Codecov
+        if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
+          fail_ci_if_error: false
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
         uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          files: target/nextest/ci/junit.xml
