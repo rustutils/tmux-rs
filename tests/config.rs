@@ -195,18 +195,20 @@ fn run_shell_captures_output() {
         .run()
         .assert_success();
 
-    // run-shell output appears in the pane's status or message area
-    // We can verify it ran by using a side effect
+    // Check that the command ran through a side effect. It calls the
+    // client under test by path on this test's socket: a bare "tmux"
+    // would be whatever is on PATH, if anything (none on the macOS
+    // runners), and would talk to the default server.
+    let command = format!(
+        "'{}' -S '{}' set @shell_output done",
+        harness::client_bin().display(),
+        tmux.socket_path()
+    );
     tmux.cmd()
-        .args(["run-shell", "tmux set @shell_output done"])
+        .args(["run-shell", &command])
         .run()
         .assert_success();
-
-    std::thread::sleep(Duration::from_millis(500));
-
-    // Note: run-shell executes the command via the shell, and we reference
-    // the tmux within the shell, which uses the client binary path
-    // This may not work with different server and client binaries
+    tmux.wait_for("#{@shell_output}", |v| v == "done", Duration::from_secs(5));
 }
 
 // Ported from regress/if-shell-nested.sh
