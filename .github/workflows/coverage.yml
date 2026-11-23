@@ -23,7 +23,10 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    container: fedora:45
+    # --init reaps orphaned processes such as the daemonized tmux servers.
+    container:
+      image: fedora:45
+      options: --init
     env:
       CARGO_HOME: /opt/cargo
       RUSTUP_HOME: /opt/rustup

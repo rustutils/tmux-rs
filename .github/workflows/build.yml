@@ -32,7 +32,11 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    container: fedora:45
+    # --init reaps processes whose parent exited, such as the daemonized
+    # tmux servers, so they do not stay around as zombies.
+    container: &fedora-container
+      image: fedora:45
+      options: --init
     env: &fedora-env
       CARGO_HOME: /opt/cargo
       RUSTUP_HOME: /opt/rustup
@@ -71,7 +75,7 @@ jobs:
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
-    container: fedora:45
+    container: *fedora-container
     env: *fedora-env
     defaults:
       run: *as-tester
@@ -115,7 +119,7 @@ jobs:
   cross:
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    container: fedora:45
+    container: *fedora-container
     env:
       CARGO_HOME: /opt/cargo
       RUSTUP_HOME: /opt/rustup
@@ -158,7 +162,7 @@ jobs:
   asan:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    container: fedora:45
+    container: *fedora-container
     env:
       CARGO_HOME: /opt/cargo
       RUSTUP_HOME: /opt/rustup
