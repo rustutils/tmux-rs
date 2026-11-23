@@ -324,7 +324,7 @@ pub unsafe fn popup_draw_cb(c: *mut client, data: *mut c_void, rctx: *mut screen
     }
 }
 
-pub fn popup_free_cb(c: *mut client, data: *mut c_void) {
+pub unsafe fn popup_free_cb(c: *mut client, data: *mut c_void) {
     unsafe {
         let pd = data as *mut popup_data;
         let item = (*pd).item;
@@ -369,7 +369,7 @@ unsafe fn popup_free(pd: *mut popup_data) {
     }
 }
 
-pub fn popup_resize_cb(c: *mut client, data: *mut c_void) {
+pub unsafe fn popup_resize_cb(c: *mut client, data: *mut c_void) {
     unsafe {
         let pd = data as *mut popup_data;
         if pd.is_null() {
@@ -413,7 +413,7 @@ pub fn popup_resize_cb(c: *mut client, data: *mut c_void) {
     }
 }
 
-pub fn popup_make_pane(pd: *mut popup_data, type_: layout_type) {
+pub unsafe fn popup_make_pane(pd: *mut popup_data, type_: layout_type) {
     unsafe {
         let c = (*pd).c;
         let s = client_get_session(c);
@@ -466,7 +466,7 @@ pub fn popup_make_pane(pd: *mut popup_data, type_: layout_type) {
     }
 }
 
-pub fn popup_menu_done(_menu: *mut menu, _choice: u32, key: key_code, data: *mut c_void) {
+pub unsafe fn popup_menu_done(_menu: *mut menu, _choice: u32, key: key_code, data: *mut c_void) {
     unsafe {
         let pd = data as *mut popup_data;
         let c = (*pd).c;

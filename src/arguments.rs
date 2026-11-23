@@ -572,7 +572,7 @@ pub unsafe fn args_has(args: *mut args, flag: char) -> bool {
     }
 }
 
-pub fn args_set(args: *mut args, flag: c_uchar, value: Option<args_value>, flags: i32) {
+pub unsafe fn args_set(args: *mut args, flag: c_uchar, value: Option<args_value>, flags: i32) {
     unsafe {
         let entry = (*args).tree.entry(flag).or_insert_with(|| {
             Box::new(args_entry {

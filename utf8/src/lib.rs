@@ -47,6 +47,7 @@ fn mb_cur_max() -> usize {
     unsafe extern "C" {
         unsafe fn __ctype_get_mb_cur_max() -> usize;
     }
+    // SAFETY: no preconditions, it reads the current locale.
     unsafe { __ctype_get_mb_cur_max() }
 }
 
@@ -55,6 +56,7 @@ fn mb_cur_max() -> usize {
     unsafe extern "C" {
         unsafe fn ___mb_cur_max() -> i32;
     }
+    // SAFETY: no preconditions, it reads the current locale.
     unsafe { ___mb_cur_max() as usize }
 }
 use std::collections::BTreeMap;

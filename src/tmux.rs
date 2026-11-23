@@ -330,6 +330,9 @@ pub fn find_cwd() -> Option<PathBuf> {
 }
 
 pub fn find_home() -> Option<&'static CStr> {
+    // SAFETY: getpwuid returns null or a valid entry whose strings stay
+    // valid until the next getpwuid call, and pw_dir is copied at once.
+    // OnceLock runs the lookup only once.
     unsafe {
         static HOME: OnceLock<Option<CString>> = OnceLock::new();
         HOME.get_or_init(|| match std::env::var("HOME") {

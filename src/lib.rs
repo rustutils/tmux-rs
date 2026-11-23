@@ -2735,6 +2735,11 @@ impl SyncCharPtr {
     }
 }
 
+/// Displays a C string.
+///
+/// # Safety
+///
+/// `ptr` must be null or a NUL terminated string that outlives the result.
 unsafe fn _s(ptr: impl ToU8Ptr) -> DisplayCStrPtr {
     DisplayCStrPtr(ptr.to_u8_ptr())
 }
@@ -2778,15 +2783,17 @@ impl std::fmt::Display for DisplayCStrPtr {
 
         // TODO alignment
 
-        let len = if let Some(width) = f.precision() {
-            unsafe { libc::strnlen(self.0, width) }
-        } else if let Some(width) = f.width() {
-            unsafe { libc::strnlen(self.0, width) }
-        } else {
-            unsafe { libc::strlen(self.0) }
+        let limit = f.precision().or(f.width());
+        // SAFETY: DisplayCStrPtr is only built by _s, whose caller
+        // guarantees a NUL terminated string. strnlen and strlen stop at
+        // the NUL, so the slice stays inside the string.
+        let s: &[u8] = unsafe {
+            let len = match limit {
+                Some(width) => libc::strnlen(self.0, width),
+                None => libc::strlen(self.0),
+            };
+            std::slice::from_raw_parts(self.0, len)
         };
-
-        let s: &[u8] = unsafe { std::slice::from_raw_parts(self.0, len) };
         let s = std::str::from_utf8(s).unwrap_or("%s-invalid-utf8");
         f.write_str(s)
     }
@@ -2830,6 +2837,7 @@ const fn concat_array<const N: usize, const M: usize, const O: usize, T: Copy>(
     assert!(a1.len() + a2.len() == out.len());
     assert!(i == out.len());
 
+    // SAFETY: the asserts above show that all O elements were written.
     unsafe { std::mem::transmute_copy(&out) }
     // TODO once stabilized switch to:
     // unsafe { MaybeUninit::array_assume_init(out) }

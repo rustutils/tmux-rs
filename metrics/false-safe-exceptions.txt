@@ -15,3 +15,11 @@ src/utf8.rs:fuzz_utf8_decode
 # variant cannot enforce. Goes away when cmd_list is owned (F8).
 src/lib.rs:args_value::clone
 src/lib.rs:args_value::drop
+
+# Drop cannot be unsafe. The variant holds a reference counted command
+# list. Goes away when cmd_list is owned (F8).
+src/cmd_parse.rs:ParsedArgument::drop
+
+# Iterator::next cannot be unsafe. Lexer is only built by
+# cmd_parse_run_parser from the live parse state it runs on.
+src/cmd_parse.rs:Lexer::next

@@ -96,15 +96,15 @@ pub struct cmd_parse_state<'a> {
     pub stack: Vec<bool>,
 }
 
-// --- Safe helpers for grammar actions (encapsulate NonNull dereference) ---
+// --- Helpers for grammar actions. ps must point to the live parse state. ---
 
 /// Check if the current scope is active (no scope, or scope flag is true).
-pub fn ps_scope_active(ps: NonNull<cmd_parse_state>) -> bool {
+pub unsafe fn ps_scope_active(ps: NonNull<cmd_parse_state>) -> bool {
     unsafe { (*ps.as_ptr()).scope.is_none_or(|flag| flag) }
 }
 
 /// Get the current line number from the parser input.
-pub fn ps_current_line(ps: NonNull<cmd_parse_state>) -> u32 {
+pub unsafe fn ps_current_line(ps: NonNull<cmd_parse_state>) -> u32 {
     unsafe {
         (*ps.as_ptr())
             .input
@@ -116,7 +116,7 @@ pub fn ps_current_line(ps: NonNull<cmd_parse_state>) -> u32 {
 }
 
 /// Push the current scope onto the stack and set a new scope flag.
-pub fn ps_push_scope(ps: NonNull<cmd_parse_state>, flag: bool) {
+pub unsafe fn ps_push_scope(ps: NonNull<cmd_parse_state>, flag: bool) {
     unsafe {
         let ps = &mut *ps.as_ptr();
         if let Some(current) = ps.scope {
@@ -127,21 +127,21 @@ pub fn ps_push_scope(ps: NonNull<cmd_parse_state>, flag: bool) {
 }
 
 /// Pop the scope stack, restoring the previous scope.
-pub fn ps_pop_scope(ps: NonNull<cmd_parse_state>) {
+pub unsafe fn ps_pop_scope(ps: NonNull<cmd_parse_state>) {
     unsafe {
         (*ps.as_ptr()).scope = (*ps.as_ptr()).stack.pop();
     }
 }
 
 /// Replace the current scope flag (for %else and %elif).
-pub fn ps_set_scope(ps: NonNull<cmd_parse_state>, flag: bool) {
+pub unsafe fn ps_set_scope(ps: NonNull<cmd_parse_state>, flag: bool) {
     unsafe {
         (*ps.as_ptr()).scope = Some(flag);
     }
 }
 
 /// Get the current scope flag (for %else inversion).
-pub fn ps_scope_flag(ps: NonNull<cmd_parse_state>) -> bool {
+pub unsafe fn ps_scope_flag(ps: NonNull<cmd_parse_state>) -> bool {
     unsafe { (*ps.as_ptr()).scope.unwrap() }
 }
 
@@ -260,7 +260,7 @@ pub unsafe fn cmd_parse_do_buffer<'a>(
     }
 }
 
-pub fn cmd_parse_log_commands(cmds: &[ParsedCommand], prefix: &str) {
+pub unsafe fn cmd_parse_log_commands(cmds: &[ParsedCommand], prefix: &str) {
     unsafe {
         for (i, cmd) in cmds.iter().enumerate() {
             for (j, arg) in cmd.arguments.iter().enumerate() {

@@ -31,7 +31,7 @@ pub fn environ_create() -> NonNull<Environ> {
     let env = Box::new(Environ {
         entries: BTreeMap::new(),
     });
-    unsafe { NonNull::new_unchecked(Box::into_raw(env)) }
+    NonNull::from(Box::leak(env))
 }
 
 /// Free an environment and all its entries. Since `EnvironEntry` fields are

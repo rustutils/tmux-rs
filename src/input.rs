@@ -295,7 +295,7 @@ pub struct input_transition {
     first: i32,
     last: i32,
 
-    handler: Option<fn(&mut input_ctx) -> i32>,
+    handler: Option<unsafe fn(&mut input_ctx) -> i32>,
     handler_is_input_print: bool,
     state: Option<&'static input_state>,
 }
@@ -303,7 +303,7 @@ impl input_transition {
     const fn new(
         first: i32,
         last: i32,
-        handler: Option<fn(&mut input_ctx) -> i32>,
+        handler: Option<unsafe fn(&mut input_ctx) -> i32>,
         state: Option<&'static input_state>,
     ) -> Self {
         Self {
@@ -329,16 +329,16 @@ impl input_transition {
 // Input state.
 pub struct input_state {
     name: SyncCharPtr,
-    enter: Option<fn(&mut input_ctx)>,
-    exit: Option<fn(&mut input_ctx)>,
+    enter: Option<unsafe fn(&mut input_ctx)>,
+    exit: Option<unsafe fn(&mut input_ctx)>,
     transitions: Option<&'static [input_transition]>,
 }
 
 impl input_state {
     const fn new(
         name: &'static CStr,
-        enter: Option<fn(&mut input_ctx)>,
-        exit: Option<fn(&mut input_ctx)>,
+        enter: Option<unsafe fn(&mut input_ctx)>,
+        exit: Option<unsafe fn(&mut input_ctx)>,
         transitions: Option<&'static [input_transition]>,
     ) -> Self {
         Self {
@@ -889,7 +889,7 @@ unsafe fn input_timer_fire(pane_id: PaneId) {
 }
 
 /// Start the timer.
-fn input_start_timer(ictx: &mut input_ctx) {
+unsafe fn input_start_timer(ictx: &mut input_ctx) {
     ictx.timer = None;
     if let Some(pid) = ictx.wp {
         ictx.timer = timer_add(
@@ -1030,20 +1030,20 @@ pub unsafe fn input_pending(ictx: *mut input_ctx) -> *mut evbuffer {
 /// Transition the parser to `next`, running the current state's exit hook
 /// and the new state's enter hook. The states themselves are `'static`,
 /// so the reference is always valid for the lifetime of the parser.
-fn input_set_state(ictx: &mut input_ctx, next: &'static input_state) {
+unsafe fn input_set_state(ictx: &mut input_ctx, next: &'static input_state) {
     if let Some(exit) = ictx.state.exit {
-        exit(ictx);
+        unsafe { exit(ictx) };
     }
 
     ictx.state = next;
 
     if let Some(enter) = ictx.state.enter {
-        enter(ictx);
+        unsafe { enter(ictx) };
     }
 }
 
 /// Parse data.
-fn input_parse(ictx: &mut input_ctx, buf: *const u8, len: usize) {
+unsafe fn input_parse(ictx: &mut input_ctx, buf: *const u8, len: usize) {
     let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
     // Cache the most recently observed parser state as a raw pointer so
     // we can detect state changes via cheap pointer-equality without
@@ -1092,14 +1092,14 @@ fn input_parse(ictx: &mut input_ctx, buf: *const u8, len: usize) {
         // Execute the handler, if any. Don't switch state if it
         // returns non-zero.
         if let Some(handler) = itr.as_ref().unwrap().handler
-            && handler(ictx) != 0
+            && unsafe { handler(ictx) } != 0
         {
             continue;
         }
 
         // And switch state, if necessary.
         if let Some(next) = itr.as_ref().unwrap().state {
-            input_set_state(ictx, next);
+            unsafe { input_set_state(ictx, next) };
         }
 
         // If not in ground state, save input.
@@ -1169,7 +1169,7 @@ pub unsafe fn input_parse_screen(
     unsafe {
         screen_write_start_callback(sctx, s, cb, arg);
     }
-    input_parse(ictx, buf, len);
+    unsafe { input_parse(ictx, buf, len) };
     unsafe {
         screen_write_stop(sctx);
     }
@@ -1302,7 +1302,7 @@ fn input_ground(ictx: &mut input_ctx) {
 /// End an unfinished UTF-8 character. Like most terminals and tmux 3.8,
 /// the invalid bytes show as the replacement character U+FFFD instead of
 /// being dropped.
-fn input_stop_utf8(ictx: &mut input_ctx) {
+unsafe fn input_stop_utf8(ictx: &mut input_ctx) {
     if ictx.utf8started != 0 {
         ictx.cell.cell.data = Utf8Data::new(*b"\xef\xbf\xbd", 3, 3, 1);
         unsafe { screen_write_collect_add(&raw mut ictx.ctx, &raw mut ictx.cell.cell) };
@@ -1311,8 +1311,8 @@ fn input_stop_utf8(ictx: &mut input_ctx) {
 }
 
 /// Output this character to the screen.
-fn input_print(ictx: &mut input_ctx) -> i32 {
-    input_stop_utf8(ictx); // can't be valid UTF-8
+unsafe fn input_print(ictx: &mut input_ctx) -> i32 {
+    unsafe { input_stop_utf8(ictx) }; // can't be valid UTF-8
 
     let set = if ictx.cell.set == 0 {
         ictx.cell.g0set
@@ -1387,9 +1387,9 @@ fn input_input(ictx: &mut input_ctx) -> i32 {
 }
 
 /// Execute C0 control sequence.
-fn input_c0_dispatch(ictx: &mut input_ctx) -> i32 {
+unsafe fn input_c0_dispatch(ictx: &mut input_ctx) -> i32 {
     let func = "input_c0_dispatch";
-    input_stop_utf8(ictx); // can't be valid UTF-8
+    unsafe { input_stop_utf8(ictx) }; // can't be valid UTF-8
 
     log_debug!("{}: '{}'", "input_c0_dispatch", ictx.ch as u8 as char);
 
@@ -1520,7 +1520,7 @@ fn input_esc_dispatch(ictx: &mut input_ctx) -> i32 {
 }
 
 /// Execute control sequence.
-fn input_csi_dispatch(ictx: &mut input_ctx) -> i32 {
+unsafe fn input_csi_dispatch(ictx: &mut input_ctx) -> i32 {
     let __func__ = "input_csi_dispatch";
     unsafe {
         let sctx = &raw mut ictx.ctx;
@@ -1815,7 +1815,7 @@ fn input_csi_dispatch(ictx: &mut input_ctx) -> i32 {
 }
 
 /// Handle CSI RM.
-fn input_csi_dispatch_rm(ictx: &mut input_ctx) {
+unsafe fn input_csi_dispatch_rm(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut ictx.ctx;
 
@@ -1834,7 +1834,7 @@ fn input_csi_dispatch_rm(ictx: &mut input_ctx) {
 }
 
 /// Handle CSI private RM.
-fn input_csi_dispatch_rm_private(ictx: &mut input_ctx) {
+unsafe fn input_csi_dispatch_rm_private(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut ictx.ctx;
         let gc = &raw mut ictx.cell.cell;
@@ -1878,7 +1878,7 @@ fn input_csi_dispatch_rm_private(ictx: &mut input_ctx) {
 }
 
 /// Handle CSI SM.
-fn input_csi_dispatch_sm(ictx: &mut input_ctx) {
+unsafe fn input_csi_dispatch_sm(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut ictx.ctx;
 
@@ -1898,7 +1898,7 @@ fn input_csi_dispatch_sm(ictx: &mut input_ctx) {
 }
 
 /// Handle CSI private SM.
-fn input_csi_dispatch_sm_private(ictx: &mut input_ctx) {
+unsafe fn input_csi_dispatch_sm_private(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut ictx.ctx;
         let gc = &raw mut ictx.cell.cell;
@@ -1973,7 +1973,7 @@ fn input_csi_dispatch_sm_graphics(ictx: &mut input_ctx) {
 }
 
 /// Handle CSI window operations.
-fn input_csi_dispatch_winops(ictx: &mut input_ctx) {
+unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx) {
     // SAFETY: `s` is set by screen_write_start*, `wp`/`w` come from
     // registry lookups, and the screen_* / input_reply! / notify_* /
     // server_* functions all expect raw pointers from the surrounding C
@@ -2067,7 +2067,7 @@ fn input_csi_dispatch_winops(ictx: &mut input_ctx) {
 }
 
 /// Helper for 256 colour SGR.
-fn input_csi_dispatch_sgr_256_do(ictx: &mut input_ctx, fgbg: i32, c: i32) -> i32 {
+unsafe fn input_csi_dispatch_sgr_256_do(ictx: &mut input_ctx, fgbg: i32, c: i32) -> i32 {
     unsafe {
         let gc = &raw mut ictx.cell.cell;
 
@@ -2091,15 +2091,15 @@ fn input_csi_dispatch_sgr_256_do(ictx: &mut input_ctx, fgbg: i32, c: i32) -> i32
 }
 
 /// Handle CSI SGR for 256 colours.
-fn input_csi_dispatch_sgr_256(ictx: &mut input_ctx, fgbg: i32, i: &mut u32) {
+unsafe fn input_csi_dispatch_sgr_256(ictx: &mut input_ctx, fgbg: i32, i: &mut u32) {
     let c = input_get(ictx, *i + 1, 0, -1);
-    if input_csi_dispatch_sgr_256_do(ictx, fgbg, c) != 0 {
+    if unsafe { input_csi_dispatch_sgr_256_do(ictx, fgbg, c) } != 0 {
         *i += 1;
     }
 }
 
 /// Helper for RGB colour SGR.
-fn input_csi_dispatch_sgr_rgb_do(
+unsafe fn input_csi_dispatch_sgr_rgb_do(
     ictx: *mut input_ctx,
     fgbg: i32,
     r: i32,
@@ -2125,17 +2125,17 @@ fn input_csi_dispatch_sgr_rgb_do(
 }
 
 /// Handle CSI SGR for RGB colours.
-fn input_csi_dispatch_sgr_rgb(ictx: &mut input_ctx, fgbg: i32, i: &mut u32) {
+unsafe fn input_csi_dispatch_sgr_rgb(ictx: &mut input_ctx, fgbg: i32, i: &mut u32) {
     let r = input_get(ictx, *i + 1, 0, -1);
     let g = input_get(ictx, *i + 2, 0, -1);
     let b = input_get(ictx, *i + 3, 0, -1);
-    if input_csi_dispatch_sgr_rgb_do(ictx, fgbg, r, g, b) != 0 {
+    if unsafe { input_csi_dispatch_sgr_rgb_do(ictx, fgbg, r, g, b) } != 0 {
         *i += 3;
     }
 }
 
 /// Handle CSI SGR with a ISO parameter.
-fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, idx: u32) {
+unsafe fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, idx: u32) {
     let __func__ = "input_csi_dispatch_sgr_colon";
     unsafe {
         let gc = &raw mut ictx.cell.cell;
@@ -2228,7 +2228,7 @@ fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, idx: u32) {
 }
 
 /// Handle CSI SGR.
-fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
+unsafe fn input_csi_dispatch_sgr(ictx: &mut input_ctx) {
     unsafe {
         let gc = &raw mut ictx.cell.cell;
 
@@ -2315,15 +2315,15 @@ fn input_end_bel(ictx: &mut input_ctx) -> i32 {
 }
 
 /// DCS string started.
-fn input_enter_dcs(ictx: &mut input_ctx) {
+unsafe fn input_enter_dcs(ictx: &mut input_ctx) {
     log_debug!("input_enter_dcs");
     input_clear(ictx);
-    input_start_timer(ictx);
+    unsafe { input_start_timer(ictx) };
     ictx.flags &= !input_flags::INPUT_LAST;
 }
 
 /// DCS terminator (ST) received.
-fn input_dcs_dispatch(ictx: &mut input_ctx) -> i32 {
+unsafe fn input_dcs_dispatch(ictx: &mut input_ctx) -> i32 {
     unsafe {
         let func = "input_dcs_dispatch";
 
@@ -2379,15 +2379,15 @@ fn input_dcs_dispatch(ictx: &mut input_ctx) -> i32 {
 }
 
 /// OSC string started.
-fn input_enter_osc(ictx: &mut input_ctx) {
+unsafe fn input_enter_osc(ictx: &mut input_ctx) {
     log_debug!("input_enter_osc");
     input_clear(ictx);
-    input_start_timer(ictx);
+    unsafe { input_start_timer(ictx) };
     ictx.flags &= !input_flags::INPUT_LAST;
 }
 
 /// OSC terminator (ST) received.
-fn input_exit_osc(ictx: &mut input_ctx) {
+unsafe fn input_exit_osc(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut ictx.ctx;
         let wp = pane_ptr_from_id(ictx.wp);
@@ -2460,15 +2460,15 @@ fn input_exit_osc(ictx: &mut input_ctx) {
 }
 
 /// APC string started.
-fn input_enter_apc(ictx: &mut input_ctx) {
+unsafe fn input_enter_apc(ictx: &mut input_ctx) {
     log_debug!("input_enter_apc");
     input_clear(ictx);
-    input_start_timer(ictx);
+    unsafe { input_start_timer(ictx) };
     ictx.flags &= !input_flags::INPUT_LAST;
 }
 
 /// APC terminator (ST) received.
-fn input_exit_apc(ictx: &mut input_ctx) {
+unsafe fn input_exit_apc(ictx: &mut input_ctx) {
     unsafe {
         let sctx = &raw mut ictx.ctx;
         let wp = pane_ptr_from_id(ictx.wp);
@@ -2487,15 +2487,15 @@ fn input_exit_apc(ictx: &mut input_ctx) {
 }
 
 /// Rename string started.
-fn input_enter_rename(ictx: &mut input_ctx) {
+unsafe fn input_enter_rename(ictx: &mut input_ctx) {
     log_debug!("input_enter_rename");
     input_clear(ictx);
-    input_start_timer(ictx);
+    unsafe { input_start_timer(ictx) };
     ictx.flags &= !input_flags::INPUT_LAST;
 }
 
 /// Rename terminator (ST) received.
-fn input_exit_rename(ictx: &mut input_ctx) {
+unsafe fn input_exit_rename(ictx: &mut input_ctx) {
     unsafe {
         let wp = pane_ptr_from_id(ictx.wp);
 
@@ -2536,7 +2536,7 @@ fn input_exit_rename(ictx: &mut input_ctx) {
 }
 
 /// Open UTF-8 character.
-fn input_top_bit_set(ictx: &mut input_ctx) -> i32 {
+unsafe fn input_top_bit_set(ictx: &mut input_ctx) -> i32 {
     unsafe {
         let sctx = &raw mut ictx.ctx;
         let ud = &mut ictx.utf8data;
@@ -2572,7 +2572,7 @@ fn input_top_bit_set(ictx: &mut input_ctx) -> i32 {
 }
 
 /// Reply to a colour request.
-fn input_osc_colour_reply(ictx: &mut input_ctx, n: u32, mut c: i32) {
+unsafe fn input_osc_colour_reply(ictx: &mut input_ctx, n: u32, mut c: i32) {
     unsafe {
         if c != -1 {
             c = colour_force_rgb(c);
@@ -2604,7 +2604,7 @@ fn input_osc_colour_reply(ictx: &mut input_ctx, n: u32, mut c: i32) {
 }
 
 /// Handle the OSC 4 sequence for setting (multiple) palette entries.
-fn input_osc_4(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_4(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         // char *copy, *s, *next = NULL;
         // long idx;
@@ -2659,7 +2659,7 @@ fn input_osc_4(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 8 sequence for embedding hyperlinks.
-fn input_osc_8(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_8(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let hl: *mut hyperlinks = (*ictx.ctx.s).hyperlinks.unwrap_or(null_mut());
         let gc = &raw mut ictx.cell.cell;
@@ -2789,7 +2789,7 @@ unsafe fn input_get_fg_control_client(wp: *mut window_pane) -> i32 {
 }
 
 /// Handle the OSC 10 sequence for setting and querying foreground colour.
-fn input_osc_10(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_10(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id(ictx.wp);
         let mut defaults: GridCell = zeroed();
@@ -2828,7 +2828,7 @@ fn input_osc_10(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 110 sequence for resetting foreground colour.
-fn input_osc_110(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_110(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id(ictx.wp);
 
@@ -2847,7 +2847,7 @@ fn input_osc_110(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 11 sequence for setting and querying background colour.
-fn input_osc_11(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_11(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id(ictx.wp);
         let mut defaults: GridCell = zeroed();
@@ -2887,7 +2887,7 @@ fn input_osc_11(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 111 sequence for resetting background colour.
-fn input_osc_111(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_111(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id(ictx.wp);
 
@@ -2905,7 +2905,7 @@ fn input_osc_111(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 12 sequence for setting and querying cursor colour.
-fn input_osc_12(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_12(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let wp = pane_ptr_from_id(ictx.wp);
         let mut c;
@@ -2931,7 +2931,7 @@ fn input_osc_12(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 112 sequence for resetting cursor colour.
-fn input_osc_112(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_112(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         if *p == b'\0' {
             // no arguments allowed
@@ -2941,7 +2941,7 @@ fn input_osc_112(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 133 sequence.
-fn input_osc_133(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_133(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let gd: *mut Grid = &raw mut *(*ictx.ctx.s).grid;
         let line = (*ictx.ctx.s).cy + (*gd).hsize;
@@ -2960,7 +2960,7 @@ fn input_osc_133(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 52 sequence for setting the clipboard.
-fn input_osc_52(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_52(ictx: &mut input_ctx, p: *const u8) {
     let __func__ = "input_osc_52";
 
     unsafe {
@@ -3043,7 +3043,7 @@ fn input_osc_52(ictx: &mut input_ctx, p: *const u8) {
 }
 
 /// Handle the OSC 104 sequence for unsetting (multiple) palette entries.
-fn input_osc_104(ictx: &mut input_ctx, p: *const u8) {
+unsafe fn input_osc_104(ictx: &mut input_ctx, p: *const u8) {
     unsafe {
         let mut bad = false;
         let mut redraw = false;

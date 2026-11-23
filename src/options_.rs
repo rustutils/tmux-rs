@@ -52,7 +52,7 @@ unsafe fn OPTIONS_IS_STRING(o: *const options_entry) -> bool {
 
 #[expect(non_snake_case)]
 #[inline]
-fn OPTIONS_IS_NUMBER(o: *const options_entry) -> bool {
+unsafe fn OPTIONS_IS_NUMBER(o: *const options_entry) -> bool {
     unsafe {
         !(*o).tableentry.is_null()
             && ((*(*o).tableentry).type_ == options_table_type::OPTIONS_TABLE_NUMBER
@@ -253,7 +253,7 @@ pub unsafe fn options_get_only_const(oo: *const options, name: &str) -> *const o
     }
 }
 
-pub fn options_get(oo: &mut options, name: &str) -> *mut options_entry {
+pub unsafe fn options_get(oo: &mut options, name: &str) -> *mut options_entry {
     #[expect(clippy::shadow_same)]
     let mut oo: *mut options = oo;
 
@@ -859,7 +859,7 @@ pub unsafe fn options_get_number_(oo: *const options, name: &str) -> i64 {
 
 /// panics if internally stored value is out of range of returned type
 #[track_caller]
-pub fn options_get_number___<T: TryFrom<i64>>(oo: &options, name: &str) -> T {
+pub unsafe fn options_get_number___<T: TryFrom<i64>>(oo: &options, name: &str) -> T {
     unsafe {
         let o = options_get_const(oo, name);
         if o.is_null() {

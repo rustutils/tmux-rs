@@ -172,6 +172,7 @@ fn ntop<'out>(src: &'_ [u8], dst: &'out mut [MaybeUninit<u8>]) -> Result<&'out m
     }
 
     dst[i] = MaybeUninit::new(b'\0');
+    // SAFETY: dst[..i] were all written above.
     Ok(unsafe { std::slice::from_raw_parts_mut(dst.as_mut_ptr().cast::<u8>(), i) })
 }
 

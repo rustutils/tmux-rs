@@ -27,10 +27,10 @@ pub Statements: Vec<ParsedCommand> = {
 pub Statement: Vec<ParsedCommand> = {
     => Vec::new(),
     HiddenAssignment => Vec::new(),
-    <arg1:Condition> => {
+    <arg1:Condition> => unsafe {
       if ps_scope_active(ps) { arg1 } else { drop(arg1); Vec::new() }
     },
-    <arg1:Commands> => {
+    <arg1:Commands> => unsafe {
       if ps_scope_active(ps) { arg1 } else { drop(arg1); Vec::new() }
     }
 };
@@ -92,7 +92,7 @@ pub IfOpen: bool = {
 };
 
 pub IfElse: () = {
-    "%else" => {
+    "%else" => unsafe {
       ps_set_scope(ps, !ps_scope_flag(ps));
     }
 };
@@ -106,7 +106,7 @@ pub IfElif: bool = {
 };
 
 pub IfClose: () = {
-    "%endif" => {
+    "%endif" => unsafe {
       ps_pop_scope(ps);
     }
 };
@@ -169,7 +169,7 @@ pub Elif: ElifResult = {
 };
 
 pub Commands: Vec<ParsedCommand> = {
-    <arg1:Command> => {
+    <arg1:Command> => unsafe {
       if !arg1.arguments.is_empty() && ps_scope_active(ps) {
         vec![arg1]
       } else {
@@ -185,7 +185,7 @@ pub Commands: Vec<ParsedCommand> = {
       arg1
     },
 
-    <mut arg1:Commands> <_arg2:";"> <arg3:Command> => {
+    <mut arg1:Commands> <_arg2:";"> <arg3:Command> => unsafe {
       if !arg3.arguments.is_empty() && ps_scope_active(ps) {
         arg1.push(arg3);
         arg1
@@ -199,19 +199,19 @@ pub Commands: Vec<ParsedCommand> = {
 };
 
 pub Command: ParsedCommand = {
-    Assignment => {
+    Assignment => unsafe {
         ParsedCommand {
             line: ps_current_line(ps),
             arguments: Vec::new(),
         }
     },
-    <_arg1:OptionalAssignment> <arg2:token> => {
+    <_arg1:OptionalAssignment> <arg2:token> => unsafe {
         ParsedCommand {
             line: ps_current_line(ps),
             arguments: vec![ParsedArgument::String(arg2)],
         }
     },
-    <_arg1:OptionalAssignment> <arg2:token> <mut arg3:Arguments> => {
+    <_arg1:OptionalAssignment> <arg2:token> <mut arg3:Arguments> => unsafe {
         arg3.insert(0, ParsedArgument::String(arg2));
         ParsedCommand {
             line: ps_current_line(ps),

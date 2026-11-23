@@ -683,6 +683,22 @@ unsafe fn outer() {
         assert_eq!(count_calls(tokens, &["with_paste".to_string()]), 2);
     }
 
+    /// No function hides unsafe code behind a safe signature, apart from
+    /// the listed exceptions.
+    #[test]
+    fn no_false_safe_functions() {
+        let root = workspace_root();
+        let stats = scan(&root).unwrap();
+        let found = false_safe(&stats, &read_exceptions(&root));
+        assert!(
+            found.is_empty(),
+            "functions with a safe signature and an unsafe block without a \
+             SAFETY comment: {found:?}\n\
+             Mark them unsafe fn, or add a SAFETY comment saying why every \
+             caller is fine."
+        );
+    }
+
     /// The per-file unsafe limits in metrics/unsafe-limits.txt hold.
     #[test]
     fn unsafe_limits_hold() {

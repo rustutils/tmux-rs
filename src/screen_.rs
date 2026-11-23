@@ -62,6 +62,8 @@ pub fn screen_placeholder() -> screen {
         saved_cx: 0,
         saved_cy: 0,
         saved_grid: None,
+        // SAFETY: GridCell is integers, bitflags and byte arrays, all zero
+        // is a valid value.
         saved_cell: unsafe { zeroed() },
         saved_flags: GridFlags::empty(),
         tabs: None,

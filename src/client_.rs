@@ -461,6 +461,7 @@ fn client_write_all(fd: i32, mut data: &[u8]) {
                     return;
                 }
                 let mut pfd = libc::pollfd { fd, events: libc::POLLOUT, revents: 0 };
+                // SAFETY: pfd is a single valid pollfd.
                 unsafe { libc::poll(&raw mut pfd, 1, left.as_millis().max(1) as i32) };
             }
             _ => return,

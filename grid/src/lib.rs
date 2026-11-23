@@ -608,6 +608,8 @@ impl Grid {
             GRID_DEFAULT_CELL
         } else {
             let mut gc: GridCell = GRID_DEFAULT_CELL;
+            // SAFETY: px is within the line's cells, checked above, and gc
+            // is a valid place to write the cell to.
             unsafe {
                 grid_get_cell1(&self.linedata[py as usize], px, &raw mut gc);
             }

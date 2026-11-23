@@ -278,7 +278,7 @@ pub unsafe fn paste_add(mut prefix: *const u8, data: *mut u8, size: usize) {
 
 /// Renames a paste buffer. If `newname` already exists, the old buffer with that
 /// name is freed first. The renamed buffer becomes non-automatic.
-pub fn paste_rename(oldname: Option<&str>, newname: Option<&str>) -> Result<(), String> {
+pub unsafe fn paste_rename(oldname: Option<&str>, newname: Option<&str>) -> Result<(), String> {
     unsafe {
         if oldname.is_none_or(str::is_empty) {
             return Err("no buffer".to_string());

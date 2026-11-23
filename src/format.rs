@@ -3437,7 +3437,7 @@ pub unsafe fn format_pretty_time(t: time_t, seconds: i32) -> *mut u8 {
 }
 
 /// Find a format entry.
-fn format_find(
+unsafe fn format_find(
     ft: *mut format_tree,
     key: *const u8,
     modifiers: format_modifiers,

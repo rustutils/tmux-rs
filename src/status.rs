@@ -88,7 +88,7 @@ unsafe fn status_prompt_add_typed_history(mut line: *mut u8) {
 }
 
 /// Load status prompt history from file.
-pub fn status_prompt_load_history() {
+pub unsafe fn status_prompt_load_history() {
     unsafe {
         let Some(history_file) = status_prompt_find_history_file() else {
             return;
