@@ -11,8 +11,10 @@ fn new_window_with_command() {
     tmux.new_session().run().assert_success();
     tmux.wait_ready(Duration::from_secs(5));
 
+    // exec, so the pane runs cat itself. Some /bin/sh (dash on Ubuntu)
+    // run a lone command as a child, and the pane would show sh.
     tmux.cmd()
-        .args(["new-window", "--", "cat"])
+        .args(["new-window", "--", "exec cat"])
         .run()
         .assert_success();
 

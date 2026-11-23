@@ -178,12 +178,17 @@ fn respawn_pane_after_exit() {
     }
 
     // Respawn the pane with a new command
+    // exec, so the pane runs cat itself. Some /bin/sh (dash on Ubuntu)
+    // run a lone command as a child, and the pane would show sh.
     tmux.cmd()
-        .args(["respawn-pane", "cat"])
+        .args(["respawn-pane", "exec cat"])
         .run()
         .assert_success();
-
-    std::thread::sleep(Duration::from_millis(300));
+    tmux.wait_for(
+        "#{pane_current_command}",
+        |c| c == "cat",
+        Duration::from_secs(5),
+    );
 
     let dead = tmux.query("#{pane_dead}");
     assert_eq!(dead, "0", "pane should be alive after respawn");
@@ -206,12 +211,17 @@ fn respawn_pane_kill_flag() {
     assert_eq!(dead, "0");
 
     // respawn-pane -k kills the existing process and starts a new one
+    // exec, so the pane runs cat itself. Some /bin/sh (dash on Ubuntu)
+    // run a lone command as a child, and the pane would show sh.
     tmux.cmd()
-        .args(["respawn-pane", "-k", "cat"])
+        .args(["respawn-pane", "-k", "exec cat"])
         .run()
         .assert_success();
-
-    std::thread::sleep(Duration::from_millis(300));
+    tmux.wait_for(
+        "#{pane_current_command}",
+        |c| c == "cat",
+        Duration::from_secs(5),
+    );
 
     let dead = tmux.query("#{pane_dead}");
     assert_eq!(dead, "0", "pane should be alive after respawn -k");

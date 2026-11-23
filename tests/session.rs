@@ -34,8 +34,10 @@ fn new_session_explicit_size() {
 #[test]
 fn new_session_with_command() {
     let mut tmux = TmuxTestHarness::new();
+    // exec, so the pane runs cat itself. Some /bin/sh (dash on Ubuntu)
+    // run a lone command as a child, and the pane would show sh.
     tmux.new_session()
-        .args(["--", "cat"])
+        .args(["--", "exec cat"])
         .run()
         .assert_success();
     tmux.wait_ready(Duration::from_secs(5));

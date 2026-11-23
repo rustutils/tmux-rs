@@ -499,12 +499,17 @@ fn respawn_window_after_process_exit() {
     }
 
     // Respawn the window with a new command
+    // exec, so the pane runs cat itself. Some /bin/sh (dash on Ubuntu)
+    // run a lone command as a child, and the pane would show sh.
     tmux.cmd()
-        .args(["respawn-window", "--", "cat"])
+        .args(["respawn-window", "--", "exec cat"])
         .run()
         .assert_success();
-
-    std::thread::sleep(Duration::from_millis(200));
+    tmux.wait_for(
+        "#{pane_current_command}",
+        |c| c == "cat",
+        Duration::from_secs(5),
+    );
 
     // Verify the pane is alive again
     let dead_after = tmux.query("#{pane_dead}");
