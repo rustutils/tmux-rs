@@ -17,8 +17,8 @@ pub static CMD_LIST_PANES_ENTRY: cmd_entry = cmd_entry {
     name: "list-panes",
     alias: Some("lsp"),
 
-    args: args_parse::new("asF:f:t:", 0, 0, None),
-    usage: "[-as] [-F format] [-f filter] [-t target-window]",
+    args: args_parse::new("aF:f:O:rst:", 0, 0, None),
+    usage: "[-asr] [-F format] [-f filter] [-O order][-t target-window]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -37,6 +37,11 @@ unsafe fn cmd_list_panes_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
         let target = cmdq_get_target(item);
         let s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         let wl = (*target).wl;
+
+        if let Err(e) = args_sort_criteria(args) {
+            cmdq_error!(item, "{e}");
+            return cmd_retval::CMD_RETURN_ERROR;
+        }
 
         if args_has(args, 'a') {
             cmd_list_panes_server(self_, item);
@@ -122,15 +127,25 @@ unsafe fn cmd_list_panes_window(
         }
         let filter = args_get_(args, 'f');
 
-        for (n, &wp) in (*winlink_window(wl)).panes.iter().enumerate() {
+        // The order was checked in cmd_list_panes_exec.
+        let criteria = args_sort_criteria(args).unwrap_or_default();
+        let w = winlink_window(wl);
+        if w.is_null() {
+            return;
+        }
+        let l = sort_get_panes_window(w, &criteria);
+        let n = l.len();
+        let c = cmdq_get_client(item);
+        for wp in l {
             let ft = format_create(
                 cmdq_get_client(item),
                 item,
                 FORMAT_NONE,
                 format_flags::empty(),
             );
+            // C sets line to the number of panes, not the line number.
             format_add!(ft, "line", "{n}");
-            format_defaults(ft, null_mut(), NonNull::new(s), NonNull::new(wl), NonNull::new(wp));
+            format_defaults(ft, c, NonNull::new(s), NonNull::new(wl), NonNull::new(wp));
 
             let flag;
             if !filter.is_null() {

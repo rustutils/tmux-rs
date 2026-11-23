@@ -447,3 +447,16 @@ fn literal_modifier() {
     test_format(&tmux, "[#{l:#{session_name}}]", "[#{session_name}]");
     test_format(&tmux, "[#{l:#{a#,b}}]", "[#{a#,b}]");
 }
+
+#[test]
+fn quote_modifiers() {
+    let tmux = setup();
+    for (name, value) in [("@a", "a b"), ("@b", "it's"), ("@c", "C-\\")] {
+        tmux.cmd().args(["set", name, value]).run().assert_success();
+    }
+    test_format(&tmux, "[#{q:@a}]", "[a\\ b]");
+    // a quotes as a command argument, s with single quotes.
+    test_format(&tmux, "[#{q|a:@a}]", "[\"a b\"]");
+    test_format(&tmux, "[#{q|a:@c}]", "[C-\\\\]");
+    test_format(&tmux, "[#{q|s:@b}]", "['it'\\''s']");
+}

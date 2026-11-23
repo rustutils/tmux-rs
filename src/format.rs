@@ -20,6 +20,7 @@ use crate::libc::{
     regex_t, regexec, regfree, strchr, strcmp, strcspn, strftime, strstr, strtod, tm,
 };
 use crate::*;
+use crate::sort::{SortCriteria, SortOrder};
 use crate::options_::*;
 
 bitflags::bitflags! {
@@ -80,6 +81,8 @@ bitflags::bitflags! {
         const FORMAT_CHARACTER = 0x10000;
         const FORMAT_COLOUR = 0x20000;
         const FORMAT_CLIENTS = 0x40000;
+        const FORMAT_QUOTE_SHELL_SQ = 0x20000000;
+        const FORMAT_QUOTE_ARGUMENTS = 0x400000;
     }
 }
 
@@ -3557,9 +3560,19 @@ unsafe fn format_find(
             found = format_quote_shell(saved);
             free_(saved);
         }
+        if modifiers.intersects(format_modifiers::FORMAT_QUOTE_SHELL_SQ) {
+            saved = found;
+            found = xmemdup_nul(&format_quote_shell_single(CStr::from_ptr(saved.cast()).to_bytes()));
+            free_(saved);
+        }
         if modifiers.intersects(format_modifiers::FORMAT_QUOTE_STYLE) {
             saved = found;
             found = format_quote_style(saved);
+            free_(saved);
+        }
+        if modifiers.intersects(format_modifiers::FORMAT_QUOTE_ARGUMENTS) {
+            saved = found;
+            found = args_escape(saved);
             free_(saved);
         }
         found
@@ -3568,15 +3581,23 @@ unsafe fn format_find(
 
 /// Unescape escaped characters.
 pub unsafe fn format_unescape(s: *const u8) -> *mut u8 {
-    // SAFETY: the caller passes a valid NUL-terminated string, and the new
-    // buffer has room for the result and its NUL.
-    unsafe {
-        let out = format_unescape_bytes(CStr::from_ptr(s.cast()).to_bytes());
-        let cp: *mut u8 = xmalloc(out.len() + 1).as_ptr().cast();
-        std::ptr::copy_nonoverlapping(out.as_ptr(), cp, out.len());
-        *cp.add(out.len()) = b'\0';
-        cp
+    // SAFETY: the caller passes a valid NUL-terminated string.
+    xmemdup_nul(&format_unescape_bytes(unsafe { CStr::from_ptr(s.cast()) }.to_bytes()))
+}
+
+/// Quotes a string with POSIX shell single quotes, for the q/s modifier.
+fn format_quote_shell_single(s: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len() + 2);
+    out.push(b'\'');
+    for &ch in s {
+        if ch == b'\'' {
+            out.extend_from_slice(b"'\\''");
+        } else {
+            out.push(ch);
+        }
     }
+    out.push(b'\'');
+    out
 }
 
 /// Removes the # escapes in front of `,#{}:` outside any #{}, for the l
@@ -3798,7 +3819,7 @@ pub unsafe fn format_build_modifiers(
             }
 
             // Now try single character with arguments.
-            if strchr(c!("mCNst=peq"), *cp as i32).is_null() {
+            if strchr(c!("mCLNPSst=peqW"), *cp as i32).is_null() {
                 break;
             }
             let mut c = *cp;
@@ -3968,22 +3989,77 @@ pub unsafe fn format_session_name(es: *mut format_expand_state, fmt: *const u8) 
     }
 }
 
-pub unsafe fn format_loop_sessions(es: *mut format_expand_state, fmt: *const u8) -> *mut u8 {
+/// The sort criteria for a loop modifier (S, W, P or L) and its argument.
+/// i, n, t and z pick the order, r reverses it. Sessions default to index,
+/// panes to creation, windows and clients to the order they are in.
+fn format_loop_sort(modifier: u8, arg: Option<&[u8]>) -> SortCriteria {
+    let Some(arg) = arg else {
+        let order = match modifier {
+            b'S' => SortOrder::Index,
+            b'P' => SortOrder::Creation,
+            _ => SortOrder::Order,
+        };
+        return SortCriteria::new(Some(order), false);
+    };
+    let has = |c: u8| arg.contains(&c);
+    let order = match modifier {
+        b'S' if has(b'i') => SortOrder::Index,
+        b'S' if has(b'n') => SortOrder::Name,
+        b'S' if has(b't') => SortOrder::Activity,
+        b'S' => SortOrder::Index,
+        b'P' if has(b'i') => SortOrder::Index,
+        b'P' if has(b'z') => SortOrder::Z,
+        b'P' => SortOrder::Creation,
+        _ if has(b'i') => SortOrder::Order,
+        _ if has(b'n') => SortOrder::Name,
+        _ if has(b't') => SortOrder::Activity,
+        _ => SortOrder::Order,
+    };
+    SortCriteria::new(Some(order), has(b'r'))
+}
+
+/// Loop over sessions.
+pub unsafe fn format_loop_sessions(
+    es: *mut format_expand_state,
+    fmt: *const u8,
+    criteria: &SortCriteria,
+) -> *mut u8 {
     unsafe {
         let ft = (*es).ft;
         let c = (*ft).client;
         let item = (*ft).item;
+        let mut all: *mut u8 = null_mut();
+        let mut active: *mut u8 = null_mut();
         let mut value: *mut u8 = xcalloc(1, 1).as_ptr().cast();
         let mut valuelen = 1;
 
-        for s in sessions_iter() {
+        if format_choose(es, fmt, &mut all, &mut active, 0) != 0 {
+            all = xstrdup(fmt).as_ptr();
+            active = null_mut();
+        }
+        let current = if (*ft).c.is_null() {
+            null_mut()
+        } else {
+            client_get_session((*ft).c)
+        };
+
+        let l = sort_get_sessions(criteria);
+        let n = l.len();
+        for (i, s) in l.into_iter().enumerate() {
             format_log1!(es, c!("format_loop_sessions"), "session loop: ${}", (*s).id,);
+            let use_ = if !active.is_null() && !current.is_null() && (*s).id == (*current).id {
+                active
+            } else {
+                all
+            };
             let nft = format_create(c, item, FORMAT_NONE, (*ft).flags);
+            format_add!(nft, "loop_index", "{i}");
+            format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
             format_defaults(nft, (*ft).c, NonNull::new(s), None, None);
             let mut next = zeroed();
             format_copy_state(&mut next, es, format_expand_flags::empty());
             next.ft = nft;
-            let expanded = format_expand1(&mut next, fmt);
+            let expanded = format_expand1(&mut next, use_);
             format_free(next.ft);
 
             valuelen += strlen(expanded);
@@ -3992,6 +4068,8 @@ pub unsafe fn format_loop_sessions(es: *mut format_expand_state, fmt: *const u8)
             free_(expanded);
         }
 
+        free_(active);
+        free_(all);
         value
     }
 }
@@ -4018,7 +4096,12 @@ pub unsafe fn format_window_name(es: *mut format_expand_state, fmt: *const u8) -
     }
 }
 
-pub unsafe fn format_loop_windows(es: *mut format_expand_state, fmt: *const u8) -> *mut u8 {
+/// Loop over the windows of the session.
+pub unsafe fn format_loop_windows(
+    es: *mut format_expand_state,
+    fmt: *const u8,
+    criteria: &SortCriteria,
+) -> *mut u8 {
     unsafe {
         let ft = (*es).ft;
         let c = (*ft).client;
@@ -4039,9 +4122,10 @@ pub unsafe fn format_loop_windows(es: *mut format_expand_state, fmt: *const u8) 
             active = null_mut();
         }
 
-        for &wl in (*(&raw mut (*fts).windows)).values() {
-            let w = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-            if w.is_null() { continue; }
+        let l = sort_get_winlinks_session(fts, criteria);
+        let n = l.len();
+        for (i, wl) in l.into_iter().enumerate() {
+            let w = winlink_window(wl);
             format_log1!(
                 es,
                 c!("format_loop_windows"),
@@ -4056,6 +4140,8 @@ pub unsafe fn format_loop_windows(es: *mut format_expand_state, fmt: *const u8) 
             };
 
             let nft = format_create(c, item, FORMAT_WINDOW as i32 | (*w).id as i32, (*ft).flags);
+            format_add!(nft, "loop_index", "{i}");
+            format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
             format_defaults(nft, (*ft).c, NonNull::new(fts), NonNull::new(wl), None);
             let mut next = zeroed();
             format_copy_state(&raw mut next, es, format_expand_flags::empty());
@@ -4076,7 +4162,11 @@ pub unsafe fn format_loop_windows(es: *mut format_expand_state, fmt: *const u8) 
 }
 
 /// Loop over panes.
-pub unsafe fn format_loop_panes(es: *mut format_expand_state, fmt: *const u8) -> *mut u8 {
+pub unsafe fn format_loop_panes(
+    es: *mut format_expand_state,
+    fmt: *const u8,
+    criteria: &SortCriteria,
+) -> *mut u8 {
     unsafe {
         let ft = (*es).ft;
         let c = (*ft).client;
@@ -4100,7 +4190,9 @@ pub unsafe fn format_loop_panes(es: *mut format_expand_state, fmt: *const u8) ->
 
         let mut next = MaybeUninit::<format_expand_state>::uninit();
         let next = next.as_mut_ptr();
-        for &wp in &(*w).panes {
+        let l = sort_get_panes_window(w, criteria);
+        let n = l.len();
+        for (i, wp) in l.into_iter().enumerate() {
             format_log1!(es, c!("format_loop_panes"), "pane loop: %{}", (*wp).id,);
             let use_ = if !active.is_null() && wp == window_active_pane(w) {
                 active
@@ -4108,6 +4200,8 @@ pub unsafe fn format_loop_panes(es: *mut format_expand_state, fmt: *const u8) ->
                 all
             };
             let nft = format_create(c, item, FORMAT_PANE as i32 | (*wp).id as i32, (*ft).flags);
+            format_add!(nft, "loop_index", "{i}");
+            format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
             format_defaults(
                 nft,
                 (*ft).c,
@@ -4135,7 +4229,11 @@ pub unsafe fn format_loop_panes(es: *mut format_expand_state, fmt: *const u8) ->
 }
 
 /// Loop over clients.
-pub unsafe fn format_loop_clients(es: *mut format_expand_state, fmt: *const u8) -> *mut u8 {
+pub unsafe fn format_loop_clients(
+    es: *mut format_expand_state,
+    fmt: *const u8,
+    criteria: &SortCriteria,
+) -> *mut u8 {
     unsafe {
         let ft = (*es).ft;
         let item = (*ft).item;
@@ -4145,7 +4243,9 @@ pub unsafe fn format_loop_clients(es: *mut format_expand_state, fmt: *const u8) 
         let mut value = xcalloc(1, 1).as_ptr();
         let mut valuelen = 1;
 
-        for c in clients_iter() {
+        let l = sort_get_clients(criteria);
+        let n = l.len();
+        for (i, c) in l.into_iter().enumerate() {
             format_log1!(
                 es,
                 c!("format_loop_clients"),
@@ -4153,6 +4253,8 @@ pub unsafe fn format_loop_clients(es: *mut format_expand_state, fmt: *const u8) 
                 _s((*c).name),
             );
             let nft = format_create(c, item, 0, (*ft).flags);
+            format_add!(nft, "loop_index", "{i}");
+            format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
             format_defaults(
                 nft,
                 c,
@@ -4388,6 +4490,7 @@ pub unsafe fn format_replace(
         let valuelen;
 
         let mut modifiers: format_modifiers = format_modifiers::empty();
+        let mut loop_sort = SortCriteria::new(Some(SortOrder::Order), false);
         let mut limit: i32 = 0;
         let mut width: i32 = 0;
 
@@ -4497,10 +4600,14 @@ pub unsafe fn format_replace(
                             b'q' => {
                                 if (*fm).argc < 1 {
                                     modifiers |= format_modifiers::FORMAT_QUOTE_SHELL;
+                                } else if !strchr(*(*fm).argv, b's' as i32).is_null() {
+                                    modifiers |= format_modifiers::FORMAT_QUOTE_SHELL_SQ;
                                 } else if !strchr(*(*fm).argv, b'e' as i32).is_null()
                                     || !strchr(*(*fm).argv, b'h' as i32).is_null()
                                 {
                                     modifiers |= format_modifiers::FORMAT_QUOTE_STYLE;
+                                } else if !strchr(*(*fm).argv, b'a' as i32).is_null() {
+                                    modifiers |= format_modifiers::FORMAT_QUOTE_ARGUMENTS;
                                 }
                             }
                             b'E' => modifiers |= format_modifiers::FORMAT_EXPAND,
@@ -4512,10 +4619,20 @@ pub unsafe fn format_replace(
                                     modifiers |= format_modifiers::FORMAT_SESSION_NAME;
                                 }
                             }
-                            b'S' => modifiers |= format_modifiers::FORMAT_SESSIONS,
-                            b'W' => modifiers |= format_modifiers::FORMAT_WINDOWS,
-                            b'P' => modifiers |= format_modifiers::FORMAT_PANES,
-                            b'L' => modifiers |= format_modifiers::FORMAT_CLIENTS,
+                            ch @ (b'S' | b'W' | b'P' | b'L') => {
+                                modifiers |= match ch {
+                                    b'S' => format_modifiers::FORMAT_SESSIONS,
+                                    b'W' => format_modifiers::FORMAT_WINDOWS,
+                                    b'P' => format_modifiers::FORMAT_PANES,
+                                    _ => format_modifiers::FORMAT_CLIENTS,
+                                };
+                                let arg = if (*fm).argc < 1 {
+                                    None
+                                } else {
+                                    Some(CStr::from_ptr((*(*fm).argv).cast()).to_bytes())
+                                };
+                                loop_sort = format_loop_sort(ch, arg);
+                            }
                             _ => (),
                         }
                     } else if (*fm).size == 2
@@ -4567,22 +4684,22 @@ pub unsafe fn format_replace(
 
                 // Is this a loop, comparison or condition?
                 if modifiers.intersects(format_modifiers::FORMAT_SESSIONS) {
-                    value = format_loop_sessions(es, copy);
+                    value = format_loop_sessions(es, copy, &loop_sort);
                     if value.is_null() {
                         break 'fail;
                     }
                 } else if modifiers.intersects(format_modifiers::FORMAT_WINDOWS) {
-                    value = format_loop_windows(es, copy);
+                    value = format_loop_windows(es, copy, &loop_sort);
                     if value.is_null() {
                         break 'fail;
                     }
                 } else if modifiers.intersects(format_modifiers::FORMAT_PANES) {
-                    value = format_loop_panes(es, copy);
+                    value = format_loop_panes(es, copy, &loop_sort);
                     if value.is_null() {
                         break 'fail;
                     }
                 } else if modifiers.intersects(format_modifiers::FORMAT_CLIENTS) {
-                    value = format_loop_clients(es, copy);
+                    value = format_loop_clients(es, copy, &loop_sort);
                     if value.is_null() {
                         break 'fail;
                     }
@@ -5577,5 +5694,53 @@ pub fn fuzz_format_expand(input: &[u8]) {
         let result = format_expand(ft, cstr.as_ptr());
         free_(result);
         format_free(ft);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loop_sort_defaults() {
+        let order = |m| format_loop_sort(m, None).order;
+        assert_eq!(order(b'S'), Some(SortOrder::Index));
+        assert_eq!(order(b'W'), Some(SortOrder::Order));
+        assert_eq!(order(b'P'), Some(SortOrder::Creation));
+        assert_eq!(order(b'L'), Some(SortOrder::Order));
+        assert!(!format_loop_sort(b'S', None).reversed);
+    }
+
+    #[test]
+    fn loop_sort_arguments() {
+        let sort = |m, arg: &str| format_loop_sort(m, Some(arg.as_bytes()));
+        assert_eq!(sort(b'S', "n").order, Some(SortOrder::Name));
+        assert_eq!(sort(b'S', "t").order, Some(SortOrder::Activity));
+        // i wins over n, n over t.
+        assert_eq!(sort(b'S', "ni").order, Some(SortOrder::Index));
+        assert_eq!(sort(b'W', "tn").order, Some(SortOrder::Name));
+        assert_eq!(sort(b'W', "i").order, Some(SortOrder::Order));
+        assert_eq!(sort(b'L', "x").order, Some(SortOrder::Order));
+        assert_eq!(sort(b'P', "z").order, Some(SortOrder::Z));
+        assert_eq!(sort(b'P', "zi").order, Some(SortOrder::Index));
+        assert_eq!(sort(b'P', "n").order, Some(SortOrder::Creation));
+        assert!(sort(b'S', "r").reversed);
+        assert_eq!(sort(b'S', "r").order, Some(SortOrder::Index));
+        assert!(!sort(b'W', "n").reversed);
+    }
+
+    #[test]
+    fn unescape() {
+        assert_eq!(format_unescape_bytes(b"a b"), b"a b");
+        assert_eq!(format_unescape_bytes(b"#,x#}"), b",x}");
+        assert_eq!(format_unescape_bytes(b"#{a#,b}"), b"#{a#,b}");
+        assert_eq!(format_unescape_bytes(b"x#"), b"x#");
+        assert_eq!(format_unescape_bytes(b"#a"), b"#a");
+    }
+
+    #[test]
+    fn quote_shell_single() {
+        assert_eq!(format_quote_shell_single(b"it's"), b"'it'\\''s'");
+        assert_eq!(format_quote_shell_single(b""), b"''");
     }
 }

@@ -17,8 +17,8 @@ pub static CMD_LIST_SESSIONS_ENTRY: cmd_entry = cmd_entry {
     name: "list-sessions",
     alias: Some("ls"),
 
-    args: args_parse::new("F:f:", 0, 0, None),
-    usage: "[-F format] [-f filter]",
+    args: args_parse::new("F:f:O:r", 0, 0, None),
+    usage: "[-r] [-F format] [-f filter] [-O order]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
     exec: cmd_list_sessions_exec,
@@ -40,7 +40,16 @@ unsafe fn cmd_list_sessions_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         }
         let filter = args_get(args, b'f');
 
-        for (n, s) in sessions_iter().map(|s| NonNull::new(s).unwrap()).enumerate() {
+        let criteria = match args_sort_criteria(args) {
+            Ok(criteria) => criteria,
+            Err(e) => {
+                cmdq_error!(item, "{e}");
+                return cmd_retval::CMD_RETURN_ERROR;
+            }
+        };
+
+        let c = cmdq_get_client(item);
+        for (n, s) in sort_get_sessions(&criteria).into_iter().enumerate() {
             let ft = format_create(
                 cmdq_get_client(item),
                 item,
@@ -48,7 +57,7 @@ unsafe fn cmd_list_sessions_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
                 format_flags::empty(),
             );
             format_add!(ft, "line", "{n}");
-            format_defaults(ft, null_mut(), Some(s), None, None);
+            format_defaults(ft, c, NonNull::new(s), None, None);
 
             let flag;
             if !filter.is_null() {

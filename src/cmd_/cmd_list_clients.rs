@@ -22,8 +22,8 @@ pub static CMD_LIST_CLIENTS_ENTRY: cmd_entry = cmd_entry {
     name: "list-clients",
     alias: Some("lsc"),
 
-    args: args_parse::new("F:f:t:", 0, 0, None),
-    usage: "[-F format] [-f filter] [-t target-session]",
+    args: args_parse::new("F:f:O:rt:", 0, 0, None),
+    usage: "[-F format] [-f filter] [-O order][-t target-session]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -53,8 +53,16 @@ unsafe fn cmd_list_clients_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
         }
         let filter = args_get(args, b'f');
 
-        let mut idx = 0;
-        for c in clients_iter() {
+        let criteria = match args_sort_criteria(args) {
+            Ok(criteria) => criteria,
+            Err(e) => {
+                cmdq_error!(item, "{e}");
+                return cmd_retval::CMD_RETURN_ERROR;
+            }
+        };
+
+        // The line number counts the clients skipped by -t, as in C.
+        for (idx, c) in sort_get_clients(&criteria).into_iter().enumerate() {
             if client_get_session(c).is_null() || (!s.is_null() && s != client_get_session(c)) {
                 continue;
             }
@@ -83,8 +91,6 @@ unsafe fn cmd_list_clients_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
             }
 
             format_free(ft);
-
-            idx += 1;
         }
 
         cmd_retval::CMD_RETURN_NORMAL

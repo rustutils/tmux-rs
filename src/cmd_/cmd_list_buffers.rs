@@ -18,8 +18,8 @@ pub static CMD_LIST_BUFFERS_ENTRY: cmd_entry = cmd_entry {
     name: "list-buffers",
     alias: Some("lsb"),
 
-    args: args_parse::new("F:f:", 0, 0, None),
-    usage: "[-F format] [-f filter]",
+    args: args_parse::new("F:f:O:r", 0, 0, None),
+    usage: "[-F format] [-f filter] [-O order]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
     exec: cmd_list_buffers_exec,
@@ -37,7 +37,15 @@ unsafe fn cmd_list_buffers_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
         }
         let filter = args_get(args, b'f');
 
-        for pb in paste_list() {
+        let criteria = match args_sort_criteria(args) {
+            Ok(criteria) => criteria,
+            Err(e) => {
+                cmdq_error!(item, "{e}");
+                return cmd_retval::CMD_RETURN_ERROR;
+            }
+        };
+
+        for pb in sort_get_buffers(&criteria) {
             let ft = format_create(
                 cmdq_get_client(item),
                 item,

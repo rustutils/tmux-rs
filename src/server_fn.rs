@@ -14,6 +14,7 @@
 use crate::compat::imsg::{IMSG_HEADER_SIZE, MAX_IMSGSIZE};
 use crate::libc::{WEXITSTATUS, WIFEXITED, close, gettimeofday};
 use crate::*;
+use crate::sort::{SortCriteria, SortOrder};
 use crate::options_::*;
 
 pub unsafe fn server_redraw_client(c: *mut client) {
@@ -450,15 +451,16 @@ pub unsafe fn server_newer_detached_session(s_loop: *mut session, s_out: *mut se
 pub unsafe fn server_destroy_session(s: *mut session) {
     unsafe {
         let detach_on_destroy = options_get_number_((*s).options, "detach-on-destroy");
+        let by_name = SortCriteria::new(Some(SortOrder::Name), false);
 
         let mut s_new: *mut session = if detach_on_destroy == 0 {
             server_find_session(s, server_newer_session)
         } else if detach_on_destroy == 2 {
             server_find_session(s, server_newer_detached_session)
         } else if detach_on_destroy == 3 {
-            session_previous_session(s)
+            session_previous_session(s, &by_name)
         } else if detach_on_destroy == 4 {
-            session_next_session(s)
+            session_next_session(s, &by_name)
         } else {
             null_mut()
         };

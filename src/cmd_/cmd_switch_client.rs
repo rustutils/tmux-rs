@@ -18,8 +18,8 @@ pub static CMD_SWITCH_CLIENT_ENTRY: cmd_entry = cmd_entry {
     name: "switch-client",
     alias: Some("switchc"),
 
-    args: args_parse::new("lc:EFnpt:rT:Z", 0, 0, None),
-    usage: "[-ElnprZ] [-c target-client] [-t target-session] [-T key-table]",
+    args: args_parse::new("lc:EFnO:pt:rT:Z", 0, 0, None),
+    usage: "[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]",
 
     flags: cmd_flag::CMD_READONLY.union(cmd_flag::CMD_CLIENT_CFLAG),
     exec: cmd_switch_client_exec,
@@ -76,14 +76,23 @@ unsafe fn cmd_switch_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
+        // -r also reverses the order, as in C.
+        let criteria = match args_sort_criteria(args) {
+            Ok(criteria) => criteria,
+            Err(e) => {
+                cmdq_error!(item, "{e}");
+                return cmd_retval::CMD_RETURN_ERROR;
+            }
+        };
+
         if args_has(args, 'n') {
-            s = session_next_session(client_get_session(tc));
+            s = session_next_session(client_get_session(tc), &criteria);
             if s.is_null() {
                 cmdq_error!(item, "can't find next session");
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         } else if args_has(args, 'p') {
-            s = session_previous_session(client_get_session(tc));
+            s = session_previous_session(client_get_session(tc), &criteria);
             if s.is_null() {
                 cmdq_error!(item, "can't find previous session");
                 return cmd_retval::CMD_RETURN_ERROR;

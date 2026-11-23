@@ -24,8 +24,8 @@ pub static CMD_LIST_WINDOWS_ENTRY: cmd_entry = cmd_entry {
     name: "list-windows",
     alias: Some("lsw"),
 
-    args: args_parse::new("F:f:at:", 0, 0, None),
-    usage: "[-a] [-F format] [-f filter] [-t target-session]",
+    args: args_parse::new("aF:f:O:rt:", 0, 0, None),
+    usage: "[-ar] [-F format] [-f filter] [-O order][-t target-session]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -38,62 +38,54 @@ pub static CMD_LIST_WINDOWS_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 };
 
+/// Lists the windows of the target session, or with -a of every session,
+/// sorted by -O and -r.
 unsafe fn cmd_list_windows_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     unsafe {
         let args = cmd_get_args(self_);
         let target = cmdq_get_target(item);
+        let c = cmdq_get_client(item);
 
-        if args_has(args, 'a') {
-            cmd_list_windows_server(self_, item);
-        } else {
-            cmd_list_windows_session(self_, NonNull::new_unchecked((*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut())), item, 0);
-        }
+        let mut template = args_get(args, b'F');
+        let filter = args_get(args, b'f');
 
-        cmd_retval::CMD_RETURN_NORMAL
-    }
-}
-
-unsafe fn cmd_list_windows_server(self_: *mut cmd, item: *mut cmdq_item) {
-    unsafe {
-        for s in sessions_iter().map(|s| NonNull::new(s).unwrap()) {
-            cmd_list_windows_session(self_, s, item, 1);
-        }
-    }
-}
-
-unsafe fn cmd_list_windows_session(
-    self_: *mut cmd,
-    s: NonNull<session>,
-    item: *mut cmdq_item,
-    type_: i32,
-) {
-    unsafe {
-        let args = cmd_get_args(self_);
-
-        let mut template = args_get_(args, 'F');
-        if template.is_null() {
-            match type_ {
-                0 => {
-                    template = LIST_WINDOWS_TEMPLATE;
-                }
-                1 => {
-                    template = LIST_WINDOWS_WITH_SESSION_TEMPLATE;
-                }
-                _ => (),
+        let criteria = match args_sort_criteria(args) {
+            Ok(criteria) => criteria,
+            Err(e) => {
+                cmdq_error!(item, "{e}");
+                return cmd_retval::CMD_RETURN_ERROR;
             }
-        }
-        let filter = args_get_(args, 'f');
+        };
 
-        for (n, &wl) in (*(&raw mut (*s.as_ptr()).windows)).values().enumerate() {
-            let wl = NonNull::new(wl).unwrap();
+        let l = if args_has(args, 'a') {
+            if template.is_null() {
+                template = LIST_WINDOWS_WITH_SESSION_TEMPLATE;
+            }
+            sort_get_winlinks(&criteria)
+        } else {
+            if template.is_null() {
+                template = LIST_WINDOWS_TEMPLATE;
+            }
+            let s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+            debug_assert!(!s.is_null(), "list-windows target has a session");
+            if s.is_null() {
+                return cmd_retval::CMD_RETURN_NORMAL;
+            }
+            sort_get_winlinks_session(s, &criteria)
+        };
+
+        let n = l.len();
+        for wl in l {
+            let s = (*wl).session.and_then(|id| session_from_id(id));
             let ft = format_create(
                 cmdq_get_client(item),
                 item,
                 FORMAT_NONE,
                 format_flags::empty(),
             );
+            // C sets line to the number of windows, not the line number.
             format_add!(ft, "line", "{n}");
-            format_defaults(ft, null_mut(), Some(s), Some(wl), None);
+            format_defaults(ft, c, s.and_then(NonNull::new), NonNull::new(wl), None);
 
             let flag;
             if !filter.is_null() {
@@ -111,5 +103,7 @@ unsafe fn cmd_list_windows_session(
 
             format_free(ft);
         }
+
+        cmd_retval::CMD_RETURN_NORMAL
     }
 }

@@ -641,6 +641,7 @@ pub unsafe fn window_create(sx: u32, sy: u32, mut xpixel: u32, mut ypixel: u32) 
         (*(&raw mut WINDOWS)).insert((*w_stable).id, w_stable);
 
         window_set_fill_character(NonNull::new_unchecked(w_stable));
+        gettimeofday(&raw mut (*w_stable).creation_time, null_mut());
         window_update_activity(NonNull::new_unchecked(w_stable));
 
         log_debug!(

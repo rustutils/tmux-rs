@@ -114,6 +114,16 @@ pub fn xstrdup__(str: &str) -> *mut u8 {
     out.push('\0');
     out.leak().as_mut_ptr()
 }
+/// Copies bytes into a new NUL-terminated buffer that `free_` releases.
+/// The bytes should not contain a NUL, C code would stop there.
+pub fn xmemdup_nul(bytes: &[u8]) -> *mut u8 {
+    debug_assert!(!bytes.contains(&0), "string with an inner NUL");
+    let mut out = Vec::with_capacity(bytes.len() + 1);
+    out.extend_from_slice(bytes);
+    out.push(0);
+    out.leak().as_mut_ptr()
+}
+
 pub fn xstrdup___(str: Option<&str>) -> *mut u8 {
     let Some(str) = str else {
         return std::ptr::null_mut();

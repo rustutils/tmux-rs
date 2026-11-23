@@ -14,6 +14,7 @@
 use std::time::Duration;
 
 use crate::*;
+use crate::sort::SortCriteria;
 use crate::options_::*;
 
 pub static mut SESSIONS: sessions = BTreeMap::new();
@@ -354,43 +355,42 @@ pub unsafe fn session_update_activity(s: *mut session, from: *mut timeval) {
     }
 }
 
-/// Find the next usable session.
-pub unsafe fn session_next_session(s: *mut session) -> *mut session {
-    unsafe {
-        let sessions = &*(&raw mut SESSIONS);
-        if sessions.is_empty() || !session_alive(s) {
-            return null_mut();
-        }
+/// The session before or after `s` in `l`, wrapping around. This is `s`
+/// itself when it is the only one, and null when `s` is not in `l`.
+fn session_neighbour(l: &[*mut session], s: *mut session, forward: bool) -> *mut session {
+    let Some(i) = l.iter().position(|&x| x == s) else {
+        debug_assert!(false, "session not found in sorted list");
+        return null_mut();
+    };
+    let n = l.len();
+    if forward { l[(i + 1) % n] } else { l[(i + n - 1) % n] }
+}
 
-        let name = &*(*s).name;
-        // Find the next session after this one in sorted order, wrapping around.
-        let s2 = sessions
-            .range::<str, _>((std::ops::Bound::Excluded(name), std::ops::Bound::Unbounded))
-            .next().map_or_else(|| *sessions.values().next().unwrap(), |(_, &v)| v);
-        if s2 == s {
+/// Find the next session in the order `criteria` sorts them, wrapping
+/// around. This is `s` itself when it is the only session.
+///
+/// # Safety
+/// `s` must be null or a valid session.
+pub unsafe fn session_next_session(s: *mut session, criteria: &SortCriteria) -> *mut session {
+    unsafe {
+        if (*(&raw const SESSIONS)).is_empty() || !session_alive(s) {
             return null_mut();
         }
-        s2
+        session_neighbour(&sort_get_sessions(criteria), s, true)
     }
 }
 
-/// Find the previous usable session.
-pub unsafe fn session_previous_session(s: *mut session) -> *mut session {
+/// Find the previous session in the order `criteria` sorts them, wrapping
+/// around. This is `s` itself when it is the only session.
+///
+/// # Safety
+/// `s` must be null or a valid session.
+pub unsafe fn session_previous_session(s: *mut session, criteria: &SortCriteria) -> *mut session {
     unsafe {
-        let sessions = &*(&raw mut SESSIONS);
-        if sessions.is_empty() || !session_alive(s) {
+        if (*(&raw const SESSIONS)).is_empty() || !session_alive(s) {
             return null_mut();
         }
-
-        let name = &*(*s).name;
-        // Find the previous session before this one in sorted order, wrapping around.
-        let s2 = sessions
-            .range::<str, _>((std::ops::Bound::Unbounded, std::ops::Bound::Excluded(name)))
-            .next_back().map_or_else(|| *sessions.values().next_back().unwrap(), |(_, &v)| v);
-        if s2 == s {
-            return null_mut();
-        }
-        s2
+        session_neighbour(&sort_get_sessions(criteria), s, false)
     }
 }
 

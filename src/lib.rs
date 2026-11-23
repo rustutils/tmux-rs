@@ -94,6 +94,8 @@ cfg_pub_mods! {
     mod server_client;
     mod server_fn;
     mod session_;
+    mod sort;
+    mod sort_get;
     mod spawn;
     mod status;
     mod style_;
@@ -188,6 +190,7 @@ use crate::{
     server_client::*,
     server_fn::*,
     session_::*,
+    sort_get::*,
     spawn::*,
     status::*,
     style_::*,
@@ -1203,6 +1206,7 @@ struct window {
     offset_timer: Option<TimerHandle>,
 
     activity_time: timeval,
+    creation_time: timeval,
 
     active: Option<PaneId>,
     /// Stack of last-visited panes (MRU order, head = most recent).

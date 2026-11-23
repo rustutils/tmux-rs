@@ -56,7 +56,7 @@
 10 src/cmd_/cmd_list_keys.rs
 8 src/cmd_/cmd_list_panes.rs
 2 src/cmd_/cmd_list_sessions.rs
-6 src/cmd_/cmd_list_windows.rs
+2 src/cmd_/cmd_list_windows.rs
 4 src/cmd_/cmd_load_buffer.rs
 2 src/cmd_/cmd_lock_server.rs
 2 src/cmd_/cmd_move_window.rs
@@ -136,6 +136,7 @@
 124 src/server_client.rs
 53 src/server_fn.rs
 77 src/session_.rs
+24 src/sort_get.rs
 6 src/spawn.rs
 98 src/status.rs
 56 src/style_.rs

@@ -17,6 +17,7 @@ mod pane;
 mod parity;
 mod pty_client;
 mod session;
+mod sort;
 mod source_and_misc;
 mod status_and_style;
 mod style;

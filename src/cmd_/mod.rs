@@ -669,7 +669,17 @@ pub unsafe fn cmd_list_copy(
     }
 }
 
-pub unsafe fn cmd_list_print(cmdlist: &cmd_list, escaped: c_int) -> *mut u8 {
+/// Flag for [`cmd_list_print`]: escape the separators for use in a shell.
+pub const CMD_LIST_PRINT_ESCAPED: c_int = 0x1;
+/// Flag for [`cmd_list_print`]: separate every command with a single semicolon,
+/// also between groups.
+pub const CMD_LIST_PRINT_NO_GROUPS: c_int = 0x2;
+
+/// Prints a command list as text. Groups are separated by a double
+/// semicolon unless `flags` has [`CMD_LIST_PRINT_NO_GROUPS`].
+pub unsafe fn cmd_list_print(cmdlist: &cmd_list, flags: c_int) -> *mut u8 {
+    let escaped = flags & CMD_LIST_PRINT_ESCAPED;
+    let no_groups = flags & CMD_LIST_PRINT_NO_GROUPS != 0;
     unsafe {
         let mut len = 1;
         let mut buf: *mut u8 = xcalloc(1, len).cast().as_ptr();
@@ -690,7 +700,7 @@ pub unsafe fn cmd_list_print(cmdlist: &cmd_list, escaped: c_int) -> *mut u8 {
             strlcat(buf, this, len);
 
             if let Some(&next) = cmdlist.list.get(idx + 1) {
-                let separator = if (*cmd).group != (*next).group {
+                let separator = if !no_groups && (*cmd).group != (*next).group {
                     double_separator
                 } else {
                     single_separator
