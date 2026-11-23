@@ -41,28 +41,6 @@ pub struct control_pane {
 pub type control_panes = BTreeMap<u32, Box<control_pane>>;
 
 
-pub struct control_sub_pane {
-    last: *mut u8,
-}
-pub type control_sub_panes = BTreeMap<(u32, u32), control_sub_pane>;
-
-pub struct control_sub_window {
-    last: *mut u8,
-}
-pub type control_sub_windows = BTreeMap<(u32, u32), control_sub_window>;
-
-pub struct control_sub {
-    pub name: *mut u8,
-    pub format: *mut u8,
-    pub type_: control_sub_type,
-    pub id: u32,
-
-    pub last: *mut u8,
-
-    pub panes: control_sub_panes,
-    pub windows: control_sub_windows,
-}
-pub type control_subs = BTreeMap<String, Box<control_sub>>;
 
 pub struct control_state {
     pub panes: control_panes,
@@ -82,7 +60,9 @@ pub struct control_state {
     /// Calloop write registration for the control client (or `out_fd`).
     pub write_io: Option<IoHandle>,
 
-    pub subs: control_subs,
+    /// Format subscriptions (refresh-client -B), checked once a second
+    /// while there are any.
+    pub subs: crate::monitor::MonitorSet,
     pub subs_timer: Option<TimerHandle>,
 
     /// How many %begin blocks are open. Notifications never go inside a
@@ -137,22 +117,6 @@ pub const CONTROL_MAXIMUM_AGE: u64 = 300000;
 pub const CONTROL_IGNORE_FLAGS: client_flag =
     client_flag::CONTROL_NOOUTPUT.union(CLIENT_UNATTACHEDFLAGS);
 
-
-pub unsafe fn control_free_sub(cs: *mut control_state, name: &str) {
-    unsafe {
-        if let Some(mut csub) = (*cs).subs.remove(name) {
-            for (_, csp) in std::mem::take(&mut csub.panes) {
-                free_(csp.last);
-            }
-            for (_, csw) in std::mem::take(&mut csub.windows) {
-                free_(csw.last);
-            }
-            free_(csub.last);
-            free_(csub.name);
-            free_(csub.format);
-        }
-    }
-}
 
 pub unsafe fn control_free_block(cs: *mut control_state, cb: *mut control_block) {
     unsafe {
@@ -877,7 +841,7 @@ pub unsafe fn control_start(c: *mut client) {
             read_io: None,
             write_output: tmux_event::Evbuffer::new(),
             write_io: None,
-            subs: BTreeMap::new(),
+            subs: crate::monitor::MonitorSet::new(),
             subs_timer: None,
             guard_depth: 0,
             deferred: Vec::new(),
@@ -947,10 +911,7 @@ pub unsafe fn control_stop(c: *mut client) {
         (*cs).read_io = None;
         (*cs).write_io = None;
 
-        let sub_keys: Vec<String> = (*cs).subs.keys().cloned().collect();
-        for key in sub_keys {
-            control_free_sub(cs, &key);
-        }
+        (*cs).subs = crate::monitor::MonitorSet::new();
         (*cs).subs_timer = None;
 
         for &cb in &(*cs).all_blocks {
@@ -965,247 +926,112 @@ pub unsafe fn control_stop(c: *mut client) {
     }
 }
 
-pub unsafe fn control_check_subs_session(c: *mut client, csub: *mut control_sub) {
+/// Writes %subscription-changed for a monitor change, as C's
+/// `control_sub_change`.
+///
+/// # Safety
+/// `c` and `s` must be valid, and a pane or window in the change still
+/// exist (it was just checked).
+unsafe fn control_sub_change(c: *mut client, s: *mut session, change: &crate::monitor::MonitorChange) {
+    use crate::monitor::MonitorKey;
     unsafe {
-        let s = client_get_session(c);
-
-        let ft = format_create_defaults(null_mut(), c, s, null_mut(), null_mut());
-        let value = format_expand(ft, (*csub).format);
-        format_free(ft);
-
-        if !(*csub).last.is_null() && libc::strcmp(value, (*csub).last) == 0 {
-            free_(value);
-            return;
-        }
-        control_notify_write!(
-            c,
-            "%subscription-changed {} ${} - - - : {}",
-            _s((*csub).name),
-            (*s).id,
-            _s(value),
-        );
-        free_((*csub).last);
-        (*csub).last = value;
-    }
-}
-
-pub unsafe fn control_check_subs_pane(c: *mut client, csub: *mut control_sub) {
-    unsafe {
-        let s = client_get_session(c);
-
-        let wp = window_pane_find_by_id((*csub).id);
-        if wp.is_null() || (*wp).fd == -1 {
-            return;
-        }
-        let w = window_pane_window(wp);
-
-        for &wl in &(*w).winlinks {
-            if (*wl).session != (if s.is_null() { None } else { Some(SessionId((*s).id)) }) {
-                continue;
-            }
-
-            let ft = format_create_defaults(null_mut(), c, s, wl, wp);
-            let value = format_expand(ft, (*csub).format);
-            format_free(ft);
-
-            let key = ((*wp).id, (*wl).idx as u32);
-            let csp = (*csub).panes.entry(key).or_insert_with(|| control_sub_pane { last: null_mut(),
-            });
-
-            if !csp.last.is_null() && libc::strcmp(value, csp.last) == 0 {
-                free_(value);
-                continue;
-            }
-            control_notify_write!(
-                c,
-                "%subscription-changed {} ${} @{} {} %{} : {}",
-                _s((*csub).name),
-                (*s).id,
-                (*w).id,
-                (*wl).idx,
-                (*wp).id,
-                _s(value),
-            );
-            free_(csp.last);
-            csp.last = value;
-        }
-    }
-}
-
-pub unsafe fn control_check_subs_all_panes(c: *mut client, csub: *mut control_sub) {
-    unsafe {
-        let s = client_get_session(c);
-
-        for &wl in (*(&raw mut (*s).windows)).values() {
-            let w = winlink_window(wl);
-            for &wp in &(*w).panes {
-                let ft = format_create_defaults(null_mut(), c, s, wl, wp);
-                let value = format_expand(ft, (*csub).format);
-                format_free(ft);
-
-                let key = ((*wp).id, (*wl).idx as u32);
-                let csp = (*csub).panes.entry(key).or_insert_with(|| control_sub_pane { last: null_mut(),
-                });
-
-                if !csp.last.is_null() && libc::strcmp(value, csp.last) == 0 {
-                    free_(value);
-                    continue;
+        let name = &change.name;
+        let value = &change.value;
+        match change.key {
+            MonitorKey::Pane { pane, index } => {
+                let wp = window_pane_find_by_id(pane);
+                if wp.is_null() {
+                    return;
                 }
+                let w = window_pane_window(wp);
                 control_notify_write!(
                     c,
                     "%subscription-changed {} ${} @{} {} %{} : {}",
-                    _s((*csub).name),
+                    name,
                     (*s).id,
                     (*w).id,
-                    (*wl).idx,
-                    (*wp).id,
-                    _s(value),
+                    index,
+                    pane,
+                    value,
                 );
-                free_(csp.last);
-                csp.last = value;
+            }
+            MonitorKey::Window { window, index } => {
+                control_notify_write!(
+                    c,
+                    "%subscription-changed {} ${} @{} {} - : {}",
+                    name,
+                    (*s).id,
+                    window,
+                    index,
+                    value,
+                );
+            }
+            MonitorKey::Session => {
+                control_notify_write!(
+                    c,
+                    "%subscription-changed {} ${} - - - : {}",
+                    name,
+                    (*s).id,
+                    value,
+                );
             }
         }
     }
 }
 
-pub unsafe fn control_check_subs_window(c: *mut client, csub: *mut control_sub) {
-    unsafe {
-        let s = client_get_session(c);
-
-        let w = window_find_by_id((*csub).id);
-        if w.is_null() {
-            return;
-        }
-
-        for &wl in &(*w).winlinks {
-            if (*wl).session != (if s.is_null() { None } else { Some(SessionId((*s).id)) }) {
-                continue;
-            }
-
-            let ft = format_create_defaults(null_mut(), c, s, wl, null_mut());
-            let value = format_expand(ft, (*csub).format);
-            format_free(ft);
-
-            let key = ((*w).id, (*wl).idx as u32);
-            let csw = (*csub).windows.entry(key).or_insert_with(|| control_sub_window { last: null_mut(),
-            });
-
-            if !csw.last.is_null() && libc::strcmp(value, csw.last) == 0 {
-                free_(value);
-                continue;
-            }
-            control_notify_write!(
-                c,
-                "%subscription-changed {} ${} @{} {} - : {}",
-                _s((*csub).name),
-                (*s).id,
-                (*w).id,
-                (*wl).idx,
-                _s(value),
-            );
-            free_(csw.last);
-            csw.last = value;
-        }
-    }
-}
-
-pub unsafe fn control_check_subs_all_windows(c: *mut client, csub: *mut control_sub) {
-    unsafe {
-        let s = client_get_session(c);
-
-        for &wl in (*(&raw mut (*s).windows)).values() {
-            let w = winlink_window(wl);
-
-            let ft = format_create_defaults(null_mut(), c, s, wl, null_mut());
-            let value = format_expand(ft, (*csub).format);
-            format_free(ft);
-
-            let key = ((*w).id, (*wl).idx as u32);
-            let csw = (*csub).windows.entry(key).or_insert_with(|| control_sub_window { last: null_mut(),
-            });
-
-            if !csw.last.is_null() && libc::strcmp(value, csw.last) == 0 {
-                free_(value);
-                continue;
-            }
-            control_notify_write!(
-                c,
-                "%subscription-changed {} ${} @{} {} - : {}",
-                _s((*csub).name),
-                (*s).id,
-                (*w).id,
-                (*wl).idx,
-                _s(value),
-            );
-            free_(csw.last);
-            csw.last = value;
-        }
-    }
-}
-
-/// Control subscription timer callback: check subs and re-arm.
+/// The subscription timer: checks every subscription of a control client
+/// and re-arms.
+///
+/// # Safety
+/// The client registry must hold valid clients.
 unsafe fn control_check_subs_timer_fire(cid: ClientId) {
     unsafe {
         let Some(c) = client_from_id(cid) else { return };
-        let Some(cs_box) = (*c).control_state.as_mut() else { return; };
+        let Some(cs_box) = (*c).control_state.as_mut() else { return };
         let cs = &raw mut **cs_box;
 
         log_debug!("{}: timer fired", "control_check_subs_timer");
-
-        // Re-arm for next check.
         (*cs).subs_timer = timer_add(
             Duration::from_secs(1),
             Box::new(move || control_check_subs_timer_fire(cid)),
         );
 
-        // The client may have lost its session before it exits (upstream
-        // 881bec95).
-        if client_get_session(c).is_null() {
+        // No session, no check. The client may have lost its session
+        // before it exits.
+        let s = client_get_session(c);
+        if s.is_null() {
             return;
         }
 
-        for csub_box in (*cs).subs.values_mut() {
-            let csub: *mut control_sub = &mut **csub_box;
-            match (*csub).type_ {
-                control_sub_type::CONTROL_SUB_SESSION => control_check_subs_session(c, csub),
-                control_sub_type::CONTROL_SUB_PANE => control_check_subs_pane(c, csub),
-                control_sub_type::CONTROL_SUB_ALL_PANES => control_check_subs_all_panes(c, csub),
-                control_sub_type::CONTROL_SUB_WINDOW => control_check_subs_window(c, csub),
-                control_sub_type::CONTROL_SUB_ALL_WINDOWS => {
-                    control_check_subs_all_windows(c, csub);
-                }
-            }
+        let items = crate::monitor::monitor_items(&(*cs).subs);
+        let observed = crate::monitor::monitor_observe(&items, c, s);
+        let changes = (*cs).subs.check(observed, crate::monitor::monitor_now());
+        for change in &changes {
+            control_sub_change(c, s, change);
         }
     }
 }
 
+/// Adds or replaces a subscription. Its first value is reported too.
+///
+/// # Safety
+/// `c` must be a valid client.
 pub unsafe fn control_add_sub(
     c: *mut client,
-    name: *mut u8,
-    type_: control_sub_type,
-    id: i32,
-    format: *const u8,
+    name: &str,
+    target: crate::monitor::MonitorTarget,
+    format: &str,
 ) {
     unsafe {
-        let Some(cs_box) = (*c).control_state.as_mut() else { return; };
-        let cs = &raw mut **cs_box;
-        let key = cstr_to_str(name).to_string();
-        control_free_sub(cs, &key);
-
-        let csub = Box::new(control_sub {
-            name: xstrdup(name).as_ptr(),
-            format: xstrdup(format).as_ptr(),
-            type_,
-            id: id as u32,
-            last: null_mut(),
-            panes: BTreeMap::new(),
-            windows: BTreeMap::new(),
-        });
-        (*cs).subs.insert(key, csub);
-
-        if (*cs).subs_timer.is_none() {
+        let Some(cs) = (*c).control_state.as_mut() else { return };
+        let flags = crate::monitor::MonitorFlags {
+            initial: true,
+            only_true: false,
+        };
+        cs.subs.add(name, target, format, flags);
+        if cs.subs_timer.is_none() {
             let cid = (*c).id;
-            (*cs).subs_timer = timer_add(
+            cs.subs_timer = timer_add(
                 Duration::from_secs(1),
                 Box::new(move || control_check_subs_timer_fire(cid)),
             );
@@ -1213,15 +1039,16 @@ pub unsafe fn control_add_sub(
     }
 }
 
-pub unsafe fn control_remove_sub(c: *mut client, name: *mut u8) {
+/// Removes a subscription, and stops the timer when none are left.
+///
+/// # Safety
+/// `c` must be a valid client.
+pub unsafe fn control_remove_sub(c: *mut client, name: &str) {
     unsafe {
-        let Some(cs_box) = (*c).control_state.as_mut() else { return; };
-        let cs = &raw mut **cs_box;
-
-        let key = cstr_to_str(name);
-        control_free_sub(cs, key);
-        if (*cs).subs.is_empty() {
-            (*cs).subs_timer = None;
+        let Some(cs) = (*c).control_state.as_mut() else { return };
+        cs.subs.remove(name);
+        if cs.subs.is_empty() {
+            cs.subs_timer = None;
         }
     }
 }

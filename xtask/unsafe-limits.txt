@@ -98,7 +98,7 @@
 128 src/cmd_parse.rs
 4 src/colour.rs
 2 src/compat/getopt.rs
-82 src/control.rs
+72 src/control.rs
 12 src/control_notify.rs
 26 src/environ_.rs
 36 src/events/mod.rs
@@ -123,6 +123,7 @@
 24 src/menu_.rs
 2 src/message_log/mod.rs
 95 src/mode_tree.rs
+6 src/monitor/mod.rs
 11 src/names.rs
 147 src/options_.rs
 13 src/osdep.rs

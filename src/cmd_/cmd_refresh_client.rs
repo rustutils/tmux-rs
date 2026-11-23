@@ -27,45 +27,21 @@ pub static CMD_REFRESH_CLIENT_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::zeroed(),
 };
 
-pub unsafe fn cmd_refresh_client_update_subscription(tc: *mut client, value: *const u8) {
+/// refresh-client -B: adds `name:what:format`, or removes `name`.
+///
+/// # Safety
+/// `tc` must be a valid client.
+pub unsafe fn cmd_refresh_client_update_subscription(tc: *mut client, value: &str) {
     unsafe {
-        let subid = -1;
-        let copy;
-        'out: {
-            let name = xstrdup(value).as_ptr();
-            copy = name;
-            let mut split = strchr(copy, ':' as i32);
-            if split.is_null() {
-                control_remove_sub(tc, copy);
-                break 'out;
-            }
-            *split = b'\0' as _;
-            split = split.add(1);
-
-            let what = split;
-            split = strchr(what, ':' as i32);
-            if split.is_null() {
-                break 'out;
-            }
-            *split = b'\0';
-            split = split.add(1);
-
-            let subtype = if streq_(what, "%*") {
-                control_sub_type::CONTROL_SUB_ALL_PANES
-            } else if sscanf(what.cast(), c"%%%d".as_ptr(), &subid) == 1 && subid >= 0 {
-                control_sub_type::CONTROL_SUB_PANE
-            } else if streq_(what, "@*") {
-                control_sub_type::CONTROL_SUB_ALL_WINDOWS
-            } else if sscanf(what.cast(), c"@%d".as_ptr(), &subid) == 1 && subid >= 0 {
-                control_sub_type::CONTROL_SUB_WINDOW
-            } else {
-                control_sub_type::CONTROL_SUB_SESSION
-            };
-            control_add_sub(tc, name, subtype, subid, split);
+        match crate::monitor::monitor_parse(value) {
+            Some((name, target, format)) => control_add_sub(tc, &name, target, &format),
+            // A plain name removes that subscription. So does anything
+            // else that does not parse, as in tmux 3.8: the whole value
+            // is taken as the name, so `foo:bogus:x` removes nothing and
+            // leaves `foo` alone. Copied on purpose, see "3.8 oddities
+            // copied on purpose" in the project notes.
+            None => control_remove_sub(tc, value),
         }
-
-        // out:
-        free_(copy);
     }
 }
 
@@ -332,7 +308,7 @@ pub unsafe fn cmd_refresh_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> 
                 }
                 for av in args_flag_values(args, b'B') {
                     if let args_value::String { string } = av {
-                        cmd_refresh_client_update_subscription(tc, string.as_ptr().cast());
+                        cmd_refresh_client_update_subscription(tc, &string.to_string_lossy());
                     }
                 }
                 return cmd_retval::CMD_RETURN_NORMAL;

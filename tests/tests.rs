@@ -24,6 +24,7 @@ mod sort;
 mod source_and_misc;
 mod status_and_style;
 mod style;
+mod subscriptions;
 mod terminal;
 mod timers;
 mod utf8;

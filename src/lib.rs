@@ -78,6 +78,7 @@ cfg_pub_mods! {
     mod layout_custom;
     mod layout_set;
     mod message_log;
+    mod monitor;
     mod menu_;
     mod mode_tree;
     mod names;
@@ -2495,16 +2496,6 @@ struct client {
     overlay_timer: Option<TimerHandle>,
 
     files: client_files,
-}
-
-/// Control mode subscription type.
-#[repr(i32)]
-enum control_sub_type {
-    CONTROL_SUB_SESSION,
-    CONTROL_SUB_PANE,
-    CONTROL_SUB_ALL_PANES,
-    CONTROL_SUB_WINDOW,
-    CONTROL_SUB_ALL_WINDOWS,
 }
 
 const KEY_BINDING_REPEAT: i32 = 0x1;
