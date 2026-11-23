@@ -186,7 +186,8 @@ fn new_session_environment_propagation() {
     conf.flush().unwrap();
 
     // Run tmux start with a fully cleared environment, cwd=/
-    let status = std::process::Command::new(&bin)
+    let mut command = std::process::Command::new(&bin);
+    command
         .args([
             "-S",
             tmux.socket_path(),
@@ -198,9 +199,13 @@ fn new_session_environment_propagation() {
         .env("TERM", "ansi")
         .env("TEST", "test1")
         .env("PATH", "1")
-        .env("SHELL", "/bin/sh")
-        .status()
-        .expect("failed to spawn tmux");
+        .env("SHELL", "/bin/sh");
+    // Keep sanitizer settings, so an ASAN build does not turn leak
+    // checking back on for this one process.
+    if let Some(asan) = std::env::var_os("ASAN_OPTIONS") {
+        command.env("ASAN_OPTIONS", asan);
+    }
+    let status = command.status().expect("failed to spawn tmux");
     assert!(status.success());
 
     std::thread::sleep(Duration::from_secs(1));
