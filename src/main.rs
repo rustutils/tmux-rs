@@ -45,6 +45,8 @@ fn main() {
     // TODO
     // passing null_mut() as env is ok for now because setproctitle call was removed
     // a similar shim will need to be added when that call is re-added
+    // SAFETY: args holds args.len() NUL terminated strings that stay alive
+    // until after tmux_main returns.
     unsafe {
         tmux_rs::tmux_main(
             args.len() as i32,
@@ -53,8 +55,8 @@ fn main() {
         );
     }
 
-    drop(
-        args.into_iter()
-            .map(|ptr| unsafe { CString::from_raw(ptr.cast()) }),
-    );
+    for ptr in args {
+        // SAFETY: each pointer came from CString::into_raw above.
+        drop(unsafe { CString::from_raw(ptr.cast()) });
+    }
 }

@@ -1,3 +1,17 @@
 # Functions that the false safe scan reports but that cannot be marked
 # unsafe, such as trait methods. One key per line, as printed by
 # tmux-metrics false-safe, with the reason in a comment.
+
+# Fuzz entry points. Like tests, they are called by a harness, single
+# threaded, and set up the global state they need themselves.
+src/cmd_parse.rs:fuzz_cmd_parse
+src/format.rs:fuzz_format_expand
+src/input.rs:fuzz_input_parse
+src/style_.rs:fuzz_style_parse
+src/utf8.rs:fuzz_utf8_decode
+
+# Clone and Drop cannot be unsafe. They rely on the Commands variant
+# holding a live, reference counted command list, which the public
+# variant cannot enforce. Goes away when cmd_list is owned (F8).
+src/lib.rs:args_value::clone
+src/lib.rs:args_value::drop
