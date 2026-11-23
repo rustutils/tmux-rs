@@ -19,7 +19,7 @@
 //!
 //! Key functions:
 //! - [`parse_window_name`]: Extracts a clean program name from a command string.
-//!   Strips quotes, `"exec "` prefix, leading whitespace/dashes (login shells),
+//!   Strips quotes, `"exec "` prefix, leading whitespace and dashes (login shells),
 //!   trailing non-printable characters, and takes the basename for absolute paths.
 //! - [`check_window_name`]: Timer-driven check that reformats the window name
 //!   using `automatic-rename-format` when the active pane changes.
@@ -161,7 +161,7 @@ unsafe fn format_window_name(w: *mut window) -> *const u8 {
 /// Extracts a clean program name from a command string.
 ///
 /// Processing steps:
-/// 1. Strip leading/trailing double quotes
+/// 1. Strip leading and trailing double quotes
 /// 2. Strip `"exec "` prefix
 /// 3. Skip leading spaces and dashes (login shell convention: `-bash`)
 /// 4. Take only the first word (up to first space)
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn relative_path_not_basenamed() {
-        // Relative paths are not stripped — only absolute paths starting with /
+        // Relative paths are not stripped, only absolute paths starting with /
         assert_eq!(parse("./foo"), "./foo");
     }
 

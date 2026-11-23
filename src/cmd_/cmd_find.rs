@@ -1406,9 +1406,9 @@ pub unsafe fn cmd_find_client(
         let copy = target.strip_suffix(':').unwrap_or(target);
 
         // Check name and path of each client. Use Iterator::find so the
-        // result is None when no client matches — a Rust for-loop would
+        // result is None when no client matches. A Rust for-loop would
         // leave the iteration variable pointing at the last visited client
-        // (TAILQ_FOREACH leaves NULL at end; for-loop does not).
+        // (TAILQ_FOREACH leaves NULL at the end but a for loop does not).
         let c = clients_iter()
             .find(|&c| {
                 if client_get_session(c).is_null() {

@@ -398,7 +398,7 @@ pub unsafe fn input_key_mode1(bev: *mut evbuffer, key: key_code) -> i32 {
             return input_key_vt10x(bev, key);
         }
 
-        // A regular key + Meta. In the absence of a standard to back this, we mimic what iTerm 2 does.
+        // A regular key with Meta. In the absence of a standard to back this, we mimic what iTerm 2 does.
         if (key & (KEYC_CTRL | KEYC_META)) == KEYC_META {
             return input_key_vt10x(bev, key);
         }

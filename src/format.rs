@@ -3172,7 +3172,7 @@ pub unsafe fn format_create(
 ) -> *mut format_tree {
     unsafe {
         let ft = xcalloc1::<format_tree>() as *mut format_tree;
-        // xcalloc returns zeroed memory; HashMap is not valid when zeroed,
+        // xcalloc returns zeroed memory. HashMap is not valid when zeroed,
         // so we must use ptr::write to avoid dropping the invalid value.
         std::ptr::write(&raw mut (*ft).tree, HashMap::new());
 
@@ -4999,7 +4999,7 @@ pub unsafe fn format_expand1(es: *mut format_expand_state, mut fmt: *const u8) -
             }
             fmt = fmt.add(1);
 
-            // Trailing '#' at end of format string — nothing follows.
+            // Trailing '#' at end of format string, so nothing follows.
             if *fmt == b'\0' {
                 break;
             }

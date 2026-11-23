@@ -328,7 +328,7 @@ pub unsafe fn control_vwrite(c: *mut client, args: std::fmt::Arguments) {
         control_write_bytes(c, data);
         control_write_bytes(c, b"\n");
         // `s` (the String) is dropped here, freeing the buffer.
-        // Do NOT call free_() — the memory is owned by the Rust String.
+        // Do NOT call free_() because the memory is owned by the Rust String.
     }
 }
 
@@ -747,7 +747,7 @@ unsafe fn control_write_fire(cid: ClientId) {
                 if std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock {
                     return;
                 }
-                // Write error — exit.
+                // Write error, so exit.
                 (*c).flags |= client_flag::EXIT;
                 return;
             }

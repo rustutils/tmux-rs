@@ -1,12 +1,12 @@
 //! Re-export shim for the `tmux-compat` crate.
 //!
-//! Most BSD/libc compatibility helpers (b64, vis/unvis, strlcat/strlcpy,
+//! Most BSD and libc compatibility helpers (b64, vis, unvis, strlcat, strlcpy,
 //! strtonum, reallocarray, recallocarray, closefrom, getpeereid,
 //! setproctitle, getprogname, fdforkpty, ntohll, systemd) live in the
 //! `tmux-compat` workspace crate. Re-exported here so existing
 //! `use crate::compat::*` call sites resolve unchanged.
 //!
-//! Two submodules remain in-tree: `imsg` / `imsg_buffer` are thin
+//! Two submodules remain in-tree: `imsg` and `imsg_buffer` are thin
 //! re-exports of the `tmux-protocol` crate (see `protocol/`), and
 //! `getopt` still uses `crate::*` and is easier to leave in place for
 //! now.

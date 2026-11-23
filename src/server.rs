@@ -155,7 +155,7 @@ pub unsafe fn server_create_socket(flags: client_flag) -> Result<c_int, String> 
     }
 }
 
-/// Tidy up every hour — self-rearming timer.
+/// Tidy up every hour with a self-rearming timer.
 unsafe fn server_tidy_fire() {
     unsafe {
         let t = get_timer();
@@ -491,7 +491,7 @@ pub unsafe fn server_add_accept(timeout: c_int) {
                 Box::new(|_fd, _events| server_accept_fire(true)),
             );
         } else {
-            // Back off — retry after timeout.
+            // Back off and retry after timeout.
             (*(&raw mut SERVER_EV_ACCEPT_TIMER)) = timer_add(
                 Duration::from_secs(timeout as u64),
                 Box::new(|| server_accept_fire(false)),
@@ -620,7 +620,7 @@ pub unsafe fn server_add_message_(args: std::fmt::Arguments) {
         (*(&raw mut MESSAGE_LOG)).push(msg_entry);
 
         let limit = options_get_number_(GLOBAL_OPTIONS, "message-limit") as u32;
-        // Evict old messages from the front — Drop handles String cleanup
+        // Evict old messages from the front. Drop handles String cleanup
         while let Some(first) = (*(&raw mut MESSAGE_LOG)).first() {
             if first.msg_num + limit >= MESSAGE_NEXT {
                 break;

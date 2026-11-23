@@ -251,7 +251,7 @@ pub unsafe fn cmd_pipe_pane_write_fire(pid: PaneId) {
 
         if (*wp).pipe_output.is_empty() {
             log_debug!("%%{} pipe empty", (*wp).id);
-            // Drop the write IoHandle — will be re-armed when new data arrives.
+            // Drop the write IoHandle. It will be re-armed when new data arrives.
             (*wp).pipe_write = None;
 
             if window_pane_destroy_ready(&*wp) {
@@ -261,7 +261,7 @@ pub unsafe fn cmd_pipe_pane_write_fire(pid: PaneId) {
     }
 }
 
-/// Error/EOF handler for the pipe fd.
+/// Error and EOF handler for the pipe fd.
 unsafe fn cmd_pipe_pane_error_fire(wp: *mut window_pane) {
     unsafe {
         log_debug!("%%{} pipe error", (*wp).id);

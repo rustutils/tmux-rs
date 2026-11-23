@@ -363,7 +363,7 @@ pub unsafe fn tmux_main(mut argc: i32, mut argv: *mut *mut u8, _env: *mut *mut u
 
     // Install the `log` crate adapter so that library code (including
     // extracted crates like `tmux-grid` and `tmux-utf8`) can use
-    // `log::debug!` / `log::info!` and have it flow through our existing
+    // `log::debug!` and `log::info!` and have it flow through our existing
     // log pipeline.
     tmux_log::log_install_logger();
 

@@ -1131,7 +1131,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // colour_join_rgb / colour_split_rgb
+    // colour_join_rgb and colour_split_rgb
     // ---------------------------------------------------------------
 
     #[test]
@@ -1397,7 +1397,7 @@ mod tests {
 
     #[test]
     fn test_colour_256to16_mid_range() {
-        // Index 244 (medium grey) maps to 7 (white/light grey)
+        // Index 244 (medium grey) maps to 7 (white or light grey)
         assert_eq!(colour_256to16(244), 7);
     }
 
@@ -1457,7 +1457,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // colour_palette_init / set / get / clear
+    // colour_palette_init, set, get and clear
     // ---------------------------------------------------------------
 
     #[test]
@@ -1640,7 +1640,7 @@ mod tests {
     /// split a multi-byte UTF-8 character, causing a panic.
     #[test]
     fn fromstring_multibyte_no_panic() {
-        // 6 bytes: NUL + ͊ (2 bytes) + ']' + ͊ (2 bytes) — looks like len > 5
+        // 6 bytes: NUL, ͊ (2 bytes), ']', ͊ (2 bytes). Looks like len > 5
         // but byte offset 5 falls inside the final ͊.
         let s = "\x00\u{034a}]\u{034a}";
         assert_eq!(s.len(), 6);

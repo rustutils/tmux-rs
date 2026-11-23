@@ -60,7 +60,7 @@ pub struct tmuxpeer {
     pub arg: *mut c_void,
 }
 
-/// Peer I/O callback — called when the peer fd is readable or writable.
+/// Peer I/O callback, called when the peer fd is readable or writable.
 pub unsafe fn proc_event_cb_fire(peer: *mut tmuxpeer, events: i16) {
     unsafe {
         let mut imsg: MaybeUninit<imsg> = MaybeUninit::<imsg>::uninit();
@@ -300,7 +300,7 @@ pub unsafe fn proc_set_signals(tp: *mut tmuxproc, signalcb: Option<unsafe fn(i32
 /// must NOT call `event_del`, because calloop's unregister path issues
 /// `epoll_ctl(DEL)` which operates on the **shared kernel epoll instance**,
 /// removing the parent server's signal registrations.  The child's copies of
-/// the signalfd/epoll file descriptors will be closed by `closefrom()` or
+/// the signalfd and epoll file descriptors will be closed by `closefrom()` or
 /// `exec()`'s CLOEXEC without affecting the parent.
 pub unsafe fn proc_clear_signals(tp: *mut tmuxproc, defaults: i32) {
     unsafe {
@@ -325,9 +325,9 @@ pub unsafe fn proc_clear_signals(tp: *mut tmuxproc, defaults: i32) {
             (*tp).ev_sigwinch = None;
         } else {
             // Forked child: reset signal dispositions to defaults.
-            // Do NOT drop the SignalHandles — their Drop impl would call
+            // Do NOT drop the SignalHandles. Their Drop impl would call
             // epoll_ctl(DEL) on the shared kernel epoll, corrupting the
-            // parent's event loop.  Forget them instead; the child will
+            // parent's event loop.  Forget them instead. The child will
             // exec() shortly and the leaked memory is harmless.
             std::mem::forget((*tp).ev_sigint.take());
             std::mem::forget((*tp).ev_sighup.take());
@@ -356,7 +356,7 @@ pub unsafe fn proc_clear_signals(tp: *mut tmuxproc, defaults: i32) {
 /// The event backend blocks signals (INT, HUP, CHLD, CONT, TERM, USR1,
 /// USR2, WINCH) so they are delivered to the signalfd rather than to
 /// signal handlers.  Forked children inherit this mask, and the callers'
-/// `sigprocmask(SIG_SETMASK, &oldset)` restores it — but `oldset` was
+/// `sigprocmask(SIG_SETMASK, &oldset)` restores it, but `oldset` was
 /// captured while the signals were blocked, so it keeps them blocked.
 ///
 /// Call this in forked children **after** restoring `oldset` to ensure the

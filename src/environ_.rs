@@ -20,7 +20,7 @@ use crate::options_::*;
 /// An environment variable store, backed by a sorted `BTreeMap`.
 ///
 /// Each entry has a name (ASCII key) and an optional value. Entries with
-/// `value = None` are "cleared" — they mask an inherited variable (like
+/// `value = None` are "cleared". They mask an inherited variable (like
 /// `unset`). Values are arbitrary byte strings since POSIX does not require
 /// environment variable values to be valid UTF-8.
 pub struct Environ {
@@ -97,7 +97,7 @@ pub fn environ_set_(env: &mut Environ, name: &str, flags: environ_flags, value: 
 }
 
 /// Clear an environment variable (set value to `None`). This masks an
-/// inherited variable — the entry exists but has no value.
+/// inherited variable: the entry exists but has no value.
 pub fn environ_clear(env: &mut Environ, name: &str) {
     if let Some(entry) = env.entries.get_mut(name) {
         entry.value = None;

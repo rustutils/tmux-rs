@@ -96,7 +96,7 @@ unsafe fn layout_prev_sibling(w: *mut window, lc: *mut layout_cell) -> *mut layo
 /// arena) is dropped.
 ///
 /// During Phase 2.5 the dual return is required because most callers
-/// still hold raw pointers; once Steps 4 and 5 migrate the field types
+/// still hold raw pointers. Once Steps 4 and 5 migrate the field types
 /// to `Option<LayoutCellId>`, the pointer return can go away.
 pub unsafe fn layout_create_cell_in(
     w: *mut window,
@@ -127,7 +127,7 @@ pub unsafe fn layout_create_cell_in(
 ///
 /// Walks the subtree clearing `wp.layout_cell` back-pointers and emptying
 /// each cell's `cells` Vec so subsequent traversals see no children. The
-/// underlying Box storage is **not** reclaimed here — the window's
+/// underlying Box storage is **not** reclaimed here. The window's
 /// `LayoutArena` owns every cell and reclaims them all in one shot when
 /// the window is dropped. This means a cell freed mid-window-lifetime
 /// lingers in its arena slot until window destruction, which is fine
@@ -1205,7 +1205,7 @@ pub unsafe fn layout_close_pane(wp: *mut window_pane) {
         // Remove the cell
         // Bridge: layout_destroy_cell mutates `*lcroot`. After step 5
         // flips window.layout_root to live inside the arena, we can't
-        // pass &raw mut to it directly — instead, route through a local
+        // pass &raw mut to it directly. Instead, route through a local
         // and propagate any change back via the accessor.
         let mut lcroot = window_layout_root(w);
         layout_destroy_cell(w, pane_layout_cell(wp), &raw mut lcroot);

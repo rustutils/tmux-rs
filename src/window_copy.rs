@@ -226,7 +226,7 @@ unsafe fn window_copy_drag_arm(data: *mut window_copy_mode_data, pane_id: PaneId
     }
 }
 
-/// Drag-scroll timer callback: scroll up/down while the mouse is at the pane edge.
+/// Drag-scroll timer callback: scroll up or down while the mouse is at the pane edge.
 unsafe fn window_copy_scroll_timer_fire(pane_id: PaneId) {
     unsafe {
         let wp = pane_ptr_from_id(Some(pane_id));
@@ -461,7 +461,7 @@ pub unsafe fn window_copy_free(wme: NonNull<window_mode_entry>) {
         std::ptr::drop_in_place(&raw mut (*data).dragtimer);
 
         free_((*data).searchmark);
-        // searchstr is Option<String>; data is xcalloc'd + free_()'d, not Box-managed,
+        // searchstr is Option<String>, but data is xcalloc'd and free_()'d, not Box-managed,
         // so drop the field manually before the backing memory is freed.
         std::ptr::drop_in_place(&raw mut (*data).searchstr);
         free_((*data).jumpchar);

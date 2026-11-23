@@ -1461,7 +1461,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_parse — pure function, no global state needed
+    // options_parse: pure function, no global state needed
     // ---------------------------------------------------------------
 
     #[test]
@@ -1517,7 +1517,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_create / options_free — lifecycle
+    // options_create and options_free: lifecycle
     // ---------------------------------------------------------------
 
     #[test]
@@ -1543,7 +1543,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_default — create option with default value from table
+    // options_default: create option with default value from table
     // ---------------------------------------------------------------
 
     #[test]
@@ -1657,7 +1657,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_get / options_set — get/set with parent lookup
+    // options_get and options_set: get and set with parent lookup
     // ---------------------------------------------------------------
 
     #[test]
@@ -1698,7 +1698,7 @@ mod tests {
             options_default(parent, oe);
             options_set_number(parent, "base-index", 7);
 
-            // Child has no "base-index" — should fall through to parent
+            // Child has no "base-index", so it should fall through to parent
             let child = options_create(parent);
             assert_eq!(options_get_number_(child, "base-index"), 7);
 
@@ -1736,7 +1736,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_to_string — value formatting
+    // options_to_string: value formatting
     // ---------------------------------------------------------------
 
     #[test]
@@ -1833,7 +1833,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_from_string — parse typed values
+    // options_from_string: parse typed values
     // ---------------------------------------------------------------
 
     #[test]
@@ -1931,7 +1931,7 @@ mod tests {
                 .unwrap();
             options_default(oo, oe);
 
-            // base-index max is i32::MAX — test exceeding it
+            // base-index max is i32::MAX, so test exceeding it
             let result = options_from_string(oo, oe, "base-index", c!("-1"), false);
             assert!(result.is_err(), "negative value should be rejected (min=0)");
 
@@ -1987,7 +1987,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_match — prefix matching
+    // options_match: prefix matching
     // ---------------------------------------------------------------
 
     #[test]
@@ -2073,7 +2073,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_map_name — name aliasing (color → colour)
+    // options_map_name: name aliasing (color → colour)
     // ---------------------------------------------------------------
 
     #[test]
@@ -2095,7 +2095,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_entries — iteration
+    // options_entries: iteration
     // ---------------------------------------------------------------
 
     #[test]
@@ -2117,7 +2117,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // options_get_only vs options_get — scope behavior
+    // options_get_only vs options_get: scope behavior
     // ---------------------------------------------------------------
 
     #[test]

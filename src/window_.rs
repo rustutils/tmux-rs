@@ -63,7 +63,7 @@ pub unsafe fn panes_iter() -> impl Iterator<Item = *mut window_pane> {
 ///
 /// Returns the registry-stable raw pointer, or `None` if no allocation exists
 /// for that ID. Note: the returned pointer may refer to a destroyed pane that
-/// hasn't yet been reclaimed — use `ALL_WINDOW_PANES` lookup if you need an
+/// hasn't yet been reclaimed. Use `ALL_WINDOW_PANES` lookup if you need an
 /// *alive* pane.
 pub unsafe fn pane_from_id(id: PaneId) -> Option<*mut window_pane> {
     unsafe {
@@ -75,7 +75,7 @@ pub unsafe fn pane_from_id(id: PaneId) -> Option<*mut window_pane> {
 
 /// Look up a pane by ID and return a shared reference, suitable for
 /// read-only access. See `client_ref` for the rationale and aliasing
-/// caveats — same convention applies.
+/// caveats. The same convention applies.
 #[expect(dead_code, reason = "Phase 2.4 hook; used opportunistically going forward")]
 pub unsafe fn pane_ref(id: PaneId) -> Option<&'static window_pane> {
     unsafe {
@@ -105,7 +105,7 @@ pub unsafe fn windows_iter() -> impl Iterator<Item = *mut window> {
 ///
 /// Returns the registry-stable raw pointer, or `None` if no allocation exists
 /// for that ID. Note: the returned pointer may refer to a destroyed window
-/// whose reference count has not yet drained — use `WINDOWS` lookup if you
+/// whose reference count has not yet drained. Use `WINDOWS` lookup if you
 /// need an *alive* window.
 pub unsafe fn window_from_id(id: WindowId) -> Option<*mut window> {
     unsafe {
@@ -117,7 +117,7 @@ pub unsafe fn window_from_id(id: WindowId) -> Option<*mut window> {
 
 /// Look up a window by ID and return a shared reference, suitable for
 /// read-only access. See `client_ref` for the rationale and aliasing
-/// caveats — same convention applies.
+/// caveats. The same convention applies.
 #[expect(dead_code, reason = "Phase 2.4 hook; used opportunistically going forward")]
 pub unsafe fn window_ref(id: WindowId) -> Option<&'static window> {
     unsafe {
@@ -307,7 +307,7 @@ pub unsafe fn pane_layout_cell(wp: *mut window_pane) -> *mut layout_cell {
 /// Write the pane's `layout_cell` field from a raw pointer.
 ///
 /// Stores `lc`'s arena-issued id. The cell **must** live in the pane's
-/// current window's arena — `cmd_swap_pane` reorders its assignments
+/// current window's arena. `cmd_swap_pane` reorders its assignments
 /// to satisfy this invariant for cross-window swaps. If `lc` is null,
 /// the field is cleared.
 pub unsafe fn pane_set_layout_cell(wp: *mut window_pane, lc: *mut layout_cell) {
@@ -694,7 +694,7 @@ unsafe fn window_destroy(w: *mut window) {
 
         // `name` is `Option<String>` and is dropped automatically by `Box`'s drop
         // when we remove the entry from `WINDOW_REGISTRY` below. Don't manually
-        // drop it here — that would double-free.
+        // drop it here because that would double-free.
 
         // Drop the Box from the registry. This deallocates the window.
         let _ = (*(&raw mut WINDOW_REGISTRY)).remove(&WindowId((*w).id));
@@ -1374,7 +1374,7 @@ pub unsafe fn window_pane_create(
         (*wp).fd = -1;
 
         // xcalloc'd zero bytes are NOT a guaranteed-valid `Option<PathBuf>::None`.
-        // Write None explicitly so reads of cwd/shell don't observe a "zeroed Some".
+        // Write None explicitly so reads of cwd and shell don't observe a "zeroed Some".
         std::ptr::write(&raw mut (*wp).cwd, None);
         std::ptr::write(&raw mut (*wp).shell, None);
         std::ptr::write(&raw mut (*wp).searchstr, None);
@@ -1459,7 +1459,7 @@ unsafe fn window_pane_destroy(wp: *mut window_pane) {
 
 /// Read callback: reads PTY data into `event_input`, forwards to pipe and
 /// control clients, then parses via the input state machine.
-/// Drops the read `IoHandle` after each read to implement backpressure —
+/// Drops the read `IoHandle` after each read to implement backpressure.
 /// `server_client_check_pane_buffer` re-arms it when ready.
 unsafe fn window_pane_read_fire(pid: PaneId) {
     unsafe {
@@ -1570,7 +1570,7 @@ unsafe fn window_pane_write_fire(pid: PaneId) {
                 if std::io::Error::last_os_error().kind() == std::io::ErrorKind::WouldBlock {
                     return;
                 }
-                // Write error — treat as pane exit.
+                // Write error, so treat it as pane exit.
                 (*wp).flags |= window_pane_flags::PANE_EXITED;
                 if window_pane_destroy_ready(&*wp) {
                     server_destroy_pane(wp, 1);
@@ -1591,7 +1591,7 @@ pub unsafe fn window_pane_set_event(wp: *mut window_pane) {
 
         (*wp).ictx = input_init(wp, &raw mut (*wp).event_output, &raw mut (*wp).palette);
 
-        // Arm read; write is armed on demand.
+        // Arm read. Write is armed on demand.
         window_pane_arm_read(wp);
     }
 }
@@ -1862,7 +1862,7 @@ pub unsafe fn window_pane_search(
 
             // Strip trailing whitespace from the row's text, then NUL-terminate
             // via CString for the C match functions. view_string_cells returns
-            // an owned Vec<u8>; the CString takes ownership and drops at end
+            // an owned Vec<u8>. The CString takes ownership and drops at end
             // of scope (no manual free).
             let mut line = (*s).grid.view_string_cells(0, i, screen_size_x(s));
             while let Some(&b) = line.last() {

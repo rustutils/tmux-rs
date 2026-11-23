@@ -22,11 +22,11 @@
 //!   The map is ordered by flag byte like the C tree, so flags print in the
 //!   same order as C tmux (`args_print`).
 //!   Each entry tracks a count (for repeated flags like `-vvv`) and optional values.
-//! - **Positional arguments**: a count + pointer to an array of [`args_value`].
+//! - **Positional arguments**: a count and a pointer to an array of [`args_value`].
 //!
 //! Values can be strings (`ARGS_STRING`), command blocks (`ARGS_COMMANDS`), or
 //! none (`ARGS_NONE`). The `args_escape` function handles shell quoting for
-//! display/serialization.
+//! display and serialization.
 
 use std::collections::BTreeMap;
 use std::ffi::CStr;
@@ -368,7 +368,7 @@ pub unsafe fn args_copy(args: *mut args, argc: i32, argv: *mut *mut u8) -> *mut 
 
 pub unsafe fn args_free(args: *mut args) {
     unsafe {
-        // Drop the Box; args_value Drop impls will free CStrings and cmd_lists.
+        // Drop the Box. The args_value Drop impls will free CStrings and cmd_lists.
         drop(Box::from_raw(args));
     }
 }

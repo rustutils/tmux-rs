@@ -419,7 +419,7 @@ unsafe fn job_write_fire(job: *mut job, fd: c_int) {
     }
 }
 
-/// Error/EOF handler for the job's fd.
+/// Error and EOF handler for the job's fd.
 unsafe fn job_error_fire(job: *mut job) {
     unsafe {
         log_debug!(

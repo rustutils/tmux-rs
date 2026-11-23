@@ -5,7 +5,7 @@
 //! keeps `use crate::compat::imsg::*` call sites throughout tmux-rs
 //! resolving unchanged.
 
-// `pub use` here is a transitional re-export surface; not every symbol
+// `pub use` here is a transitional re-export surface. Not every symbol
 // is consumed inside tmux-rs today, but all are part of the imsg API
 // the rest of the codebase is entitled to reach for.
 #![allow(unused_imports)]

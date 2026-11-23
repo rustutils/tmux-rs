@@ -280,7 +280,7 @@ pub unsafe fn window_client_init(
 
         let data: *mut window_client_modedata =
             xcalloc1::<window_client_modedata>() as *mut window_client_modedata;
-        // xcalloc returns zeroed memory; Vec is not valid when zeroed.
+        // xcalloc returns zeroed memory, and a Vec is not valid when zeroed.
         std::ptr::write(&raw mut (*data).item_list, Vec::new());
         (*wme.as_ptr()).data = data.cast();
         (*data).wp = pane_id_from_ptr(wp);

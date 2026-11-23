@@ -39,7 +39,7 @@ pub unsafe fn screen_free_titles(s: *mut screen) {
 
 /// Return a valid but uninitialized-equivalent screen placeholder.
 ///
-/// Every field is set to a safe zero/null/None value.  The caller must
+/// Every field is set to a safe zero, null or None value.  The caller must
 /// follow up with `screen_init` (which overwrites via `ptr::write`)
 /// before using the screen.  This exists so that struct literals can
 /// embed a `screen` field without `zeroed()`.
@@ -178,7 +178,7 @@ pub unsafe fn screen_free(s: *mut screen) {
     unsafe {
         (*s).sel = None;
         (*s).tabs = None;
-        // path and title: CString/Option<CString> drop automatically
+        // path and title: CString and Option<CString> drop automatically
 
         if (*s).write_list.is_some() {
             screen_write_free_list(s);
@@ -1043,7 +1043,7 @@ mod tests {
         unsafe {
             let s = make_screen(80, 24);
             screen_set_title(s, c"keep".as_ptr().cast());
-            screen_pop_title(s); // No stack — should be no-op.
+            screen_pop_title(s); // No stack, so this should be a no-op.
             let title = &(*s).title;
             assert_eq!(title.to_str().unwrap(), "keep");
             destroy_screen(s);
@@ -1089,7 +1089,7 @@ mod tests {
             screen_set_cursor_style(0, &mut style, &mut mode);
             assert_eq!(style, screen_cursor_style::SCREEN_CURSOR_DEFAULT);
 
-            // Style 1 → BLOCK + BLINKING
+            // Style 1 → BLOCK with BLINKING
             screen_set_cursor_style(1, &mut style, &mut mode);
             assert_eq!(style, screen_cursor_style::SCREEN_CURSOR_BLOCK);
             assert!(mode.contains(mode_flag::MODE_CURSOR_BLINKING));
@@ -1099,7 +1099,7 @@ mod tests {
             assert_eq!(style, screen_cursor_style::SCREEN_CURSOR_BLOCK);
             assert!(!mode.contains(mode_flag::MODE_CURSOR_BLINKING));
 
-            // Style 3 → UNDERLINE + BLINKING
+            // Style 3 → UNDERLINE with BLINKING
             screen_set_cursor_style(3, &mut style, &mut mode);
             assert_eq!(style, screen_cursor_style::SCREEN_CURSOR_UNDERLINE);
             assert!(mode.contains(mode_flag::MODE_CURSOR_BLINKING));
@@ -1109,7 +1109,7 @@ mod tests {
             assert_eq!(style, screen_cursor_style::SCREEN_CURSOR_UNDERLINE);
             assert!(!mode.contains(mode_flag::MODE_CURSOR_BLINKING));
 
-            // Style 5 → BAR + BLINKING
+            // Style 5 → BAR with BLINKING
             screen_set_cursor_style(5, &mut style, &mut mode);
             assert_eq!(style, screen_cursor_style::SCREEN_CURSOR_BAR);
             assert!(mode.contains(mode_flag::MODE_CURSOR_BLINKING));
@@ -1144,10 +1144,10 @@ mod tests {
             // On boundary.
             assert_ne!(screen_check_selection(s, 2, 1), 0);
             assert_ne!(screen_check_selection(s, 5, 3), 0);
-            // Outside — wrong column.
+            // Outside: wrong column.
             assert_eq!(screen_check_selection(s, 1, 2), 0);
             assert_eq!(screen_check_selection(s, 6, 2), 0);
-            // Outside — wrong row.
+            // Outside: wrong row.
             assert_eq!(screen_check_selection(s, 3, 0), 0);
             assert_eq!(screen_check_selection(s, 3, 4), 0);
 
@@ -1196,16 +1196,16 @@ mod tests {
             // Linear (non-rectangle) selection from (5,2) to (10,4) in vi mode.
             screen_set_selection(s, 5, 2, 10, 4, 0, modekey::MODEKEY_VI, &mut gc);
 
-            // Start line — before sx.
+            // Start line, before sx.
             assert_eq!(screen_check_selection(s, 4, 2), 0);
-            // Start line — at sx.
+            // Start line, at sx.
             assert_ne!(screen_check_selection(s, 5, 2), 0);
-            // Middle line — any column should be in selection.
+            // Middle line: any column should be in selection.
             assert_ne!(screen_check_selection(s, 0, 3), 0);
             assert_ne!(screen_check_selection(s, 79, 3), 0);
-            // End line — at ex.
+            // End line, at ex.
             assert_ne!(screen_check_selection(s, 10, 4), 0);
-            // End line — past ex.
+            // End line, past ex.
             assert_eq!(screen_check_selection(s, 11, 4), 0);
             // Outside rows.
             assert_eq!(screen_check_selection(s, 5, 1), 0);

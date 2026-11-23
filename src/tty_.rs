@@ -143,7 +143,7 @@ pub unsafe fn tty_set_size(tty: *mut tty, sx: u32, sy: u32, xpixel: u32, ypixel:
     }
 }
 
-/// TTY read callback — invoked when the client fd has data to read.
+/// TTY read callback, invoked when the client fd has data to read.
 unsafe fn tty_read_callback_fire(cid: ClientId) {
     unsafe {
         let Some(c) = client_from_id(cid) else { return };
@@ -229,7 +229,7 @@ pub unsafe fn tty_block_maybe(tty: *mut tty) -> i32 {
     }
 }
 
-/// TTY write callback — invoked when the client fd is writable.
+/// TTY write callback, invoked when the client fd is writable.
 unsafe fn tty_write_callback_fire(cid: ClientId) {
     unsafe {
         let Some(c) = client_from_id(cid) else { return };
@@ -311,7 +311,7 @@ pub unsafe fn tty_open(tty: *mut tty) -> Result<(), String> {
             EV_READ,
             Box::new(move |_fd, _events| tty_read_callback_fire(cid)),
         );
-        // in_ and out are owned Evbuffer fields — initialized by struct default.
+        // in_ and out are owned Evbuffer fields, initialized by struct default.
         // Reset them in case tty_open is called after a previous close.
         (*tty).in_ = evbuffer::new();
         (*tty).out = evbuffer::new();
@@ -548,9 +548,9 @@ pub unsafe fn tty_close(tty: *mut tty) {
         tty_stop_tty(tty);
 
         if (*tty).flags.intersects(tty_flags::TTY_OPENED) {
-            (*tty).in_ = evbuffer::new(); // drop + reset
+            (*tty).in_ = evbuffer::new(); // drop and reset
             (*tty).event_in = None;
-            (*tty).out = evbuffer::new(); // drop + reset
+            (*tty).out = evbuffer::new(); // drop and reset
             (*tty).event_out = None;
 
             tty_term_free((*tty).term);

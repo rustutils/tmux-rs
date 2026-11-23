@@ -35,7 +35,7 @@ pub enum tty_code_type {
     Flag,
 }
 
-/// Terminal capability value. Replaces the old `tty_code` struct+union pair.
+/// Terminal capability value. Replaces the old `tty_code` struct and union pair.
 #[derive(Clone)]
 pub enum tty_code {
     None,
@@ -708,7 +708,7 @@ pub unsafe fn tty_term_free(term: *mut tty_term) {
             }
         }
 
-        // Remove the Box from TTY_TERMS — Box drop handles name, codes Vec,
+        // Remove the Box from TTY_TERMS. Box drop handles name, codes Vec,
         // and the allocation itself.
         let terms = &mut *(&raw mut TTY_TERMS);
         let pos = terms.iter().position(|b| std::ptr::eq(&raw const **b, term));

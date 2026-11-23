@@ -688,7 +688,7 @@ const MOUSE_PARAM_BTN_OFF: u32 = 0x20;
 const MOUSE_PARAM_POS_OFF: u32 = 0x21;
 
 // Re-export shared types from `tmux-types`. These items were previously
-// defined here; the `pub use` keeps every call site in the tmux-rs tree
+// defined here. The `pub use` keeps every call site in the tmux-rs tree
 // working unchanged (`use crate::{GridAttr, ...}`), while future
 // extracted crates can import them directly from tmux-types without a
 // tmux-rs dependency.
@@ -720,8 +720,8 @@ const CELL_BORDERS: [u8; 13] = *b" xqlkmjwvtun~";
 const SIMPLE_BORDERS: [u8; 13] = *b" |-+++++++++.";
 const PADDED_BORDERS: [u8; 13] = [b' '; 13];
 
-// All Grid* types — the Grid struct, GridReader, the per-cell and
-// per-line data types, and the bitflag families — live in the
+// All Grid* types (the Grid struct, GridReader, the per-cell and
+// per-line data types, and the bitflag families) live in the
 // `tmux-grid` crate. Re-exported here so existing `use crate::{Grid,
 // GridCell, ...}` call sites throughout tmux-rs keep resolving.
 pub use tmux_grid::{
@@ -1093,12 +1093,12 @@ struct window_pane {
     options: *mut options,
 
     /// The pane's leaf cell in its window's layout arena. Resolved
-    /// through `pane_layout_cell` / `pane_set_layout_cell`. Phase 2.5
+    /// through `pane_layout_cell` and `pane_set_layout_cell`. Phase 2.5
     /// step 4 migrated this from `*mut layout_cell` to a stable
     /// arena-issued id.
     layout_cell: Option<LayoutCellId>,
     /// Pre-zoom snapshot of `layout_cell`. Resolved through
-    /// `pane_saved_layout_cell` / `pane_set_saved_layout_cell`. Lives
+    /// `pane_saved_layout_cell` and `pane_set_saved_layout_cell`. Lives
     /// in the same per-window arena as `layout_cell`.
     saved_layout_cell: Option<LayoutCellId>,
 
@@ -1212,9 +1212,9 @@ struct window {
     old_layout: Option<CString>,
     /// Owns every `layout_cell` for this window, plus the live root and
     /// the zoom-saved root as `Option<LayoutCellId>` slots. Reads and
-    /// writes go through `window_layout_root` / `window_set_layout_root`
-    /// (and the `saved_*` variants) — those resolve through the arena's
-    /// `root` / `saved_root` fields.
+    /// writes go through `window_layout_root` and `window_set_layout_root`
+    /// (and the `saved_*` variants). Those resolve through the arena's
+    /// `root` and `saved_root` fields.
     layout: LayoutArena,
 
     sx: u32,
@@ -1303,7 +1303,7 @@ enum layout_type {
 
 /// A node in the layout tree. Each window has a root `layout_cell` that
 /// recursively subdivides into LEFTRIGHT or TOPBOTTOM splits. Leaf cells
-/// (`LAYOUT_WINDOWPANE`) point to a `window_pane`; interior nodes hold child
+/// (`LAYOUT_WINDOWPANE`) point to a `window_pane`, and interior nodes hold child
 /// cells in a Vec.
 struct layout_cell {
     type_: layout_type,
@@ -1324,11 +1324,11 @@ struct layout_cell {
 
 /// Stable handle to a `layout_cell` stored in a [`LayoutArena`].
 ///
-/// Indices are scoped to the arena that issued them — passing a `LayoutCellId`
+/// Indices are scoped to the arena that issued them. Passing a `LayoutCellId`
 /// from one window's arena to another is a bug. Slots are recycled via the
 /// arena's free-list, so the same `LayoutCellId` may eventually refer to a
-/// different cell after a `remove`/`alloc` round-trip. We accept this for now
-/// because layout cells are always rebuilt en masse on resize/split, so stale
+/// different cell after a `remove` and `alloc` round-trip. We accept this for now
+/// because layout cells are always rebuilt en masse on resize and split, so stale
 /// IDs don't survive across operations in practice. If that ever stops being
 /// true, upgrade to a generational scheme (e.g. the `slotmap` crate).
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -1343,7 +1343,7 @@ pub struct LayoutCellId(u32);
 ///
 /// Slots are stored as `Option<Box<layout_cell>>` so that:
 /// 1. `remove` can leave a hole without shifting other indices, and
-/// 2. each cell has a stable heap address — Vec growth never moves the
+/// 2. each cell has a stable heap address. Vec growth never moves the
 ///    cell itself, only the slot pointer in the Vec. This is load-bearing
 ///    during the migration: code that still holds `*mut layout_cell` and
 ///    code that holds `LayoutCellId` can refer to the same live cell at
@@ -1359,7 +1359,7 @@ pub struct LayoutArena {
     free_list: Vec<u32>,
     /// The current root of the layout tree, if any.
     root: Option<LayoutCellId>,
-    /// A previously-saved layout root (used by zoom/restore). Replaces the
+    /// A previously-saved layout root (used by zoom and restore). Replaces the
     /// `window.saved_layout_root` raw-pointer field.
     saved_root: Option<LayoutCellId>,
 }
@@ -1400,7 +1400,7 @@ impl LayoutArena {
     /// Linear scan to find the id of the cell at heap address `ptr`,
     /// or `None` if no slot in this arena owns that pointer. Used by
     /// the Phase 2.5 step 4 migration to bridge raw `*mut layout_cell`
-    /// reads/writes through the arena. With at most a few dozen cells
+    /// reads and writes through the arena. With at most a few dozen cells
     /// per window, the linear scan is faster than maintaining a
     /// separate ptr→id index.
     pub(crate) fn id_of_ptr(&self, ptr: *const layout_cell) -> Option<LayoutCellId> {
@@ -1417,7 +1417,7 @@ impl LayoutArena {
         None
     }
 
-    /// Borrow a cell by id, or `None` if the slot is empty / out of range.
+    /// Borrow a cell by id, or `None` if the slot is empty or out of range.
     pub(crate) fn get(&self, id: LayoutCellId) -> Option<&layout_cell> {
         self.cells
             .get(id.0 as usize)
@@ -1435,13 +1435,13 @@ impl LayoutArena {
     /// across other arena operations as long as the slot is not removed.
     ///
     /// Takes `&self` because the returned pointer is the *mut to the
-    /// box's heap location — we don't need a mutable borrow on the arena
+    /// box's heap location. We don't need a mutable borrow on the arena
     /// to read that address. Callers that mutate through the returned
     /// pointer are observing the same aliasing model the rest of the
     /// codebase already operates under (raw pointers all the way down).
     pub(crate) fn get_ptr(&self, id: LayoutCellId) -> *mut layout_cell {
         match self.cells.get(id.0 as usize).and_then(|s| s.as_ref()) {
-            // The Box owns the cell; cast through *const to *mut to get
+            // The Box owns the cell. Cast through *const to *mut to get
             // the stable heap pointer without going through &mut.
             Some(b) => &**b as *const layout_cell as *mut layout_cell,
             None => std::ptr::null_mut(),
@@ -1449,7 +1449,7 @@ impl LayoutArena {
     }
 
     /// Remove a cell, dropping it and recycling the slot.
-    /// Does **not** recursively remove children — callers that want a full
+    /// Does **not** recursively remove children. Callers that want a full
     /// subtree teardown should walk children first or just `clear()` the
     /// whole arena (which is what window destruction does).
     pub(crate) fn remove(&mut self, id: LayoutCellId) -> bool {
@@ -1551,7 +1551,7 @@ mod layout_arena_tests {
         let (id, ptr) = a.alloc_with_ptr(dummy());
         assert!(!ptr.is_null());
         assert_eq!(a.get_ptr(id), ptr, "ptr stable across get_ptr");
-        // Allocate more to force a Vec realloc; ptr must remain valid.
+        // Allocate more to force a Vec realloc. ptr must remain valid.
         for _ in 0..64 {
             a.alloc(dummy());
         }
@@ -1925,8 +1925,8 @@ type MessageLog = Vec<MessageEntry>;
 
 /// Argument value (tagged union as Rust enum).
 ///
-/// Replaces the C-style `args_type` + `args_value_union` pair. The string variant
-/// owns its allocation via `CString`; the commands variant carries a refcounted
+/// Replaces the C-style `args_type` and `args_value_union` pair. The string variant
+/// owns its allocation via `CString`. The commands variant carries a refcounted
 /// `*mut cmd_list` and a lazily-populated cached printable form.
 enum args_value {
     #[cfg_attr(not(test), expect(dead_code, reason = "only the tests construct it"))]
@@ -1942,9 +1942,9 @@ enum args_value {
 
 impl args_value {
     /// Create a `String` variant by taking ownership of a raw `*mut u8` produced
-    /// by `xstrdup`/`xmalloc`. The pointer must be NUL-terminated. The returned
+    /// by `xstrdup` or `xmalloc`. The pointer must be NUL-terminated. The returned
     /// `args_value`'s `Drop` will `free()` the underlying allocation via the
-    /// `CString` destructor (the global allocator wraps libc malloc/free).
+    /// `CString` destructor (the global allocator wraps libc malloc and free).
     ///
     /// # Safety
     /// `ptr` must be a valid, NUL-terminated, malloc-allocated C string with
@@ -1955,7 +1955,7 @@ impl args_value {
         }
     }
 
-    /// Create a `Commands` variant. Does NOT bump the refcount; the caller is
+    /// Create a `Commands` variant. Does NOT bump the refcount. The caller is
     /// responsible for ensuring the cmdlist refcount accounts for this owner.
     fn new_commands(cmdlist: *mut cmd_list) -> Self {
         args_value::Commands {
@@ -1987,7 +1987,7 @@ impl Clone for args_value {
 
 impl Drop for args_value {
     fn drop(&mut self) {
-        // CString/OnceCell<CString> handle their own deallocation.
+        // CString and OnceCell<CString> handle their own deallocation.
         // Only the cmdlist needs manual cleanup.
         if let args_value::Commands { cmdlist, .. } = self {
             unsafe {
@@ -2512,7 +2512,7 @@ struct key_binding {
 }
 type key_bindings = BTreeMap<key_code, Box<key_binding>>;
 
-/// Key table — a named group of key bindings.
+/// Key table: a named group of key bindings.
 struct key_table {
     name: String,
     activity_time: timeval,

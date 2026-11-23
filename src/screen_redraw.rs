@@ -133,7 +133,7 @@ pub unsafe fn screen_redraw_pane_border(
             _ => (),
         }
 
-        // Left/right borders
+        // Left and right borders
         if pane_status == pane_status::PANE_STATUS_OFF {
             if screen_redraw_two_panes(&*window_pane_window(wp), 0) && split != 0 {
                 if (*wp).xoff == 0 && px == (*wp).sx && py <= (*wp).sy / 2 {
@@ -159,7 +159,7 @@ pub unsafe fn screen_redraw_pane_border(
             }
         }
 
-        // Top/bottom borders
+        // Top and bottom borders
         if pane_status == pane_status::PANE_STATUS_OFF {
             if screen_redraw_two_panes(&*window_pane_window(wp), 1) && split != 0 {
                 if (*wp).yoff == 0 && py == (*wp).sy && px <= (*wp).sx / 2 {

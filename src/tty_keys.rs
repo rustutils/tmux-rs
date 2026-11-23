@@ -1253,7 +1253,7 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
                     if (*tty).flags.intersects(tty_flags::TTY_TIMER) {
                         if (*tty).key_timer.is_none() {
                             // Timer was armed but has already fired (handle cleared
-                            // in the callback) — treat as expired.
+                            // in the callback), so treat it as expired.
                             expired = 1;
                             continue 'first_key;
                         }
@@ -2074,7 +2074,7 @@ unsafe fn tty_keys_extended_device_attributes(
         }
         // log_debug( c!("%s: received extended DA %.*s\0"), (*c).name, *size as i32, buf);
 
-        // tmp is NUL-terminated at index (i - 1); the trailing NUL was just written.
+        // tmp is NUL-terminated at index (i - 1). The trailing NUL was just written.
         let tt_bytes = &tmp[..i.saturating_sub(1)];
         (*c).term_type = Some(String::from_utf8_lossy(tt_bytes).into_owned());
 

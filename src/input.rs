@@ -48,16 +48,16 @@ struct input_cell {
     g1set: i32, // 1 if ACS
 }
 
-/// One CSI / DCS / OSC parameter parsed by [`input_split`].
+/// One CSI, DCS or OSC parameter parsed by [`input_split`].
 ///
 /// The terminal protocols allow a parameter slot to be empty (between
-/// adjacent semicolons), a decimal number, or — for sub-parameter SGR
-/// sequences like `38;2;255;128;0` written with colons (`38:2:255:…`)
-/// — a colon-delimited substring that is parsed lazily by the
+/// adjacent semicolons), a decimal number, or, for sub-parameter SGR
+/// sequences like `38;2;255;128;0` written with colons (`38:2:255:…`),
+/// a colon-delimited substring that is parsed lazily by the
 /// downstream handler.
 #[derive(Debug)]
 enum InputParam {
-    /// An empty slot — terminal sent `;;` or a leading/trailing `;`.
+    /// An empty slot: the terminal sent `;;` or a leading or trailing `;`.
     Missing,
     /// A decimal integer in `0..=i32::MAX`.
     Number(i32),
@@ -87,7 +87,7 @@ enum input_end_type {
 pub struct input_ctx {
     wp: Option<PaneId>,
     /// Output buffer for replies (terminal query responses).
-    /// Borrowed — not owned by `input_ctx`.
+    /// Borrowed, not owned by `input_ctx`.
     event: *mut evbuffer,
     ctx: screen_write_ctx,
     palette: *mut colour_palette,
@@ -105,14 +105,14 @@ pub struct input_ctx {
     param_buf: [u8; 64],
     param_len: usize,
 
-    /// Variable-length input buffer for OSC / DCS / APC / rename payloads.
+    /// Variable-length input buffer for OSC, DCS, APC and rename payloads.
     /// Invariant: always non-empty, with a trailing `0` byte at index
     /// `input_len`, so `as_ptr()` is a valid NUL-terminated C string.
     input_buf: Vec<u8>,
     input_len: usize,
     input_end: input_end_type,
 
-    /// Parsed CSI/DCS/OSC parameters. Capped at 24 entries; further
+    /// Parsed CSI, DCS and OSC parameters. Capped at 24 entries. Further
     /// parameters cause `input_split` to return -1 so the dispatch
     /// handler will skip the malformed sequence.
     param_list: Vec<InputParam>,
@@ -131,7 +131,7 @@ pub struct input_ctx {
     timer: Option<TimerHandle>,
 
     /// All input received since we were last in the ground state. Sent
-    /// to control clients on connection. Owned by the parser; exposed
+    /// to control clients on connection. Owned by the parser and exposed
     /// through `input_pending` as a `*mut evbuffer` for the (single)
     /// external consumer.
     since_ground: Evbuffer,
@@ -995,7 +995,7 @@ pub unsafe fn input_reset(ictx_ptr: *mut input_ctx, clear: i32) {
     let ictx = unsafe { &mut *ictx_ptr };
 
     let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
-    // SAFETY: `wp` comes from a registry lookup; checked for null below.
+    // SAFETY: `wp` comes from a registry lookup and is checked for null below.
     let wp = unsafe { pane_ptr_from_id(ictx.wp) };
 
     input_reset_cell(ictx);
@@ -1019,9 +1019,9 @@ pub unsafe fn input_reset(ictx_ptr: *mut input_ctx, clear: i32) {
     ictx.flags = input_flags::empty();
 }
 
-/// Return pending data — bytes received since the parser was last in the
+/// Return pending data: bytes received since the parser was last in the
 /// ground state. Exposed as `*mut evbuffer` for `cmd_capture_pane`'s
-/// `EVBUFFER_*` shim use; the buffer is owned by the parser, so the
+/// `EVBUFFER_*` shim use. The buffer is owned by the parser, so the
 /// caller must not free it.
 pub unsafe fn input_pending(ictx: *mut input_ctx) -> *mut evbuffer {
     unsafe { &raw mut (*ictx).since_ground }
@@ -1161,7 +1161,7 @@ pub unsafe fn input_parse_screen(
     if len == 0 {
         return;
     }
-    // SAFETY: caller passes a valid `*mut input_ctx`; exclusive borrow
+    // SAFETY: caller passes a valid `*mut input_ctx` with an exclusive borrow
     // for the duration of the parse.
     let ictx = unsafe { &mut *ictx_ptr };
     let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
@@ -1178,7 +1178,7 @@ pub unsafe fn input_parse_screen(
 /// Split [`input_ctx::param_buf`] into [`InputParam`] entries on `;`.
 ///
 /// Each entry is one of:
-/// - empty (`;;` or leading/trailing `;`) → [`InputParam::Missing`]
+/// - empty (`;;`, or a leading or trailing `;`) → [`InputParam::Missing`]
 /// - contains a `:` (sub-parameter list) → [`InputParam::String`]
 /// - otherwise a decimal integer → [`InputParam::Number`]
 ///
@@ -1248,13 +1248,13 @@ macro_rules! input_reply {
         crate::input::input_reply_($ictx, format_args!($($args),*))
     };
 }
-/// Reply to terminal query — writes response data to the output buffer.
+/// Reply to terminal query. Writes response data to the output buffer.
 fn input_reply_(ictx: &mut input_ctx, args: std::fmt::Arguments) {
     if ictx.event.is_null() {
         return;
     }
     let reply = CString::new(args.to_string()).unwrap();
-    // SAFETY: `ictx.event` is non-null and owned by the caller; valid
+    // SAFETY: `ictx.event` is non-null and owned by the caller, and valid
     // for the duration of this call. `_s` and `strlen` operate on the
     // CString-owned buffer, which is NUL-terminated.
     unsafe {
@@ -1368,8 +1368,8 @@ fn input_parameter(ictx: &mut input_ctx) -> i32 {
 
 /// Collect input string.
 fn input_input(ictx: &mut input_ctx) -> i32 {
-    // Cap content length at INPUT_BUF_LIMIT-1 so the buffer (content + NUL)
-    // stays within the limit. C tmux doubles `input_space`; Vec grows on
+    // Cap content length at INPUT_BUF_LIMIT-1 so the buffer (content and NUL)
+    // stays within the limit. C tmux doubles `input_space`. A Vec grows on
     // its own, so we just check the limit and let `Vec::push` handle
     // capacity.
     if ictx.input_len + 2 > INPUT_BUF_LIMIT {
@@ -1453,7 +1453,7 @@ fn input_esc_dispatch(ictx: &mut input_ctx) -> i32 {
         return 0;
     }
     // SAFETY: most of this body is screen_write_* / colour_palette_clear /
-    // table comparison work that uses raw pointers under the hood; field
+    // table comparison work that uses raw pointers under the hood. Field
     // accesses on `ictx` are safe but the FFI calls aren't.
     unsafe {
         let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
@@ -1974,7 +1974,7 @@ fn input_csi_dispatch_sm_graphics(ictx: &mut input_ctx) {
 
 /// Handle CSI window operations.
 unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx) {
-    // SAFETY: `s` is set by screen_write_start*, `wp`/`w` come from
+    // SAFETY: `s` is set by screen_write_start*, `wp` and `w` come from
     // registry lookups, and the screen_* / input_reply! / notify_* /
     // server_* functions all expect raw pointers from the surrounding C
     // tmux model.
@@ -2146,7 +2146,7 @@ unsafe fn input_csi_dispatch_sgr_colon(ictx: &mut input_ctx, idx: u32) {
         };
 
         // Parse `:`-delimited sub-parameters into a fixed-size buffer.
-        // Empty slots stay at -1; non-empty slots must parse as a
+        // Empty slots stay at -1. Non-empty slots must parse as a
         // non-negative i32 or we abort the whole sequence.
         let mut p: [i32; 8] = [-1; 8];
         let mut n: usize = 0;
@@ -3126,7 +3126,7 @@ pub fn fuzz_input_parse(data: &[u8]) {
     use std::sync::Once;
     static INIT: Once = Once::new();
 
-    // Leaked resources — these are created once and reused across fuzz iterations.
+    // Leaked resources. These are created once and reused across fuzz iterations.
     // This is intentional: the fuzzer runs millions of iterations and we don't want
     // allocation overhead per call. The input_ctx is reset between calls.
     static mut ICTX: *mut input_ctx = std::ptr::null_mut();
@@ -3201,7 +3201,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // input_init / input_free lifecycle
+    // input_init and input_free lifecycle
     // ---------------------------------------------------------------
 
     #[test]
@@ -3385,7 +3385,7 @@ mod tests {
         unsafe {
             let ictx = make_test_ctx();
 
-            // No parameters parsed yet — Vec starts empty.
+            // No parameters parsed yet, so the Vec starts empty.
             assert!((*ictx).param_list.is_empty());
 
             // Asking for index 0 with no params should return the default.
@@ -3876,7 +3876,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Byte-in / screen-state-out parser tests.
+    // Bytes in, screen state out parser tests.
     //
     // These tests drive bytes through `input_parse_screen` against an
     // isolated screen buffer (no PTY, no server, no window_pane). The
@@ -3889,12 +3889,12 @@ mod tests {
 
         /// Serializes parser tests. `screen_write` uses a process-global
         /// `SCREEN_WRITE_CITEM_FREELIST` (`src/screen_write.rs`) that isn't
-        /// thread-safe; without this lock parallel tests race on it and
+        /// thread-safe. Without this lock parallel tests race on it and
         /// corrupt the heap. Production tmux is single-threaded.
         static PARSE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
         fn lock() -> std::sync::MutexGuard<'static, ()> {
-            // Ignore poisoning — a panicked test left no global state behind.
+            // Ignore poisoning: a panicked test left no global state behind.
             PARSE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
         }
 
@@ -3906,7 +3906,7 @@ mod tests {
                 use crate::tmux::{GLOBAL_OPTIONS, GLOBAL_S_OPTIONS, GLOBAL_W_OPTIONS};
 
                 // wcwidth(3) needs a UTF-8 locale to size non-ASCII codepoints.
-                // tmux normally does this in tmux_main; tests must do it too.
+                // tmux normally does this in tmux_main, and tests must do it too.
                 use crate::libc::{LC_CTYPE, setlocale};
                 if setlocale(LC_CTYPE, c!("C.UTF-8")).is_null() {
                     setlocale(LC_CTYPE, c!("en_US.UTF-8"));
@@ -3929,7 +3929,7 @@ mod tests {
             });
         }
 
-        /// Owns an isolated `input_ctx` + `screen` + `colour_palette`. Drives
+        /// Owns an isolated `input_ctx`, `screen` and `colour_palette`. Drives
         /// bytes through `input_parse_screen` and exposes lightweight read
         /// accessors for assertions. Drop releases all resources.
         ///
@@ -4147,7 +4147,7 @@ mod tests {
             assert_eq!(p.line(0).trim_end(), "hello");
         }
 
-        // ---- CSI insert / delete ----
+        // ---- CSI insert and delete ----
 
         #[test]
         fn ich_inserts_blanks() {
@@ -4215,7 +4215,7 @@ mod tests {
         // ---- OSC ----
         //
         // Note: OSC 2 (set title) requires a window_pane with the
-        // `allow-set-title` option enabled — the parser is wp-gated for
+        // `allow-set-title` option enabled. The parser is wp-gated for
         // those paths, so they aren't testable through this harness.
         // OSC sequences that don't need wp can still be exercised, mainly
         // to confirm the parser stays in ground state after the dispatch
@@ -4224,7 +4224,7 @@ mod tests {
         #[test]
         fn osc_st_returns_to_ground() {
             let mut p = Parser::new(20, 5);
-            // OSC 0 (set title) — no-op without wp, but the parser must
+            // OSC 0 (set title) is a no-op without wp, but the parser must
             // still consume the entire sequence and accept text after.
             p.feed(b"\x1b]0;ignored\x1b\\");
             p.feed(b"hi");
@@ -4255,19 +4255,19 @@ mod tests {
             }
         }
 
-        // ---- Save / restore cursor ----
+        // ---- Save and restore cursor ----
 
         #[test]
         fn decsc_decrc_round_trip() {
             let mut p = Parser::new(80, 24);
-            p.feed(b"\x1b[5;7H\x1b7"); // move + DECSC
+            p.feed(b"\x1b[5;7H\x1b7"); // move and DECSC
             p.feed(b"\x1b[1;1H"); // move away
             assert_eq!(p.cursor(), (0, 0));
             p.feed(b"\x1b8"); // DECRC
             assert_eq!(p.cursor(), (6, 4));
         }
 
-        // ---- DECSET / DECRST modes ----
+        // ---- DECSET and DECRST modes ----
 
         #[test]
         fn decset_25_toggles_cursor_visibility() {

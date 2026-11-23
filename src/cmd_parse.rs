@@ -361,7 +361,7 @@ pub unsafe fn cmd_parse_build_command(
         let mut values: Vec<args_value> = Vec::new();
         *pr = cmd_parse_result::Err(CString::default());
 
-        // Check alias first — needs a mutable copy of arguments
+        // Check alias first. This needs a mutable copy of arguments
         {
             let mut alias_cmd = ParsedCommand {
                 line: cmd.line,
@@ -382,7 +382,7 @@ pub unsafe fn cmd_parse_build_command(
             if cmd_parse_expand_alias(&mut alias_cmd, pi, pr) {
                 return;
             }
-            // Alias expansion didn't happen — drop the copy
+            // Alias expansion didn't happen, so drop the copy
         }
 
         'out: {
@@ -623,8 +623,8 @@ pub unsafe fn cmd_parse_from_arguments(
 
 /// Fuzz-friendly wrapper: parses a byte slice as a tmux command buffer.
 /// Initializes globals once, then parses without executing. Returns true
-/// on successful parse, false on parse error. Either outcome is fine —
-/// we're looking for crashes/panics.
+/// on successful parse, false on parse error. Either outcome is fine:
+/// we're looking for crashes and panics.
 #[cfg(fuzzing)]
 pub fn fuzz_cmd_parse(input: &[u8]) {
     use std::sync::Once;
@@ -1396,7 +1396,7 @@ mod tests {
     use super::*;
 
     /// Initialize global state needed by the parser (options, etc.).
-    /// Safe to call multiple times — uses Once internally.
+    /// Safe to call multiple times because it uses Once internally.
     unsafe fn init_globals() {
         use std::sync::Once;
         static INIT: Once = Once::new();
@@ -1801,7 +1801,7 @@ mod tests {
         unsafe {
             let input = b"%hidden set -g status off\n";
             let result = parse_buffer(input);
-            // %hidden is a valid directive — may succeed or fail depending
+            // %hidden is a valid directive. It may succeed or fail depending
             // on parser state, but should not panic
             let _ = result;
         }
@@ -1851,7 +1851,7 @@ mod tests {
     #[test]
     fn escape_unicode_u() {
         unsafe {
-            // \u0041 = 'A' — all 4 hex digits must be consumed
+            // \u0041 = 'A'. All 4 hex digits must be consumed
             let result = parse(r#"display-message "\u0041""#);
             let printed = result.unwrap();
             assert!(printed.contains('A'), "expected 'A' in output, got: {printed}");
@@ -1861,7 +1861,7 @@ mod tests {
     #[test]
     fn escape_unicode_upper_u() {
         unsafe {
-            // \U00000041 = 'A' — all 8 hex digits must be consumed
+            // \U00000041 = 'A'. All 8 hex digits must be consumed
             let result = parse(r#"display-message "\U00000041""#);
             let printed = result.unwrap();
             assert!(printed.contains('A'), "expected 'A' in output, got: {printed}");
@@ -1871,7 +1871,7 @@ mod tests {
     #[test]
     fn escape_unicode_last_digit_matters() {
         unsafe {
-            // \u0042 = 'B' — before the fix, only 3 hex digits were consumed
+            // \u0042 = 'B'. Before the fix, only 3 hex digits were consumed
             // (NUL was written at s[3] instead of s[4]), so \u0042 would parse
             // as \u004 = U+0004 (control char), not U+0042 ('B').
             let result = parse(r#"display-message "\u0042""#);
@@ -1922,7 +1922,7 @@ mod tests {
     #[test]
     fn format_nested_braces() {
         unsafe {
-            // #{...#{...}...} — nested format braces in lexer
+            // #{...#{...}...}: nested format braces in lexer
             // Use a simpler nested format that doesn't need environ
             let input = b"%if #{==:1,1}\nset -g status on\n%endif\n";
             let result = parse_buffer(input);

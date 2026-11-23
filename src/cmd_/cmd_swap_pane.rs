@@ -108,7 +108,7 @@ unsafe fn cmd_swap_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
             options_set_parent(&mut *(*dst_wp).options, (*src_w).options);
             (*dst_wp).flags |= window_pane_flags::PANE_STYLECHANGED;
 
-            // Now both panes are in their new windows; write the swapped
+            // Now both panes are in their new windows, so write the swapped
             // layout_cell fields. Each pane gets the layout_cell that lives
             // in its current window's arena.
             pane_set_layout_cell(src_wp, dst_lc);

@@ -260,7 +260,7 @@ pub unsafe fn screen_write_free_list(s: *mut screen) {
             for cl in &list {
                 free_(cl.data);
             }
-            // Vec<screen_write_cline> dropped here — items Vecs dropped automatically
+            // Vec<screen_write_cline> dropped here, which drops the items Vecs automatically
         }
     }
 }

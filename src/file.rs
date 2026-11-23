@@ -115,7 +115,7 @@ pub unsafe fn file_create_with_client(
             cf_ptr = &mut **(*c).files.get_mut(&stream).unwrap() as *mut client_file;
             (*c).references += 1;
         } else {
-            // No tree to insert into; leak the Box and return raw pointer.
+            // No tree to insert into, so leak the Box and return a raw pointer.
             // The caller must ensure cleanup.
             cf_ptr = Box::into_raw(cf);
         }
@@ -806,7 +806,7 @@ pub unsafe fn file_write_close(files: *mut client_files, imsg: *mut imsg) {
     }
 }
 
-/// Read error/EOF handler: sends `MSG_READ_DONE`, cleans up the file.
+/// Read error and EOF handler: sends `MSG_READ_DONE`, cleans up the file.
 unsafe fn file_read_error_fire(cf: *mut client_file) {
     unsafe {
         log_debug!("read error file {}", (*cf).stream);

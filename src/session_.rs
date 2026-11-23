@@ -54,7 +54,7 @@ pub unsafe fn session_from_id(id: SessionId) -> Option<*mut session> {
 
 /// Look up a session by ID and return a shared reference, suitable for
 /// read-only access. See `client_ref` for the rationale and aliasing
-/// caveats — same convention applies.
+/// caveats. The same convention applies.
 #[expect(dead_code, reason = "Phase 2.4 hook; used opportunistically going forward")]
 pub unsafe fn session_ref(id: SessionId) -> Option<&'static session> {
     unsafe {
@@ -241,8 +241,8 @@ unsafe fn session_free_deferred(sid: SessionId) {
             options_free((*s).options);
             (*s).name = Cow::Borrowed("");
             // Drop the Box from the registry. Box drop runs Drop on all fields,
-            // including `cwd: Option<PathBuf>`. (The Vec/BTreeMap fields were
-            // already emptied in session_destroy; the Cow name was replaced above.)
+            // including `cwd: Option<PathBuf>`. (The Vec and BTreeMap fields were
+            // already emptied in session_destroy, and the Cow name was replaced above.)
             let _ = (*(&raw mut SESSION_REGISTRY)).remove(&sid);
         }
     }
@@ -440,7 +440,7 @@ pub unsafe fn session_detach(s: *mut session, wl: *mut winlink) -> i32 {
 /// Return if session has window.
 ///
 /// `s` may be null (e.g. when called with `client_get_session()` for an
-/// unattached client) — in that case the answer is always `false`.
+/// unattached client). In that case the answer is always `false`.
 pub unsafe fn session_has(s: *mut session, w: &window) -> bool {
     if s.is_null() {
         return false;

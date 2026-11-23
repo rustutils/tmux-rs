@@ -2,7 +2,7 @@
 //!
 //! The wire-format types (`msgtype`, `msg_*` payloads, `PROTOCOL_VERSION`)
 //! live in the standalone `tmux-protocol` crate. Re-exported here so
-//! existing `use crate::msgtype` / `use crate::tmux_protocol::*` call
+//! existing `use crate::msgtype` and `use crate::tmux_protocol::*` call
 //! sites throughout tmux-rs keep resolving unchanged.
 
 pub use tmux_protocol::{

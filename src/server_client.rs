@@ -246,7 +246,7 @@ pub unsafe fn server_client_create(fd: i32) -> *mut client {
         setblocking(fd, 0);
 
         // Allocate and register with a unique ClientId.
-        // Uses xcalloc1 (zeroed malloc) for the allocation — same as before.
+        // Uses xcalloc1 (zeroed malloc) for the allocation, same as before.
         // The raw pointer is wrapped in a Box via from_raw so the registry
         // owns the allocation. The Box uses the same allocator (libc malloc)
         // as xcalloc1 via the global allocator, so this is safe.
@@ -270,7 +270,7 @@ pub unsafe fn server_client_create(fd: i32) -> *mut client {
         std::ptr::write(&raw mut (*c).cwd, None);
         let boxed = Box::from_raw(c);
         (*(&raw mut CLIENT_REGISTRY)).insert(id, boxed);
-        // c remains valid — Box::from_raw moved ownership to the registry,
+        // c remains valid. Box::from_raw moved ownership to the registry,
         // but the heap address is stable.
 
         (*c).references = 1;
@@ -318,8 +318,8 @@ pub unsafe fn server_client_open(c: *mut client) -> Result<(), String> {
             return Ok(());
         }
 
-        // Compare client ttyname against /dev/tty and the names of stdin/stdout/stderr
-        // — refuse to reuse the server's own tty as a client tty.
+        // Compare client ttyname against /dev/tty and the names of stdin, stdout and stderr,
+        // and refuse to reuse the server's own tty as a client tty.
         let tn_bytes: &[u8] = match (*c).ttyname.as_deref() {
             Some(s) => s.as_bytes(),
             None => return Err("can't use ".to_string()),
@@ -469,7 +469,7 @@ pub unsafe fn server_client_lost(c: *mut client) {
         if (*c).flags.intersects(client_flag::TERMINAL) {
             tty_free(&raw mut (*c).tty);
         }
-        // Note: ttyname / term_name / title / path are Option<String> and are
+        // Note: ttyname, term_name, title and path are Option<String> and are
         // dropped automatically when the Box<client> is dropped in
         // server_client_free. Calling drop_in_place here would double-free.
 
@@ -541,7 +541,7 @@ pub unsafe fn client_from_id(id: ClientId) -> Option<*mut client> {
 /// **Aliasing rule:** Multiple `&client` references can coexist freely,
 /// but the caller must not also hold a `*mut client` to the same ID and
 /// mutate through it while the reference is alive. There's no borrow
-/// checker enforcement of this in the current hybrid state — be careful.
+/// checker enforcement of this in the current hybrid state, so be careful.
 #[expect(dead_code, reason = "Phase 2.4 hook; used opportunistically going forward")]
 pub unsafe fn client_ref(id: ClientId) -> Option<&'static client> {
     unsafe {
@@ -577,7 +577,7 @@ unsafe fn server_client_free_deferred(cid: ClientId) {
 
         if (*c).references == 0 {
             free_((*c).name.cast_mut());
-            // Remove from registry — the Box drop deallocates the client.
+            // Remove from the registry. The Box drop deallocates the client.
             let removed = (*(&raw mut CLIENT_REGISTRY)).remove(&cid);
             debug_assert!(removed.is_some(), "client {cid:?} not found in registry");
         }
@@ -2781,7 +2781,7 @@ pub unsafe fn server_client_check_exit(c: *mut client, force: bool) {
 
         match (*c).exit_type {
             exit_type::CLIENT_EXIT_RETURN => {
-                // Pack as: i32 retval + (optional NUL-terminated message)
+                // Pack as: i32 retval followed by an optional NUL-terminated message
                 let msg_with_nul: Option<std::ffi::CString> = (*c)
                     .exit_message
                     .as_deref()
@@ -2815,7 +2815,7 @@ pub unsafe fn server_client_check_exit(c: *mut client, force: bool) {
                 );
             }
         }
-        // exit_session / exit_message are Option<String>, dropped by Box drop.
+        // exit_session and exit_message are Option<String>, dropped by Box drop.
     }
 }
 

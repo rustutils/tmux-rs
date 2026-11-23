@@ -190,7 +190,7 @@ unsafe fn cmd_capture_pane_history(
 
         let mut buf = null_mut();
         // Pull the pane's hyperlink registry reference (if any) for OSC-8
-        // emission. `string_cells` takes an `&dyn HyperlinkLookup` — our
+        // emission. `string_cells` takes an `&dyn HyperlinkLookup`, and our
         // `hyperlinks` struct implements the trait in hyperlinks_.rs.
         let hl_ref: Option<&dyn HyperlinkLookup> =
             (*(*wp).screen).hyperlinks.map(|p| &*p as &dyn HyperlinkLookup);

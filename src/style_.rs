@@ -16,15 +16,15 @@
 //!
 //! A style is a combination of:
 //! - Terminal attributes (bold, dim, italics, etc.) from [`GridAttr`]
-//! - Foreground/background/underscore colors (`fg=`, `bg=`, `us=`)
+//! - Foreground, background and underscore colors (`fg=`, `bg=`, `us=`)
 //! - Fill color (`fill=`)
 //! - Alignment (`align=left|centre|right|absolute-centre`)
 //! - List mode (`list=on|focus|left-marker|right-marker`)
 //! - Range type (`range=left|right|pane|window|session|user`)
-//! - Default push/pop (`push-default`, `pop-default`)
+//! - Default push and pop (`push-default`, `pop-default`)
 //! - Ignore flag (`ignore`, `noignore`)
 //!
-//! Styles are parsed from comma/space/newline-delimited strings by [`style_parse`]
+//! Style strings delimited by commas, spaces or newlines are parsed by [`style_parse`]
 //! and formatted back to strings by [`style_tostring`]. The `"default"` keyword
 //! resets colors and attributes to the base Grid cell.
 //!
@@ -306,7 +306,7 @@ pub unsafe fn style_parse(sy: *mut style, base: *const GridCell, mut in_: *const
 
 /// Format a [`style`] struct into a comma-separated string.
 /// Returns `"default"` if no style properties are set.
-/// Uses a static buffer — not thread-safe (matches C tmux behavior).
+/// Uses a static buffer, so it is not thread-safe (matches C tmux behavior).
 pub unsafe fn style_tostring(sy: *const style) -> *const u8 {
     type s_type = [i8; 256];
     static mut S_BUF: MaybeUninit<s_type> = MaybeUninit::<s_type>::uninit();
@@ -489,7 +489,7 @@ pub unsafe fn style_tostring(sy: *const style) -> *const u8 {
     }
 }
 
-/// Merge a named style option into a Grid cell (additive — OR's attributes).
+/// Merge a named style option into a Grid cell (additive, ORs the attributes).
 pub unsafe fn style_add(
     gc: *mut GridCell,
     oo: *mut options,
@@ -582,13 +582,13 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // style_parse — basic cases
+    // style_parse: basic cases
     // ---------------------------------------------------------------
 
     #[test]
     fn parse_empty_string() {
         unsafe {
-            // Empty string is valid — no changes to style.
+            // Empty string is valid, with no changes to style.
             let sy = parse("").unwrap();
             // STYLE_DEFAULT has us=0 (black), so it's not fully "default".
             assert_eq!(sy.gc.fg, 8);
@@ -860,7 +860,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Default push/pop
+    // Default push and pop
     // ---------------------------------------------------------------
 
     #[test]
@@ -972,7 +972,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Error recovery — style restored on failure
+    // Error recovery: style restored on failure
     // ---------------------------------------------------------------
 
     #[test]

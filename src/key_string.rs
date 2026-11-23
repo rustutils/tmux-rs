@@ -570,7 +570,7 @@ mod tests {
 
     /// `key_string_lookup_key` writes into a process-global `static mut OUT`
     /// and returns a pointer into it. Production tmux is single-threaded so
-    /// the race is invisible; under `cargo test` parallel runs the tests
+    /// the race is invisible. Under `cargo test` parallel runs the tests
     /// stomp on each other's results. Serialize tests that read from `OUT`.
     static LOOKUP_KEY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -584,7 +584,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // key_string_lookup_string — parse key name to key code
+    // key_string_lookup_string: parse key name to key code
     // ---------------------------------------------------------------
 
     #[test]
@@ -697,7 +697,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // key_string_lookup_key — format key code back to string
+    // key_string_lookup_key: format key code back to string
     // ---------------------------------------------------------------
 
     #[test]
@@ -786,7 +786,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // key_string_get_modifiers — extract modifier prefix
+    // key_string_get_modifiers: extract modifier prefix
     // ---------------------------------------------------------------
 
     #[test]

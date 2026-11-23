@@ -186,7 +186,7 @@ pub fn tty_acs_double_borders(cell_type: cell_type) -> &'static Utf8Data {
     &TTY_ACS_DOUBLE_BORDERS_LIST[cell_type as usize]
 }
 
-/// Get cell border character for heavy/thick style (━┃┏┓┗┛).
+/// Get cell border character for heavy (thick) style (━┃┏┓┗┛).
 pub fn tty_acs_heavy_borders(cell_type: cell_type) -> &'static Utf8Data {
     &TTY_ACS_HEAVY_BORDERS_LIST[cell_type as usize]
 }
@@ -277,7 +277,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // TTY_ACS_TABLE — table integrity
+    // TTY_ACS_TABLE: table integrity
     // ---------------------------------------------------------------
 
     #[test]
@@ -508,7 +508,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Reverse tables — sorted (binary search precondition)
+    // Reverse tables: sorted (binary search precondition)
     // ---------------------------------------------------------------
 
     #[test]

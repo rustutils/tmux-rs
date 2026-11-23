@@ -14,7 +14,7 @@
 
 //! Paste buffer management for tmux.
 //!
-//! Maintains a global set of named paste buffers used for copy/paste operations.
+//! Maintains a global set of named paste buffers used for copy and paste operations.
 //! Buffers come in two flavors:
 //!
 //! - **Automatic** buffers: created by copy operations, auto-named (e.g. `buffer0`,
@@ -25,8 +25,8 @@
 //!   Not subject to the automatic buffer limit, not evicted.
 //!
 //! Storage uses two parallel data structures:
-//! - `PASTE_BY_NAME`: a `BTreeMap<String, Box<PasteBuffer>>` — primary owner, keyed by name.
-//! - `PASTE_ORDER`: a `Vec<String>` — names sorted by ascending `order` field (insertion order).
+//! - `PASTE_BY_NAME`: a `BTreeMap<String, Box<PasteBuffer>>`, the primary owner, keyed by name.
+//! - `PASTE_ORDER`: a `Vec<String>` of names sorted by ascending `order` field (insertion order).
 //!
 //! Iteration via [`paste_walk`] goes in reverse order (newest first), matching the
 //! original C tmux RB-tree behavior. [`paste_get_top`] returns the newest automatic buffer.
@@ -63,7 +63,7 @@ static mut PASTE_ORDER: Vec<String> = Vec::new();
 /// Insert a name into `PASTE_ORDER` maintaining sort by order field.
 unsafe fn paste_order_insert(name: &str, order: u32) {
     unsafe {
-        // Find insertion point — keep sorted by order ascending
+        // Find insertion point, keeping it sorted by order ascending
         let pos = (*(&raw mut PASTE_ORDER))
             .iter()
             .position(|n| {
@@ -177,7 +177,7 @@ pub unsafe fn paste_get_top(name: *mut Option<String>) -> *mut PasteBuffer {
     }
 }
 
-/// Looks up a paste buffer by name. Returns null if not found or name is empty/None.
+/// Looks up a paste buffer by name. Returns null if not found or name is empty or None.
 pub unsafe fn paste_get_name(name: Option<&str>) -> *mut PasteBuffer {
     unsafe {
         let Some(name) = name else {
@@ -207,7 +207,7 @@ pub unsafe fn paste_free(pb: NonNull<PasteBuffer>) {
 
         paste_order_remove(&name);
         (*(&raw mut PASTE_BY_NAME)).remove(&name);
-        // Box<PasteBuffer> dropped here — Vec<u8> data freed automatically
+        // Box<PasteBuffer> dropped here, which frees the Vec<u8> data automatically
     }
 }
 
@@ -487,7 +487,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // paste_set — named (manual) buffers
+    // paste_set: named (manual) buffers
     // ---------------------------------------------------------------
 
     #[test]
@@ -573,7 +573,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // paste_add — automatic buffers
+    // paste_add: automatic buffers
     // ---------------------------------------------------------------
 
     #[test]
@@ -653,7 +653,7 @@ mod tests {
                 3,
             );
 
-            // Add 4 automatic buffers — the oldest should be evicted.
+            // Add 4 automatic buffers. The oldest should be evicted.
             for i in 0..4u8 {
                 let (data, size) = make_data(&[b'a' + i]);
                 paste_add(null_mut(), data, size);
@@ -668,7 +668,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // paste_walk — iteration order (newest first)
+    // paste_walk: iteration order (newest first)
     // ---------------------------------------------------------------
 
     #[test]
@@ -701,7 +701,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // paste_get_top — newest automatic buffer
+    // paste_get_top: newest automatic buffer
     // ---------------------------------------------------------------
 
     #[test]
@@ -733,7 +733,7 @@ mod tests {
             let _lock = PASTE_LOCK.lock().unwrap();
             reset_paste_state();
 
-            // Only named buffers — get_top should return null.
+            // Only named buffers, so get_top should return null.
             let (d, s) = make_data(b"named");
             paste_set(d, s, Some("manual")).unwrap();
 
@@ -742,7 +742,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // paste_get_name — lookup
+    // paste_get_name: lookup
     // ---------------------------------------------------------------
 
     #[test]
@@ -901,7 +901,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // paste_replace — in-place data replacement
+    // paste_replace: in-place data replacement
     // ---------------------------------------------------------------
 
     #[test]
@@ -988,7 +988,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Order consistency: walk + set + free
+    // Order consistency: walk, set and free
     // ---------------------------------------------------------------
 
     #[test]

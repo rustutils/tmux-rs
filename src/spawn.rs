@@ -97,7 +97,7 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
             if !(*sc).flags.intersects(SPAWN_KILL) {
                 // Check if any pane is still alive (fd != -1).
                 // In the C code, TAILQ_FOREACH left wp as NULL if no
-                // match was found; replicate that with find().
+                // match was found. Replicate that with find().
                 let alive = (*w)
                     .panes
                     .iter()

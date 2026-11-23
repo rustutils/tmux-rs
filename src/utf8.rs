@@ -22,22 +22,22 @@
 //!
 //! What stays in this file:
 //!
-//! - **vis-escape helpers** — `utf8_strvis`, `utf8_stravis`, `utf8_sanitize`:
+//! - **vis-escape helpers** (`utf8_strvis`, `utf8_stravis`, `utf8_sanitize`):
 //!   they depend on `compat::vis` (the tmux-rs internal escaper) and
 //!   aren't part of the Unicode core.
-//! - **C-string helpers** — `utf8_fromcstr`, `utf8_tocstr`, `utf8_cstrwidth`,
+//! - **C-string helpers**: `utf8_fromcstr`, `utf8_tocstr`, `utf8_cstrwidth`,
 //!   `utf8_padcstr`, `utf8_rpadcstr`, `utf8_strlen`, `utf8_strwidth`,
 //!   `utf8_to_string`: manipulate `*mut Utf8Data` arrays and C byte
-//!   strings; still useful inside tmux-rs while the rest of the codebase
+//!   strings. They are still useful inside tmux-rs while the rest of the codebase
 //!   migrates to safer idioms.
 
 use crate::libc::memcpy;
 use crate::*;
 
 // Re-export the core utf8 surface from `tmux-utf8`. External call sites
-// now use the safe method API (`Utf8Data::single`, `.encode()`, etc.);
-// the freestanding underscore-prefix fns are kept only for use inside
-// this file's own vis/cstring helpers.
+// now use the safe method API (`Utf8Data::single`, `.encode()`, etc.).
+// The freestanding underscore-prefix fns are kept only for use inside
+// this file's own vis and cstring helpers.
 pub(crate) use tmux_utf8::{
     UTF8_SIZE, Utf8Data, Utf8State, utf8_append, utf8_isvalid, utf8_open,
     utf8_set,
@@ -52,7 +52,7 @@ pub(crate) const UTF8_DONE: Utf8State = Utf8State::Done;
 // ---------------------------------------------------------------
 // vis-escape helpers
 //
-// These format a byte string for safe display / clipboard / log use,
+// These format a byte string for safe display, clipboard and log use,
 // escaping control chars according to vis(3) flags. They walk the
 // input in UTF-8 steps (so multi-byte characters stay intact) and
 // emit one vis-escaped output byte at a time via the local vis()
@@ -61,12 +61,12 @@ pub(crate) const UTF8_DONE: Utf8State = Utf8State::Done;
 
 // `utf8_strvis` (buf-writing variant) has been removed. It was the
 // only caller writing into a pre-allocated C-style buffer and returning
-// a length; the remaining vis helpers (`utf8_stravis` / `utf8_stravisx` /
+// a length. The remaining vis helpers (`utf8_stravis`, `utf8_stravisx` and
 // `utf8_stravis_`) cover every shape we actually use.
 
 /// Walk `src` as UTF-8 and append each character to `dst`, escaping
 /// non-printable bytes per the vis(3) flags. Complete multi-byte
-/// sequences pass through unchanged; malformed bytes are individually
+/// sequences pass through unchanged, and malformed bytes are individually
 /// vis-escaped. The `VIS_DQ` flag additionally backslash-escapes `$`
 /// before an identifier-start character so the output is safe inside
 /// double-quoted shell strings.
@@ -87,7 +87,7 @@ pub fn utf8_strvis_(dst: &mut Vec<u8>, src: &[u8], flag: vis_flags) {
                 i = j;
                 continue;
             }
-            // Decode failed — fall through and vis-escape the lead byte.
+            // Decode failed, so fall through and vis-escape the lead byte.
         }
         let next = if i + 1 < src.len() { src[i + 1] as i32 } else { b'\0' as i32 };
         if flag.intersects(vis_flags::VIS_DQ) && byte == b'$' && i + 1 < src.len() {
@@ -122,7 +122,7 @@ pub fn utf8_stravis_(src: &[u8], flag: vis_flags) -> Vec<u8> {
     buf
 }
 
-/// Explicit-length variant of [`utf8_stravis`] — useful when `src`
+/// Explicit-length variant of [`utf8_stravis`], useful when `src`
 /// isn't NUL-terminated (e.g. lives inside an `evbuffer`). Returns an
 /// owned `Vec<u8>`.
 ///
@@ -155,7 +155,7 @@ pub fn utf8_sanitize_(src: &[u8]) -> Vec<u8> {
                 i = j;
                 continue;
             }
-            // Decode failed — fall through and handle `src[i]` byte-at-a-time.
+            // Decode failed, so fall through and handle `src[i]` byte-at-a-time.
         }
         if byte > 0x1f && byte < 0x7f {
             dst.push(byte);
@@ -264,7 +264,7 @@ pub unsafe fn utf8_tocstr(mut src: *const Utf8Data) -> *mut u8 {
 
 /// Copy a sentinel-terminated `Utf8Data` array into an owned Rust
 /// `String`. Halts at the first zero-size entry (sentinel). Bytes
-/// from `initialized_slice()` must already be valid UTF-8 — callers
+/// from `initialized_slice()` must already be valid UTF-8. Callers
 /// that pass un-validated byte data will panic.
 pub fn utf8_to_string(src: &[Utf8Data]) -> String {
     let mut dst: Vec<u8> = Vec::new();
@@ -301,7 +301,7 @@ pub fn utf8_cstrwidth_(s: &[u8]) -> u32 {
                 i = j;
                 continue;
             }
-            // Decode failed — fall through and treat `s[i]` singly.
+            // Decode failed, so fall through and treat `s[i]` singly.
         }
         if byte > 0x1f && byte != 0x7f {
             width += 1;
@@ -362,7 +362,7 @@ pub unsafe fn utf8_rpadcstr(s: *const u8, width: u32) -> *mut u8 {
 }
 
 /// Fuzz-friendly wrapper: feeds arbitrary bytes through the UTF-8 decoder
-/// state machine (utf8_open/utf8_append). Pure computation, no side effects.
+/// state machine (utf8_open and utf8_append). Pure computation, no side effects.
 #[cfg(fuzzing)]
 pub fn fuzz_utf8_decode(data: &[u8]) {
     unsafe {
@@ -390,7 +390,7 @@ mod tests {
     use super::*;
 
     // ---------------------------------------------------------------
-    // utf8_to_string — sentinel-terminated Utf8Data arrays → String
+    // utf8_to_string: sentinel-terminated Utf8Data arrays → String
     // ---------------------------------------------------------------
 
     #[test]

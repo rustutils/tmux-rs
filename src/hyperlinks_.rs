@@ -41,9 +41,9 @@ pub struct hyperlinks {
     pub references: u32,
 }
 
-/// Resolve cell-level `link` ids back to their URI + external id for the
+/// Resolve cell-level `link` ids back to their URI and external id for the
 /// Grid's OSC-8 emission path. The Grid crate owns the
-/// [`HyperlinkLookup`](crate::HyperlinkLookup) trait; this impl is the
+/// [`HyperlinkLookup`](crate::HyperlinkLookup) trait. This impl is the
 /// tmux-rs side of the abstraction boundary, so the Grid code can stay
 /// free of tmux-rs-specific types.
 impl HyperlinkLookup for hyperlinks {
@@ -64,7 +64,7 @@ impl HyperlinkLookup for hyperlinks {
 
 unsafe fn hyperlinks_remove_inner(hl: *mut hyperlinks, inner: u32) {
     unsafe {
-        // Remove from primary store — get owned Box back
+        // Remove from primary store and get the owned Box back
         if let Some(hlu) = (*hl).by_inner.remove(&inner) {
             // Remove from global LRU
             let lru = &mut *(&raw mut GLOBAL_HYPERLINKS_LRU);

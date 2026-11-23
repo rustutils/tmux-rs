@@ -61,7 +61,7 @@ pub struct mode_tree_data {
 
     /// Root-level tree items. Rebuilt on each `mode_tree_build` call.
     children: Vec<*mut mode_tree_item>,
-    /// Previous tree items, kept during rebuild to preserve expanded/tagged state.
+    /// Previous tree items, kept during rebuild to preserve expanded and tagged state.
     saved: Vec<*mut mode_tree_item>,
 
     line_list: Vec<mode_tree_line>,
@@ -128,7 +128,7 @@ static MODE_TREE_MENU_ITEMS: [menu_item; 4] = [
     menu_item::new("Cancel", 'q' as u64, null_mut()),
 ];
 
-/// Return the sibling list that contains `mti` — either its parent's children
+/// Return the sibling list that contains `mti`, either its parent's children
 /// or the root children list in `mtd`.
 unsafe fn mode_tree_siblings<'a>(
     mtd: *mut mode_tree_data,
@@ -229,7 +229,7 @@ unsafe fn mode_tree_clear_lines(mtd: *mut mode_tree_data) {
 }
 
 /// Recursively flatten the tree into `line_list` for rendering. Each item
-/// becomes a `mode_tree_line` entry; expanded items have their children
+/// becomes a `mode_tree_line` entry, and expanded items have their children
 /// appended immediately after.
 unsafe fn mode_tree_build_lines(mtd: *mut mode_tree_data, mtl: &Vec<*mut mode_tree_item>, depth: u32) {
     unsafe {
