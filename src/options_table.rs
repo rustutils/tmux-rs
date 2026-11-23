@@ -163,7 +163,7 @@ macro_rules! options_table_hook {
             scope: OPTIONS_TABLE_SESSION,
             flags: OPTIONS_TABLE_IS_ARRAY | OPTIONS_TABLE_IS_HOOK,
             default_str: Some($default_value),
-            separator: c!(""),
+            separator: Some(""),
             ..options_table_entry::const_default()
         }
     };
@@ -177,7 +177,7 @@ macro_rules! options_table_pane_hook {
             scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
             flags: OPTIONS_TABLE_IS_ARRAY | OPTIONS_TABLE_IS_HOOK,
             default_str: Some($default_value),
-            separator: c!(""),
+            separator: Some(""),
             ..options_table_entry::const_default()
         }
     };
@@ -191,7 +191,7 @@ macro_rules! options_table_window_hook {
             scope: OPTIONS_TABLE_WINDOW,
             flags: OPTIONS_TABLE_IS_ARRAY | OPTIONS_TABLE_IS_HOOK,
             default_str: Some($default_value),
-            separator: c!(""),
+            separator: Some(""),
             ..options_table_entry::const_default()
         }
     };
@@ -203,7 +203,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_KEY,
         scope: OPTIONS_TABLE_SERVER,
         default_num: b'\x7f' as i64,
-        text: c!("The key to send for backspace."),
+        text: Some("The key to send for backspace."),
         choices: &[],
         ..options_table_entry::const_default()
     },
@@ -214,7 +214,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 1,
         maximum: i32::MAX as u32,
         default_num: 50,
-        text: c!(
+        text: Some(
             "The maximum number of automatic buffers. When this is reached, the oldest buffer is deleted."
         ),
         choices: &[],
@@ -228,8 +228,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         default_str: Some(
             "split-pane=split-window,splitp=split-window,server-info=show-messages -JT,info=show-messages -JT,choose-window=choose-tree -w,choose-session=choose-tree -s",
         ),
-        separator: c!(","),
-        text: c!(
+        separator: Some(","),
+        text: Some(
             "Array of command aliases. Each entry is an alias and a command separated by '='."
         ),
         ..options_table_entry::const_default()
@@ -239,7 +239,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SERVER,
         default_str: Some(""),
-        text: c!("Shell command run when text is copied. If empty, no command is run."),
+        text: Some("Shell command run when text is copied. If empty, no command is run."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -247,7 +247,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_COLOUR,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: -1,
-        text: c!("Colour of the cursor."),
+        text: Some("Colour of the cursor."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -256,7 +256,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         choices: &OPTIONS_TABLE_CURSOR_STYLE_LIST,
         default_num: 0,
-        text: c!("Style of the cursor."),
+        text: Some("Style of the cursor."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -264,7 +264,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SERVER,
         default_str: Some(TMUX_TERM),
-        text: c!("Default for the 'TERM' environment variable."),
+        text: Some("Default for the 'TERM' environment variable."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -272,7 +272,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SERVER,
         default_str: Some(_PATH_VI),
-        text: c!("Editor run to edit files."),
+        text: Some("Editor run to edit files."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -282,8 +282,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 10,
-        unit: c!("milliseconds"),
-        text: c!("Time to wait before assuming a key is Escape."),
+        unit: Some("milliseconds"),
+        text: Some("Time to wait before assuming a key is Escape."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -291,7 +291,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_SERVER,
         default_num: 1,
-        text: c!("Whether the server should exit if there are no sessions."),
+        text: Some("Whether the server should exit if there are no sessions."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -299,7 +299,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_SERVER,
         default_num: 0,
-        text: c!("Whether the server should exit if there are no attached clients."),
+        text: Some("Whether the server should exit if there are no attached clients."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -308,7 +308,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SERVER,
         choices: &OPTIONS_TABLE_EXTENDED_KEYS_LIST,
         default_num: 0,
-        text: c!("Whether to request extended key sequences from terminals that support it."),
+        text: Some("Whether to request extended key sequences from terminals that support it."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -317,7 +317,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SERVER,
         choices: &OPTIONS_TABLE_EXTENDED_KEYS_FORMAT_LIST,
         default_num: 1,
-        text: c!("The format of emitted extended key sequences."),
+        text: Some("The format of emitted extended key sequences."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -325,7 +325,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_SERVER,
         default_num: 0,
-        text: c!("Whether to send focus events to applications."),
+        text: Some("Whether to send focus events to applications."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -333,7 +333,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SERVER,
         default_str: Some(""),
-        text: c!(
+        text: Some(
             "Location of the command prompt history file. Empty does not write a history file."
         ),
         ..options_table_entry::const_default()
@@ -344,8 +344,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         flags: OPTIONS_TABLE_IS_STYLE,
         default_str: Some("default"),
-        separator: c!(","),
-        text: c!("Default style of menu."),
+        separator: Some(","),
+        text: Some("Default style of menu."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -354,8 +354,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         flags: OPTIONS_TABLE_IS_STYLE,
         default_str: Some("bg=yellow,fg=black"),
-        separator: c!(","),
-        text: c!("Default style of selected menu item."),
+        separator: Some(","),
+        text: Some("Default style of selected menu item."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -364,8 +364,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Default style of menu borders."),
+        separator: Some(","),
+        text: Some("Default style of menu borders."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -374,7 +374,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_POPUP_BORDER_LINES_LIST,
         default_num: box_lines::BOX_LINES_SINGLE as i64,
-        text: c!(
+        text: Some(
             "Type of characters used to draw menu border lines. Some of these are only supported on terminals with UTF-8 support."
         ),
         ..options_table_entry::const_default()
@@ -386,7 +386,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 1000,
-        text: c!("Maximum number of server messages to keep."),
+        text: Some("Maximum number of server messages to keep."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -396,8 +396,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 0,
-        unit: c!("milliseconds"),
-        text: c!(
+        unit: Some("milliseconds"),
+        text: Some(
             "The timeout for the prefix key if no subsequent key is pressed. Zero means disabled."
         ),
         ..options_table_entry::const_default()
@@ -409,7 +409,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 100,
-        text: c!("Maximum number of commands to keep in history."),
+        text: Some("Maximum number of commands to keep in history."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -418,7 +418,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SERVER,
         choices: &OPTIONS_TABLE_SET_CLIPBOARD_LIST,
         default_num: 1,
-        text: c!(
+        text: Some(
             "Whether to attempt to set the system clipboard ('on' or 'external') and whether to allow applications to create paste buffers with an escape sequence ('on' only)."
         ),
         ..options_table_entry::const_default()
@@ -429,8 +429,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SERVER,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_str: Some("linux*:AX@"),
-        separator: c!(","),
-        text: c!("List of terminal capabilities overrides."),
+        separator: Some(","),
+        text: Some("List of terminal capabilities overrides."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -441,8 +441,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         default_str: Some(
             "xterm*:clipboard:ccolour:cstyle:focus:title,screen*:title,rxvt*:ignorefkeys",
         ),
-        separator: c!(","),
-        text: c!("List of terminal features, used if they cannot be automatically detected."),
+        separator: Some(","),
+        text: Some("List of terminal features, used if they cannot be automatically detected."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -451,8 +451,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SERVER,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_str: Some(""),
-        separator: c!(","),
-        text: c!(
+        separator: Some(","),
+        text: Some(
             "User key assignments. Each sequence in the list is translated into a key: 'User0', 'User1' and so on."
         ),
         ..options_table_entry::const_default()
@@ -464,7 +464,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_BELL_ACTION_LIST,
         default_num: alert_option::ALERT_OTHER as i64,
-        text: c!("Action to take on an activity alert."),
+        text: Some("Action to take on an activity alert."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -474,8 +474,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 1,
-        unit: c!("milliseconds"),
-        text: c!("Maximum time between input to assume it is pasting rather than typing."),
+        unit: Some("milliseconds"),
+        text: Some("Maximum time between input to assume it is pasting rather than typing."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -485,7 +485,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 0,
-        text: c!("Default index of the first window in each session."),
+        text: Some("Default index of the first window in each session."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -494,7 +494,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_BELL_ACTION_LIST,
         default_num: alert_option::ALERT_ANY as i64,
-        text: c!("Action to take on a bell alert."),
+        text: Some("Action to take on a bell alert."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -502,7 +502,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some(""),
-        text: c!("Default command to run in new panes. If empty, a shell is started."),
+        text: Some("Default command to run in new panes. If empty, a shell is started."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -510,16 +510,16 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some(_PATH_BSHELL_STR),
-        text: c!("Location of default shell."),
+        text: Some("Location of default shell."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
         name: "default-size",
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
-        pattern: c!("[0-9]*x[0-9]*"),
+        pattern: Some("[0-9]*x[0-9]*"),
         default_str: Some("80x24"),
-        text: c!("Initial size of new sessions."),
+        text: Some("Initial size of new sessions."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -528,7 +528,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_DESTROY_UNATTACHED_LIST,
         default_num: 0,
-        text: c!(
+        text: Some(
             "Whether to destroy sessions when they have no attached clients, or keep the last session whether in the group."
         ),
         ..options_table_entry::const_default()
@@ -539,7 +539,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_DETACH_ON_DESTROY_LIST,
         default_num: 1,
-        text: c!(
+        text: Some(
             "Whether to detach when a session is destroyed, or switch the client to another session if any exist."
         ),
         ..options_table_entry::const_default()
@@ -549,7 +549,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_COLOUR,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 1,
-        text: c!("Colour of the active pane for 'display-panes'."),
+        text: Some("Colour of the active pane for 'display-panes'."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -557,7 +557,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_COLOUR,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 4,
-        text: c!("Colour of not active panes for 'display-panes'."),
+        text: Some("Colour of not active panes for 'display-panes'."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -567,8 +567,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 1,
         maximum: i32::MAX as u32,
         default_num: 1000,
-        unit: c!("milliseconds"),
-        text: c!("Time for which 'display-panes' should show pane numbers."),
+        unit: Some("milliseconds"),
+        text: Some("Time for which 'display-panes' should show pane numbers."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -578,8 +578,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 750,
-        unit: c!("milliseconds"),
-        text: c!("Time for which status line messages should appear."),
+        unit: Some("milliseconds"),
+        text: Some("Time for which status line messages should appear."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -589,8 +589,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 2000,
-        unit: c!("lines"),
-        text: c!(
+        unit: Some("lines"),
+        text: Some(
             "Maximum number of lines to keep in the history for each pane. If changed, the new value applies only to new panes."
         ),
         ..options_table_entry::const_default()
@@ -600,7 +600,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("root"),
-        text: c!("Default key table. Key presses are first looked up in this table."),
+        text: Some("Default key table. Key presses are first looked up in this table."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -610,8 +610,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 0,
-        unit: c!("seconds"),
-        text: c!("Time after which a client is locked if not used."),
+        unit: Some("seconds"),
+        text: Some("Time after which a client is locked if not used."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -619,7 +619,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some(TMUX_LOCK_CMD),
-        text: c!("Shell command to run to lock a client."),
+        text: Some("Shell command to run to lock a client."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -628,8 +628,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("bg=black,fg=yellow"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!(
+        separator: Some(","),
+        text: Some(
             "Style of the command prompt when in command mode, if 'mode-keys' is set to 'vi'."
         ),
         ..options_table_entry::const_default()
@@ -640,7 +640,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_MESSAGE_LINE_LIST,
         default_num: 0,
-        text: c!("Position (line) of messages and the command prompt."),
+        text: Some("Position (line) of messages and the command prompt."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -649,8 +649,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("bg=yellow,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of messages and the command prompt."),
+        separator: Some(","),
+        text: Some("Style of messages and the command prompt."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -659,7 +659,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         // On by default since tmux 3.8.
         default_num: 1,
-        text: c!(
+        text: Some(
             "Whether the mouse is recognised and mouse key bindings are executed. Applications inside panes can use the mouse even when 'off'."
         ),
         ..options_table_entry::const_default()
@@ -669,7 +669,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_KEY,
         scope: OPTIONS_TABLE_SESSION,
         default_num: b'b' as i64 | KEYC_CTRL as i64,
-        text: c!("The prefix key."),
+        text: Some("The prefix key."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -677,7 +677,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_KEY,
         scope: OPTIONS_TABLE_SESSION,
         default_num: KEYC_NONE as i64,
-        text: c!("A second prefix key."),
+        text: Some("A second prefix key."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -685,7 +685,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 0,
-        text: c!("Whether windows are automatically renumbered rather than leaving gaps."),
+        text: Some("Whether windows are automatically renumbered rather than leaving gaps."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -695,8 +695,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i16::MAX as u32,
         default_num: 500,
-        unit: c!("milliseconds"),
-        text: c!("Time to wait for a key binding to repeat, if it is bound with the '-r' flag."),
+        unit: Some("milliseconds"),
+        text: Some("Time to wait for a key binding to repeat, if it is bound with the '-r' flag."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -704,7 +704,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 0,
-        text: c!("Whether to set the terminal title, if supported."),
+        text: Some("Whether to set the terminal title, if supported."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -712,7 +712,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("#S:#I:#W - \"#T\" #{session_alerts}"),
-        text: c!("Format of the terminal title to set."),
+        text: Some("Format of the terminal title to set."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -721,7 +721,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_BELL_ACTION_LIST,
         default_num: alert_option::ALERT_OTHER as i64,
-        text: c!("Action to take on a silence alert."),
+        text: Some("Action to take on a silence alert."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -730,7 +730,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_STATUS_LIST,
         default_num: 1,
-        text: c!("Number of lines in the status line."),
+        text: Some("Number of lines in the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -738,7 +738,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_COLOUR,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 8,
-        text: c!(
+        text: Some(
             "Background colour of the status line. This option is deprecated, use 'status-style' instead."
         ),
         ..options_table_entry::const_default()
@@ -748,7 +748,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_COLOUR,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 8,
-        text: c!(
+        text: Some(
             "Foreground colour of the status line. This option is deprecated, use 'status-style' instead."
         ),
         ..options_table_entry::const_default()
@@ -759,7 +759,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_arr: Some(OPTIONS_TABLE_STATUS_FORMAT_DEFAULT),
-        text: c!(
+        text: Some(
             "Formats for the status lines. Each array member is the format for one status line. The default status line is made up of several components which may be configured individually with other options such as 'status-left'."
         ),
         ..options_table_entry::const_default()
@@ -771,8 +771,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 15,
-        unit: c!("seconds"),
-        text: c!("Number of seconds between status line updates."),
+        unit: Some("seconds"),
+        text: Some("Number of seconds between status line updates."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -781,7 +781,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_STATUS_JUSTIFY_LIST,
         default_num: 0,
-        text: c!("Position of the window list in the status line."),
+        text: Some("Position of the window list in the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -790,7 +790,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_STATUS_KEYS_LIST,
         default_num: modekey::MODEKEY_EMACS as i64,
-        text: c!("Key set to use at the command prompt."),
+        text: Some("Key set to use at the command prompt."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -798,7 +798,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("[#{session_name}] "),
-        text: c!("Contents of the left side of the status line."),
+        text: Some("Contents of the left side of the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -808,7 +808,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i16::MAX as u32,
         default_num: 10,
-        text: c!("Maximum width of the left side of the status line."),
+        text: Some("Maximum width of the left side of the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -817,8 +817,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the left side of the status line."),
+        separator: Some(","),
+        text: Some("Style of the left side of the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -827,7 +827,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_STATUS_POSITION_LIST,
         default_num: 1,
-        text: c!("Position of the status line."),
+        text: Some("Position of the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -837,7 +837,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         default_str: Some(
             "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}\"#{=21:pane_title}\" %H:%M %d-%b-%y",
         ),
-        text: c!("Contents of the right side of the status line."),
+        text: Some("Contents of the right side of the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -847,7 +847,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i16::MAX as u32,
         default_num: 40,
-        text: c!("Maximum width of the right side of the status line."),
+        text: Some("Maximum width of the right side of the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -856,8 +856,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the right side of the status line."),
+        separator: Some(","),
+        text: Some("Style of the right side of the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -866,8 +866,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("bg=green,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the status line."),
+        separator: Some(","),
+        text: Some("Style of the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -880,7 +880,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
              WAYLAND_DISPLAY WINDOWID XAUTHORITY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP \
              XDG_SESSION_TYPE",
         ),
-        text: c!(
+        text: Some(
             "List of environment variables to update in the session environment when a client is attached."
         ),
         ..options_table_entry::const_default()
@@ -891,7 +891,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_VISUAL_BELL_LIST,
         default_num: visual_option::VISUAL_OFF as i64,
-        text: c!(
+        text: Some(
             "How activity alerts should be shown: a message ('on'), a message and a bell ('both') or nothing ('off')."
         ),
         ..options_table_entry::const_default()
@@ -902,7 +902,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_VISUAL_BELL_LIST,
         default_num: visual_option::VISUAL_OFF as i64,
-        text: c!(
+        text: Some(
             "How bell alerts should be shown: a message ('on'), a message and a bell ('both') or nothing ('off')."
         ),
         ..options_table_entry::const_default()
@@ -913,7 +913,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_VISUAL_BELL_LIST,
         default_num: visual_option::VISUAL_OFF as i64,
-        text: c!(
+        text: Some(
             "How silence alerts should be shown: a message ('on'), a message and a bell ('both') or nothing ('off')."
         ),
         ..options_table_entry::const_default()
@@ -923,7 +923,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~"),
-        text: c!("Characters considered to separate words."),
+        text: Some("Characters considered to separate words."),
         ..options_table_entry::const_default()
     },
     // Window options
@@ -932,7 +932,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 0,
-        text: c!(
+        text: Some(
             "When 'window-size' is 'smallest', whether the maximum size of a window is the smallest attached session where it is the current window ('on') or the smallest session it is linked to ('off')."
         ),
         ..options_table_entry::const_default()
@@ -943,7 +943,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         choices: &OPTIONS_TABLE_ALLOW_PASSTHROUGH_LIST,
         default_num: 0,
-        text: c!(
+        text: Some(
             "Whether applications are allowed to use the escape sequence to bypass tmux. Can be 'off' (disallowed), 'on' (allowed if the pane is visible), or 'all' (allowed even if the pane is invisible)."
         ),
         ..options_table_entry::const_default()
@@ -953,7 +953,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 0,
-        text: c!("Whether applications are allowed to use the escape sequence to rename windows."),
+        text: Some("Whether applications are allowed to use the escape sequence to rename windows."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -961,7 +961,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 1,
-        text: c!(
+        text: Some(
             "Whether applications are allowed to use the escape sequence to set the pane title."
         ),
         ..options_table_entry::const_default()
@@ -971,7 +971,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 1,
-        text: c!("Whether applications are allowed to use the alternate screen."),
+        text: Some("Whether applications are allowed to use the alternate screen."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -979,7 +979,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 1,
-        text: c!("Whether windows are automatically renamed."),
+        text: Some("Whether windows are automatically renamed."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -987,7 +987,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("#{?pane_in_mode,[tmux],#{pane_current_command}}#{?pane_dead,[dead],}"),
-        text: c!("Format used to automatically rename windows."),
+        text: Some("Format used to automatically rename windows."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -995,7 +995,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_COLOUR,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 4,
-        text: c!("Colour of the clock in clock mode."),
+        text: Some("Colour of the clock in clock mode."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1004,7 +1004,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_CLOCK_MODE_STYLE_LIST,
         default_num: 1,
-        text: c!("Time format of the clock in clock mode."),
+        text: Some("Time format of the clock in clock mode."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1013,8 +1013,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("bg=cyan,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of search matches in copy mode."),
+        separator: Some(","),
+        text: Some("Style of search matches in copy mode."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1023,8 +1023,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("bg=magenta,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the current search match in copy mode."),
+        separator: Some(","),
+        text: Some("Style of the current search match in copy mode."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1033,8 +1033,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("bg=red,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the marked line in copy mode."),
+        separator: Some(","),
+        text: Some("Style of the marked line in copy mode."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1042,7 +1042,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some(""),
-        text: c!("Character used to fill unused parts of window."),
+        text: Some("Character used to fill unused parts of window."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1050,7 +1050,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("24"),
-        text: c!(
+        text: Some(
             "Height of the main pane in the 'main-horizontal' layout. This may be a percentage, for example '10%'."
         ),
         ..options_table_entry::const_default()
@@ -1060,7 +1060,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("80"),
-        text: c!(
+        text: Some(
             "Width of the main pane in the 'main-vertical' layout. This may be a percentage, for example '10%'."
         ),
         ..options_table_entry::const_default()
@@ -1071,7 +1071,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_MODE_KEYS_LIST,
         default_num: modekey::MODEKEY_EMACS as i64,
-        text: c!("Key set used in copy mode."),
+        text: Some("Key set used in copy mode."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1080,8 +1080,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         flags: OPTIONS_TABLE_IS_STYLE,
         default_str: Some("bg=yellow,fg=black"),
-        separator: c!(","),
-        text: c!("Style of indicators and highlighting in modes."),
+        separator: Some(","),
+        text: Some("Style of indicators and highlighting in modes."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1089,7 +1089,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 0,
-        text: c!("Whether an alert is triggered by activity."),
+        text: Some("Whether an alert is triggered by activity."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1097,7 +1097,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 1,
-        text: c!("Whether an alert is triggered by a bell."),
+        text: Some("Whether an alert is triggered by a bell."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1107,7 +1107,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: i32::MAX as u32,
         default_num: 0,
-        text: c!("Time after which an alert is triggered by silence. Zero means no alert."),
+        text: Some("Time after which an alert is triggered by silence. Zero means no alert."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1115,7 +1115,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("0"),
-        text: c!(
+        text: Some(
             "Height of the other panes in the 'main-horizontal' layout. This may be a percentage, for example '10%'."
         ),
         ..options_table_entry::const_default()
@@ -1125,7 +1125,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("0"),
-        text: c!(
+        text: Some(
             "Height of the other panes in the 'main-vertical' layout. This may be a percentage, for example '10%'."
         ),
         ..options_table_entry::const_default()
@@ -1136,8 +1136,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("#{?pane_in_mode,fg=yellow,#{?synchronize-panes,fg=red,fg=green}}"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the active pane border."),
+        separator: Some(","),
+        text: Some("Style of the active pane border."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1147,7 +1147,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         minimum: 0,
         maximum: u16::MAX as u32,
         default_num: 0,
-        text: c!("Index of the first pane in each window."),
+        text: Some("Index of the first pane in each window."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1155,7 +1155,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some("#{?pane_active,#[reverse],}#{pane_index}#[default] \"#{pane_title}\""),
-        text: c!("Format of text in the pane status lines."),
+        text: Some("Format of text in the pane status lines."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1164,7 +1164,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_PANE_BORDER_INDICATORS_LIST,
         default_num: pane_border_indicator::PANE_BORDER_COLOUR as i64,
-        text: c!(
+        text: Some(
             "Whether to indicate the active pane by colouring border or displaying arrow markers."
         ),
         ..options_table_entry::const_default()
@@ -1175,7 +1175,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_PANE_BORDER_LINES_LIST,
         default_num: pane_lines::PANE_LINES_SINGLE as i64,
-        text: c!(
+        text: Some(
             "Type of characters used to draw pane border lines. Some of these are only supported on terminals with UTF-8 support."
         ),
         ..options_table_entry::const_default()
@@ -1186,7 +1186,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_PANE_STATUS_LIST,
         default_num: pane_status::PANE_STATUS_OFF as i64,
-        text: c!("Position of the pane status lines."),
+        text: Some("Position of the pane status lines."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1195,8 +1195,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the pane status lines."),
+        separator: Some(","),
+        text: Some("Style of the pane status lines."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1205,7 +1205,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some(""),
         flags: OPTIONS_TABLE_IS_ARRAY,
-        text: c!("The default colour palette for colours zero to 255."),
+        text: Some("The default colour palette for colours zero to 255."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1214,8 +1214,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Default style of popups."),
+        separator: Some(","),
+        text: Some("Default style of popups."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1224,8 +1224,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Default style of popup borders."),
+        separator: Some(","),
+        text: Some("Default style of popup borders."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1234,7 +1234,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_POPUP_BORDER_LINES_LIST,
         default_num: box_lines::BOX_LINES_SINGLE as i64,
-        text: c!(
+        text: Some(
             "Type of characters used to draw popup border lines. Some of these are only supported on terminals with UTF-8 support."
         ),
         ..options_table_entry::const_default()
@@ -1245,7 +1245,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         choices: &OPTIONS_TABLE_REMAIN_ON_EXIT_LIST,
         default_num: 0,
-        text: c!(
+        text: Some(
             "Whether panes should remain ('on') or be automatically killed ('off' or 'failed') when the program inside exits."
         ),
         ..options_table_entry::const_default()
@@ -1257,7 +1257,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         default_str: Some(
             "Pane is dead (#{?#{!=:#{pane_dead_status},},status #{pane_dead_status},}#{?#{!=:#{pane_dead_signal},},signal #{pane_dead_signal},}, #{t:pane_dead_time})",
         ),
-        text: c!(
+        text: Some(
             "Message shown after the program in a pane has exited, if remain-on-exit is enabled."
         ),
         ..options_table_entry::const_default()
@@ -1267,7 +1267,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 1,
-        text: c!(
+        text: Some(
             "Whether the contents of the screen should be scrolled into history when clearing the whole screen."
         ),
         ..options_table_entry::const_default()
@@ -1277,7 +1277,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 0,
-        text: c!("Whether typing should be sent to all panes simultaneously."),
+        text: Some("Whether typing should be sent to all panes simultaneously."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1286,8 +1286,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Default style of the active pane."),
+        separator: Some(","),
+        text: Some("Default style of the active pane."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1296,7 +1296,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_WINDOW_SIZE_LIST,
         default_num: window_size_option::WINDOW_SIZE_LATEST as i64,
-        text: c!(
+        text: Some(
             "How window size is calculated. 'latest' uses the size of the most recently used client, 'largest' the largest client, 'smallest' the smallest client and 'manual' a size set by the 'resize-window' command."
         ),
         ..options_table_entry::const_default()
@@ -1307,8 +1307,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Default style of panes that are not the active pane."),
+        separator: Some(","),
+        text: Some("Default style of panes that are not the active pane."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1317,8 +1317,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("reverse"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of windows in the status line with an activity alert."),
+        separator: Some(","),
+        text: Some("Style of windows in the status line with an activity alert."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1327,8 +1327,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("reverse"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of windows in the status line with a bell alert."),
+        separator: Some(","),
+        text: Some("Style of windows in the status line with a bell alert."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1336,7 +1336,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("#I:#W#{?window_flags,#{window_flags}, }"),
-        text: c!("Format of the current window in the status line."),
+        text: Some("Format of the current window in the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1345,8 +1345,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("underscore"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the current window in the status line."),
+        separator: Some(","),
+        text: Some("Style of the current window in the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1354,7 +1354,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("#I:#W#{?window_flags,#{window_flags}, }"),
-        text: c!("Format of windows in the status line, except the current window."),
+        text: Some("Format of windows in the status line, except the current window."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1363,8 +1363,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of the last window in the status line."),
+        separator: Some(","),
+        text: Some("Style of the last window in the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1372,7 +1372,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some(" "),
-        text: c!("Separator between windows in the status line."),
+        text: Some("Separator between windows in the status line."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1381,8 +1381,8 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
-        separator: c!(","),
-        text: c!("Style of windows in the status line, except the current and last windows."),
+        separator: Some(","),
+        text: Some("Style of windows in the status line, except the current and last windows."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1390,7 +1390,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 1,
-        text: c!("Whether searching in copy mode should wrap at the top or bottom."),
+        text: Some("Whether searching in copy mode should wrap at the top or bottom."),
         ..options_table_entry::const_default()
     },
     options_table_entry {
@@ -1398,7 +1398,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         type_: options_table_type::OPTIONS_TABLE_FLAG,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 1,
-        text: c!(
+        text: Some(
             "Whether xterm-style function key sequences should be sent. This option is no longer used."
         ),
         ..options_table_entry::const_default()

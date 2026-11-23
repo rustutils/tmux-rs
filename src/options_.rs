@@ -574,11 +574,8 @@ pub unsafe fn options_array_set(
 // note one difference was that this function previously could avoid allocation on error
 pub unsafe fn options_array_assign(o: *mut options_entry, s: &str) -> Result<(), CString> {
     unsafe {
-        let mut separator = (*(*o).tableentry).separator;
-        if separator.is_null() {
-            separator = c!(" ,");
-        }
-        if *separator == 0 {
+        let separator = (*(*o).tableentry).separator.unwrap_or(" ,");
+        if separator.is_empty() {
             if s.is_empty() {
                 return Ok(());
             }
@@ -597,7 +594,7 @@ pub unsafe fn options_array_assign(o: *mut options_entry, s: &str) -> Result<(),
         }
         let copy = xstrdup__(s);
         let mut string = copy;
-        while let Some(next) = NonNull::new(strsep(&raw mut string, separator)) {
+        while let Some(next) = NonNull::new(strsep(&raw mut string, CString::new(separator).unwrap().as_ptr().cast())) {
             let next = next.as_ptr();
             if *next == 0 {
                 continue;
@@ -883,7 +880,7 @@ pub unsafe fn options_set_string_(
     args: std::fmt::Arguments,
 ) -> *mut options_entry {
     unsafe {
-        let mut separator = c!("");
+        let mut separator = "";
         let value: *mut u8;
 
         let mut s = args.to_string();
@@ -893,12 +890,9 @@ pub unsafe fn options_set_string_(
         let mut o = options_get_only(oo, name);
         if !o.is_null() && append && OPTIONS_IS_STRING(o) {
             if !name.starts_with('@') {
-                separator = (*(*o).tableentry).separator;
-                if separator.is_null() {
-                    separator = c!("");
-                }
+                separator = (*(*o).tableentry).separator.unwrap_or("");
             }
-            value = format_nul!("{}{}{}", _s((*o).value.string), _s(separator), _s(s),);
+            value = format_nul!("{}{}{}", _s((*o).value.string), separator, _s(s),);
             free_(s);
         } else {
             value = s;
@@ -1141,7 +1135,9 @@ unsafe fn options_from_string_check(
         if (*oe).name == "default-shell" && !checkshell_(value) {
             return Err(CString::new(format!("not a suitable shell: {}", _s(value))).unwrap());
         }
-        if !(*oe).pattern.is_null() && fnmatch((*oe).pattern, value, 0) != 0 {
+        if let Some(pattern) = (*oe).pattern
+            && fnmatch(CString::new(pattern).unwrap().as_ptr().cast(), value, 0) != 0
+        {
             return Err(CString::new(format!("value is invalid: {}", _s(value))).unwrap());
         }
         if ((*oe).flags & OPTIONS_TABLE_IS_STYLE) != 0

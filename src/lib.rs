@@ -2561,8 +2561,6 @@ unsafe impl Sync for options_table_entry {}
 
 struct options_table_entry {
     name: &'static str,
-    #[expect(dead_code, reason = "kept to mirror the C struct")]
-    alternative_name: *mut u8,
     type_: options_table_type,
     scope: i32,
     flags: i32,
@@ -2575,18 +2573,17 @@ struct options_table_entry {
     default_num: c_longlong,
     default_arr: Option<&'static [&'static str]>,
 
-    separator: *const u8,
-    pattern: *const u8,
+    separator: Option<&'static str>,
+    pattern: Option<&'static str>,
 
-    text: *const u8,
-    unit: *const u8,
+    text: Option<&'static str>,
+    unit: Option<&'static str>,
 }
 
 impl options_table_entry {
     pub const fn const_default() -> Self {
         Self {
             name: "",
-            alternative_name: null_mut(),
             type_: options_table_type::OPTIONS_TABLE_STRING,
             scope: 0,
             flags: 0,
@@ -2596,10 +2593,10 @@ impl options_table_entry {
             default_str: None,
             default_num: 0,
             default_arr: None,
-            separator: null(),
-            pattern: null(),
-            text: null(),
-            unit: null(),
+            separator: None,
+            pattern: None,
+            text: None,
+            unit: None,
         }
     }
 }

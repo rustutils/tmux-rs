@@ -309,8 +309,8 @@ unsafe fn window_customize_build_option(
         format_add!(ft, "option_scope", "{}", _s(text));
         free_(text);
 
-        if !oe.is_null() && !(*oe).unit.is_null() {
-            format_add!(ft, "option_unit", "{}", _s((*oe).unit));
+        if let Some(unit) = oe.as_ref().and_then(|oe| oe.unit) {
+            format_add!(ft, "option_unit", "{}", unit);
         } else {
             format_add!(ft, "option_unit", "{}", "");
         }
@@ -796,8 +796,8 @@ unsafe fn window_customize_draw_option(
         let cy = (*s).cy;
 
         let mut gc: GridCell = zeroed();
-        let mut space: *const u8 = c!("");
-        let mut unit: *const u8 = c!("");
+        let mut space = "";
+        let mut unit = "";
 
         let expanded: *mut u8;
         let mut value: *mut u8 = null_mut();
@@ -819,17 +819,16 @@ unsafe fn window_customize_draw_option(
             }
             let oe = options_table_entry(o);
 
-            if !oe.is_null() && !(*oe).unit.is_null() {
-                space = c!(" ");
-                unit = (*oe).unit;
+            if let Some(oe_unit) = oe.as_ref().and_then(|oe| oe.unit) {
+                space = " ";
+                unit = oe_unit;
             }
             ft = format_create_from_state(null_mut(), null_mut(), &raw mut fs);
 
-            let mut text = if oe.is_null() || (*oe).text.is_null() {
-                c!("This option doesn't have a description.")
-            } else {
-                (*oe).text
-            };
+            let mut text = oe
+                .as_ref()
+                .and_then(|oe| oe.text)
+                .unwrap_or("This option doesn't have a description.");
 
             if !screen_write_text!(
                 ctx,
@@ -839,7 +838,7 @@ unsafe fn window_customize_draw_option(
                 0,
                 &raw const GRID_DEFAULT_CELL,
                 "{}",
-                _s(text),
+                text,
             ) {
                 break 'out;
             }
@@ -849,17 +848,17 @@ unsafe fn window_customize_draw_option(
             }
 
             if oe.is_null() {
-                text = c!("user");
+                text = "user";
             } else if ((*oe).scope & (OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE))
                 == (OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE)
             {
-                text = c!("window and pane");
+                text = "window and pane";
             } else if (*oe).scope & OPTIONS_TABLE_WINDOW != 0 {
-                text = c!("window");
+                text = "window";
             } else if (*oe).scope & OPTIONS_TABLE_SESSION != 0 {
-                text = c!("session");
+                text = "session";
             } else {
-                text = c!("server");
+                text = "server";
             }
             if !screen_write_text!(
                 ctx,
@@ -869,7 +868,7 @@ unsafe fn window_customize_draw_option(
                 0,
                 &raw const GRID_DEFAULT_CELL,
                 "This is a {} option.",
-                _s(text),
+                text,
             ) {
                 break 'out;
             }
@@ -923,8 +922,8 @@ unsafe fn window_customize_draw_option(
                 &raw const GRID_DEFAULT_CELL,
                 "Option value: {}{}{}",
                 _s(value),
-                _s(space),
-                _s(unit),
+                space,
+                unit,
             ) {
                 break 'out;
             }
@@ -1023,8 +1022,8 @@ unsafe fn window_customize_draw_option(
                     &raw const GRID_DEFAULT_CELL,
                     "The default is: {}{}{}",
                     _s(default_value),
-                    _s(space),
-                    _s(unit),
+                    space,
+                    unit,
                 )
             {
                 break 'out;
@@ -1063,8 +1062,8 @@ unsafe fn window_customize_draw_option(
                         "Window value (from window {}): {}{}{}",
                         (*fs.wl).idx,
                         _s(value),
-                        _s(space),
-                        _s(unit),
+                        space,
+                        unit,
                     ) {
                         break 'out;
                     }
@@ -1083,8 +1082,8 @@ unsafe fn window_customize_draw_option(
                         &raw const GRID_DEFAULT_CELL,
                         "Global value: {}{}{}",
                         _s(value),
-                        _s(space),
-                        _s(unit),
+                        space,
+                        unit,
                     ) {
                         break 'out;
                     }
