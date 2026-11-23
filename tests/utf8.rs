@@ -41,13 +41,20 @@ fn utf8_capture_matches_reference() {
         .run()
         .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
-    std::thread::sleep(Duration::from_secs(1));
 
-    let captured = tmux
-        .cmd()
-        .args(["capture-pane", "-pCeJS-"])
-        .run()
-        .stdout_str();
+    // cat can take a while under load, so poll until the pane matches.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let captured = loop {
+        let captured = tmux
+            .cmd()
+            .args(["capture-pane", "-pCeJS-"])
+            .run()
+            .stdout_str();
+        if captured == expected || std::time::Instant::now() > deadline {
+            break captured;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
 
     assert_eq!(captured, expected);
 }
