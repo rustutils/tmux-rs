@@ -1,7 +1,7 @@
 //! calloop-backed event loop.
 //!
 //! Provides safe RAII wrappers (`TimerHandle`, `SignalHandle`, `IoHandle`, defer)
-//! and the core `event_init/event_loop` dispatch.
+//! and the core `event_init` and `event_loop` dispatch.
 
 mod event_impl;
 
