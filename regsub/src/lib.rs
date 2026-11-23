@@ -14,7 +14,7 @@
 //! Regex-based string substitution (like `sed s/pattern/replacement/`).
 //!
 //! Used by tmux's format system (`#{s/pat/repl/:value}`) and window-copy search.
-//! Built on POSIX `regcomp`/`regexec` — supports extended regex syntax and
+//! Built on POSIX `regcomp` and `regexec`. Supports extended regex syntax and
 //! backreferences `\0`–`\9` in the replacement string.
 //!
 //! The main entry point is [`regsub`], which compiles a pattern, finds all
@@ -34,7 +34,7 @@ use libc::{regcomp, regex_t, regexec, regfree, regmatch_t};
 /// Returns `None` if the pattern fails to compile. Returns an empty `Vec` if
 /// `text` is empty. Anchored patterns (`^...`) only replace the first match.
 ///
-/// The output is not NUL-terminated; callers that need a C string should
+/// The output is not NUL-terminated. Callers that need a C string should
 /// append a terminator themselves.
 pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<Vec<u8>> {
     let text_bytes = text.to_bytes();
@@ -77,7 +77,7 @@ pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
             )
         };
         if rc != 0 {
-            // No more matches — copy remainder.
+            // No more matches, so copy the remainder.
             buf.extend_from_slice(&text_bytes[start..end]);
             break;
         }
@@ -127,7 +127,7 @@ fn expand(buf: &mut Vec<u8>, with: &[u8], text: &[u8], m: &[regmatch_t; 10]) {
         if c == b'\\' {
             i += 1;
             if i >= with.len() {
-                // Trailing backslash — drop it.
+                // Trailing backslash, so drop it.
                 break;
             }
             let d = with[i];
@@ -141,7 +141,7 @@ fn expand(buf: &mut Vec<u8>, with: &[u8], text: &[u8], m: &[regmatch_t; 10]) {
                     continue;
                 }
             }
-            // Not a backreference — push the char following the backslash.
+            // Not a backreference, so push the char following the backslash.
             buf.push(d);
             i += 1;
             continue;
@@ -256,7 +256,7 @@ mod tests {
 
     #[test]
     fn backreference_nonexistent_group() {
-        // \9 doesn't match a group — the digit is kept as a literal.
+        // \9 doesn't match a group, so the digit is kept as a literal.
         assert_eq!(sub("(foo)", "\\9", "foo"), Some("9".into()));
     }
 

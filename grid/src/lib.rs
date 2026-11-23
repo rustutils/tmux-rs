@@ -11,9 +11,9 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-//! Grid — the character-cell backing store behind every screen.
+//! Grid: the character-cell backing store behind every screen.
 //!
-//! A [`Grid`] owns a `Vec<GridLine>`; each line owns a `Vec<GridCellEntry>`
+//! A [`Grid`] owns a `Vec<GridLine>`. Each line owns a `Vec<GridCellEntry>`
 //! (packed per-column state) and a `Vec<GridExtdEntry>` side-table for
 //! extended attributes (RGB color, underline color, hyperlinks).
 //!
@@ -33,16 +33,16 @@
 //!  y = hsize+sy-1 ─ bottom of visible screen
 //! ```
 //!
-//! - `sx` — width (columns).
-//! - `sy` — visible height.
-//! - `hsize` — number of scrollback lines currently stored.
-//! - `hlimit` — maximum scrollback retained before the oldest line is dropped.
+//! - `sx`: width (columns).
+//! - `sy`: visible height.
+//! - `hsize`: number of scrollback lines currently stored.
+//! - `hlimit`: maximum scrollback retained before the oldest line is dropped.
 //!
 //! Two coordinate flavors are used throughout the code:
 //!
-//! - **Grid (absolute) coordinates** — `y` spans `0 .. hsize + sy`. This is
+//! - **Grid (absolute) coordinates**: `y` spans `0 .. hsize + sy`. This is
 //!   what the [`Grid`] methods `get_cell`, `set_cell`, `get_line`, etc. take.
-//! - **View (screen-relative) coordinates** — `y` spans `0 .. sy`, with
+//! - **View (screen-relative) coordinates**: `y` spans `0 .. sy`, with
 //!   `y = 0` being the top of the visible screen. The `view_*` family
 //!   (`view_get_cell`, `view_set_cell`, `view_clear`, …) translates by
 //!   adding `hsize` before delegating to the absolute variant.
@@ -51,11 +51,11 @@
 //!
 //! A [`GridLine`] contains `cellused` (the number of columns actually
 //! written on this line) plus the raw per-cell entries. Each
-//! [`GridCellEntry`] is a packed 8-byte record; cells whose state doesn't
+//! [`GridCellEntry`] is a packed 8-byte record. Cells whose state doesn't
 //! fit (RGB colors, hyperlinks, non-default style) spill into the line's
 //! `extddata` array, with an `EXTENDED` flag on the cell entry pointing at
 //! the side-table index. [`GridCell`] is the unpacked view callers work
-//! with — conversion happens inside `get_cell` / `set_cell`.
+//! with. Conversion happens inside `get_cell` and `set_cell`.
 //!
 //! # Wrapped lines
 //!
@@ -97,7 +97,7 @@ use tmux_utf8::Utf8Data;
 ///
 /// Owns a `Vec<GridLine>` holding both scrollback history (`hsize` rows)
 /// and visible screen (`sy` rows). Mutation goes through the inherent
-/// methods defined later in this module; direct field access is kept
+/// methods defined later in this module. Direct field access is kept
 /// within the crate.
 pub struct Grid {
     pub flags: GridFlags,
@@ -124,7 +124,7 @@ pub struct GridReader<'a> {
 }
 
 // UTF-8 interop: grid pulls its codec straight from `tmux-utf8`. The
-// previous Utf8Codec trait + OnceLock registration is gone — an earlier
+// previous Utf8Codec trait and OnceLock registration are gone. They were an earlier
 // necessity of the circular-dep workaround, now unnecessary since
 // `tmux-utf8` is a sibling crate.
 use tmux_utf8::{utf8_build_one, utf8_set, utf8_to_data};
@@ -146,14 +146,14 @@ pub struct Hyperlink<'a> {
 /// so it asks the caller to resolve link ids via this trait. tmux-rs
 /// provides the impl on its `hyperlinks` struct. Using a trait here
 /// (rather than a function pointer or closure) keeps the call site
-/// readable — `ctx.hyperlink(id)` — and allows for multiple impls
+/// readable (`ctx.hyperlink(id)`) and allows for multiple impls
 /// (e.g. a no-op stub for tests, a mock for integration tests, the
 /// real registry in production).
 pub trait HyperlinkLookup {
     /// Resolve a cell's `link` id. Return `None` if the id is not in
     /// the registry or if hyperlinks are disabled for this context.
     /// The returned [`Hyperlink`] borrows from the registry and must
-    /// outlive the call (normally trivial — the registry is
+    /// outlive the call (normally trivial, since the registry is
     /// longer-lived than any single `string_cells` invocation).
     fn hyperlink(&self, id: u32) -> Option<Hyperlink<'_>>;
 }
@@ -208,7 +208,7 @@ pub static GRID_CLEARED_ENTRY: GridCellEntry = GridCellEntry {
 ///
 /// # Safety
 /// `gce` must be a writable `GridCellEntry`. `gc` must be readable.
-/// These pointers may alias into the same [`GridLine`]; the function
+/// These pointers may alias into the same [`GridLine`], but the function
 /// only writes through `gce`.
 unsafe fn grid_store_cell(gce: *mut GridCellEntry, gc: *const GridCell, c: u8) {
     unsafe {
@@ -294,7 +294,7 @@ unsafe fn grid_extended_cell(
         }
         (*gl).flags |= GridLineFlag::EXTENDED;
 
-        // Encode via the safe method API; interning failures fall back
+        // Encode via the safe method API. Interning failures fall back
         // to a substitute char (see `utf8_from_data`).
         let uc = (*gc).data.encode().unwrap_or(0);
 
@@ -349,7 +349,7 @@ fn grid_clear_cell(gd: &mut Grid, px: u32, py: u32, bg: u32) {
     if bg != 8 {
         // SAFETY: `gl_ptr` and `gce_ptr` alias into the same `gl` we
         // already hold exclusively. The helpers mutate both
-        // `gl.extddata` and the individual `gce`; no other borrows are
+        // `gl.extddata` and the individual `gce`. No other borrows are
         // live across the call.
         unsafe {
             let gl_ptr: *mut GridLine = gl;
@@ -380,7 +380,7 @@ fn grid_check_y(gd: &Grid, from: &str, py: u32) -> i32 {
 
 /// Return `true` if two cells have the same *visible style* (foreground,
 /// background, attribute bitset, flags, and hyperlink id). The cell data
-/// (character and width) is **not** compared — use [`grid_cells_equal`] for
+/// (character and width) is **not** compared. Use [`grid_cells_equal`] for
 /// that. Used by the renderer to detect when a terminal attribute change can
 /// be skipped between adjacent cells.
 pub fn grid_cells_look_equal(gc1: &GridCell, gc2: &GridCell) -> bool {
@@ -445,7 +445,7 @@ impl Grid {
 
     /// Compare two grids for full-content equality across the visible
     /// region (`sy` rows). Returns `true` iff every cell matches by
-    /// [`grid_cells_equal`] (style + UTF-8 data) and line lengths agree.
+    /// [`grid_cells_equal`] (style and UTF-8 data) and line lengths agree.
     pub fn visible_eq(&self, other: &Grid) -> bool {
         if self.sx != other.sx || self.sy != other.sy {
             return false;
@@ -473,7 +473,7 @@ impl Grid {
     }
 }
 
-// grid_destroy removed — Grid is now Box<Grid>, Drop handles cleanup.
+// grid_destroy was removed. Grid is now Box<Grid> and Drop handles cleanup.
 
 /// Trim lines from the history.
 fn grid_trim_history(gd: &mut Grid, ny: u32) {
@@ -546,20 +546,20 @@ unsafe fn grid_get_cell1(gl: &GridLine, px: u32, gc: *mut GridCell) {
 
 impl Grid {
     /// Borrow the line at absolute row `line` for reading. Panics if `line`
-    /// is out of bounds — callers must validate `line < hsize + sy`.
+    /// is out of bounds. Callers must validate `line < hsize + sy`.
     pub fn line(&self, line: u32) -> &GridLine {
         &self.linedata[line as usize]
     }
 
     /// Borrow the line at absolute row `line` for mutation. Panics if `line`
-    /// is out of bounds — callers must validate `line < hsize + sy`.
+    /// is out of bounds. Callers must validate `line < hsize + sy`.
     pub fn get_line(&mut self, line: u32) -> &mut GridLine {
         &mut self.linedata[line as usize]
     }
 
     /// Resize the line array to `lines` rows, creating empty lines at the
     /// end if growing or dropping them if shrinking. Used during reflow and
-    /// window resize to reshape the Grid without touching `sx`/`sy`.
+    /// window resize to reshape the Grid without touching `sx` and `sy`.
     pub fn adjust_lines(&mut self, lines: u32) {
         self.linedata.resize_with(lines as usize, GridLine::new);
     }
@@ -639,7 +639,7 @@ impl Grid {
         // SAFETY: `gce` aliases into `gl.celldata`, so the helpers take
         // raw pointers rather than fighting the borrow checker. `gl_ptr`
         // and `gce_ptr` are both derived from the exclusive `&mut gl`
-        // we hold; no other borrows are live across the call.
+        // we hold. No other borrows are live across the call.
         unsafe {
             let gce = gl.celldata.as_mut_ptr().add(px as usize);
             if grid_need_extended_cell(gce, gc_ptr) {
@@ -650,7 +650,7 @@ impl Grid {
         }
     }
 
-    /// Mark the cell at `(px, py)` as padding — the continuation half of a
+    /// Mark the cell at `(px, py)` as padding, the continuation half of a
     /// wide (double-width) character. Padding cells are skipped by cursor
     /// movement, selection, and string extraction.
     pub fn set_padding(&mut self, px: u32, py: u32) {
@@ -669,9 +669,9 @@ impl Grid {
 
         grid_expand_line(self, py, px + slen as u32, 8);
 
-        // SAFETY: grid_need_extended_cell / grid_extended_cell / grid_store_cell
+        // SAFETY: grid_need_extended_cell, grid_extended_cell and grid_store_cell
         // are translated-from-C helpers that still take raw pointers. They do
-        // not escape references beyond the call; indices are in bounds after
+        // not escape references beyond the call, and indices are in bounds after
         // grid_expand_line above.
         unsafe {
             let gl = self.linedata.as_mut_ptr().add(py as usize);
@@ -735,7 +735,7 @@ impl Grid {
     ///
     /// `now` is the wall-clock timestamp recorded on the newly-scrolled
     /// history line. Callers typically pass `CURRENT_TIME` (updated once
-    /// per event-loop tick); tests pass `0`.
+    /// per event-loop tick). Tests pass `0`.
     pub fn scroll_history(&mut self, bg: u32, now: libc::time_t) {
         let yy = self.hsize + self.sy;
         self.linedata.push(GridLine::new());
@@ -750,7 +750,7 @@ impl Grid {
         self.hsize += 1;
     }
 
-    /// Drop all scrollback lines and reset `hsize` / `hscrolled` to zero.
+    /// Drop all scrollback lines and reset `hsize` and `hscrolled` to zero.
     /// The visible screen is untouched. Used by the `clear-history` command.
     pub fn clear_history(&mut self) {
         grid_trim_history(self, self.hsize);
@@ -769,7 +769,7 @@ impl Grid {
     /// bottom row. `now` timestamps the new history line (see
     /// [`scroll_history`](Self::scroll_history)).
     pub fn scroll_history_region(&mut self, upper: u32, lower: u32, bg: u32, now: libc::time_t) {
-        // Indices are relative to the visible screen; adjust for hsize.
+        // Indices are relative to the visible screen, so adjust for hsize.
         let hsize = self.hsize as usize;
         let upper_abs = hsize + upper as usize;
         let lower_abs = hsize + lower as usize;
@@ -797,7 +797,7 @@ impl Grid {
     /// cells, with `bg` as the background color (or `8` for "default"). If
     /// the region covers whole lines (`px == 0 && nx == sx`), delegates to
     /// the cheaper [`clear_lines`](Self::clear_lines). Defaults-background
-    /// cells past `cellused` are left untouched — only the filled portion
+    /// cells past `cellused` are left untouched. Only the filled portion
     /// of each line is touched.
     pub fn clear(&mut self, px: u32, py: u32, nx: u32, ny: u32, bg: u32) {
         if nx == 0 || ny == 0 {
@@ -840,7 +840,7 @@ impl Grid {
     }
 
     /// Reset lines `py .. py + ny` to empty. The `celldata` and `extddata`
-    /// vectors are dropped; if `bg` is non-default the line is re-expanded
+    /// vectors are dropped. If `bg` is non-default the line is re-expanded
     /// to `sx` with the background color so terminal redraws pick it up.
     /// Faster than [`clear`](Self::clear) when clearing whole lines.
     pub fn clear_lines(&mut self, py: u32, ny: u32, bg: u32) {
@@ -866,7 +866,7 @@ impl Grid {
 
     /// Move `ny` lines starting at row `py` to row `dy` (absolute Grid
     /// coordinates). Source and destination ranges may overlap (memmove
-    /// semantics). Replaced lines in the destination are freed first; the
+    /// semantics). Replaced lines in the destination are freed first, and the
     /// source region is re-initialized with background `bg`.
     pub fn move_lines(&mut self, dy: u32, py: u32, ny: u32, bg: u32) {
         if ny == 0 || py == dy {
@@ -888,7 +888,7 @@ impl Grid {
 
         // Stash source lines and replace them with placeholders. After this
         // block the src range holds default (empty) grid_lines, and `staged`
-        // owns the real data — which is why the overlap problem disappears.
+        // owns the real data, which is why the overlap problem disappears.
         let mut staged: Vec<GridLine> = (py..py + ny)
             .map(|yy| std::mem::take(&mut self.linedata[yy as usize]))
             .collect();
@@ -925,7 +925,7 @@ impl Grid {
 
     /// Move `nx` cells within line `py` from column `px` to column `dx`.
     /// Overlap is handled by `Vec::copy_within`. The line is expanded to
-    /// cover both ranges first; source cells are not cleared afterwards
+    /// cover both ranges first. Source cells are not cleared afterwards
     /// (the caller typically writes a background-colored overwrite there
     /// via [`clear`](Self::clear)).
     pub fn move_cells(&mut self, dx: u32, px: u32, py: u32, nx: u32, bg: u32) {
@@ -973,14 +973,14 @@ impl Grid {
     /// returned pointer and must `free_()` it.
     ///
     /// Behavior is controlled by `flags` ([`GridStringFlags`]):
-    /// - `WITH_SEQUENCES` — emit SGR/CSI escape sequences for style changes.
-    /// - `ESCAPE_SEQUENCES` — backslash-escape control characters in output.
-    /// - `EMPTY_CELLS` — include trailing blank cells rather than stopping
+    /// - `WITH_SEQUENCES`: emit SGR and CSI escape sequences for style changes.
+    /// - `ESCAPE_SEQUENCES`: backslash-escape control characters in output.
+    /// - `EMPTY_CELLS`: include trailing blank cells rather than stopping
     ///   at `cellused`.
     ///
     /// `lastgc` is a caller-owned "previous style" slot used across calls
     /// so sequential `string_cells` invocations emit minimal diffs. Pass a
-    /// pointer whose target is `null` on the first call; subsequent calls
+    /// pointer whose target is `null` on the first call. Subsequent calls
     /// re-use the updated style. `s` is needed for hyperlink resolution.
     pub fn string_cells(
         &mut self,
@@ -1092,7 +1092,7 @@ impl Grid {
     /// width. The Grid's `sx` field is updated in place. Called when the
     /// window or pane is resized horizontally so scrollback remains usable
     /// after the resize. Marked `unsafe` for the internal `ptr::copy` line
-    /// shuffle in `reflow_join` / `reflow_split`.
+    /// shuffle in `reflow_join` and `reflow_split`.
     pub unsafe fn reflow(&mut self, sx: u32) {
         unsafe {
             let gd = self as *mut Grid;
@@ -1161,7 +1161,7 @@ impl Grid {
             // Swap linedata: old Vec drops automatically, take target's.
             self.linedata = std::mem::take(&mut target.linedata);
             target.sy = 0;
-            // target is now an empty Grid — Box drop handles cleanup.
+            // target is now an empty Grid, and Box drop handles cleanup.
             drop(target);
         }
     }
@@ -1348,7 +1348,7 @@ impl Grid {
 
     /// Delete `ny` lines starting at view row `py`, pulling the rows below
     /// up to fill the gap. The bottom `ny` rows of the screen are blanked
-    /// with background `bg`. Implements the `DL` / `CSI M` escape sequence
+    /// with background `bg`. Implements the `DL` (`CSI M`) escape sequence
     /// outside a scroll region.
     pub fn view_delete_lines(&mut self, py: u32, ny: u32, bg: u32) {
         let py_abs = self.hsize + py;
@@ -1371,7 +1371,7 @@ impl Grid {
 
     /// Insert `nx` blank cells at view-coordinate `(px, py)`, shifting the
     /// cells to the right and discarding any that fall off the end of the
-    /// line. Implements `ICH` / `CSI @`.
+    /// line. Implements `ICH` (`CSI @`).
     pub fn view_insert_cells(&mut self, px: u32, py: u32, nx: u32, bg: u32) {
         let py_abs = self.hsize + py;
         let sx = self.sx;
@@ -1385,7 +1385,7 @@ impl Grid {
 
     /// Delete `nx` cells at view-coordinate `(px, py)`, shifting the cells
     /// to the right leftward and clearing the now-vacated tail with
-    /// background `bg`. Implements `DCH` / `CSI P`.
+    /// background `bg`. Implements `DCH` (`CSI P`).
     pub fn view_delete_cells(&mut self, px: u32, py: u32, nx: u32, bg: u32) {
         let py_abs = self.hsize + py;
         let sx = self.sx;
@@ -1396,7 +1396,7 @@ impl Grid {
 
     /// Convert `nx` cells in the visible area starting at (px, py) into a
     /// byte string. No escape sequences, no hyperlink decoration, no
-    /// carried-over style — intended for readers that want plain text
+    /// carried-over style. It is intended for readers that want plain text
     /// (e.g. window-name derivation).
     pub fn view_string_cells(&mut self, px: u32, py: u32, nx: u32) -> Vec<u8> {
         let py_abs = self.hsize + py;
@@ -1467,12 +1467,12 @@ fn grid_string_cells_us(gc: &GridCell) -> Vec<i32> {
 /// redundant (same parameters, no pending reset) or when a reset is
 /// immediately followed by the default-colour code (49/39 already implied).
 ///
-/// `n` and `s` describe the pending attribute prefix from the caller —
+/// `n` and `s` describe the pending attribute prefix from the caller:
 /// `n > 0 && s[0] == 0` signals that a reset (`0`) is already queued and
 /// the colour change must emit even if it matches the old value.
 ///
 /// When `ESCAPE_SEQUENCES` is set, the CSI prefix is emitted as the
-/// literal bytes `\033[` (for human-readable output); otherwise as the
+/// literal bytes `\033[` (for human-readable output), otherwise as the
 /// actual 0x1b byte.
 fn grid_string_cells_add_code(
     buf: &mut Vec<u8>,
@@ -1513,11 +1513,11 @@ fn grid_string_cells_add_code(
 }
 
 /// Append an OSC-8 hyperlink sequence to `buf`. The `id` and `uri` are
-/// NUL-terminated C strings from the hyperlinks registry; pass empty
+/// NUL-terminated C strings from the hyperlinks registry. Pass empty
 /// slices to emit the *close* sequence.
 ///
-/// Returns `false` when the id/uri would be absurdly long (> ~1MB combined);
-/// matches the original defensive check.
+/// Returns `false` when the id and uri would be absurdly long (> ~1MB combined),
+/// which matches the original defensive check.
 fn grid_string_cells_add_hyperlink(
     buf: &mut Vec<u8>,
     id: &[u8],
@@ -1563,7 +1563,7 @@ fn grid_string_cells_add_hyperlink(
 /// closes, the caller closes a link still open at the end.
 ///
 /// `hyperlinks` is the pane-local registry used to resolve `gc.link` into
-/// an OSC-8 URI+id. Pass `None` to disable hyperlink emission entirely
+/// an OSC-8 URI and id. Pass `None` to disable hyperlink emission entirely
 /// (also skipped implicitly when `lastgc.link == gc.link`).
 fn grid_string_cells_code(
     lastgc: &GridCell,
@@ -1684,7 +1684,7 @@ fn grid_string_cells_code(
 }
 
 /// Mark line as dead. Caller must ensure the line's Vec fields have already
-/// been moved out or dropped — this overwrites without dropping.
+/// been moved out or dropped. This overwrites without dropping.
 unsafe fn grid_reflow_dead(gl: *mut GridLine) {
     unsafe {
         std::ptr::write(gl, GridLine::new_dead());
@@ -1708,10 +1708,10 @@ unsafe fn grid_reflow_move(gd: *mut Grid, from: *mut GridLine) -> *mut GridLine 
     unsafe {
         let to = grid_reflow_add(gd, 1);
         // Move the line value out of `from`, write it to `to`.
-        // `to` was just initialized by grid_reflow_add — drop it before overwriting.
+        // `to` was just initialized by grid_reflow_add, so drop it before overwriting.
         std::ptr::drop_in_place(to);
         std::ptr::write(to, std::ptr::read(from));
-        // Write a dead line over the now-empty source (no drop — data was moved).
+        // Write a dead line over the now-empty source (no drop because the data was moved).
         grid_reflow_dead(from);
         to
     }
@@ -1927,7 +1927,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Constructors / destructors
+    // Constructors and destructors
     // ---------------------------------------------------------------
 
     #[test]
@@ -2118,7 +2118,7 @@ mod tests {
         gc = gd.get_cell(1, 0);
         assert!(grid_cells_equal(&gc, &cell));
 
-        // Cells inside cleared region should be cleared/default.
+        // Cells inside cleared region should be cleared to default.
         gc = gd.get_cell(2, 0);
         assert!(
             grid_cells_equal(&gc, &GRID_CLEARED_CELL) || grid_cells_equal(&gc, &GRID_DEFAULT_CELL)
@@ -2566,7 +2566,7 @@ mod tests {
         // grid_expand_line rounds up to sx/4 for small expansions.
         let mut gd = Grid::new(80, 5, 0);
         let cell = make_cell(b'X', 8, 8);
-        // Request expansion to column 2 — should round up to sx/4 = 20.
+        // Request expansion to column 2. It should round up to sx/4 = 20.
         gd.set_cell(1, 0, &cell);
 
         let gl = gd.get_line(0);
@@ -2671,7 +2671,7 @@ mod tests {
             gd.set_cell(0, y, &cell);
         }
 
-        // Scroll region [1..3] — line at upper=1 moves to history.
+        // Scroll region [1..3]. The line at upper=1 moves to history.
         gd.scroll_history_region(1, 3, 8, 0);
         assert_eq!(gd.hsize, 1);
 
@@ -2806,7 +2806,7 @@ mod tests {
             gd.scroll_history(8, 0);
             let hsize_before = gd.hsize;
 
-            // Reflow to width 10 — the 20-char history line should split into 2.
+            // Reflow to width 10. The 20-char history line should split into 2.
             gd.reflow(10);
             assert!(
                 gd.hsize > hsize_before,
@@ -2861,7 +2861,7 @@ mod tests {
             gd.scroll_history(8, 0);
             let hsize_before = gd.hsize;
 
-            // Reflow to width 20 — the two wrapped lines should join.
+            // Reflow to width 20. The two wrapped lines should join.
             gd.reflow(20);
             assert!(
                 gd.hsize <= hsize_before,
@@ -2882,10 +2882,10 @@ mod tests {
             for x in 0..5u32 {
                 gd.set_cell(x, 0, &cell);
             }
-            // Don't set WRAPPED flag — this is a short line.
+            // Don't set the WRAPPED flag because this is a short line.
             gd.scroll_history(8, 0);
 
-            // Reflow to width 10 — short unwrapped line should stay as-is.
+            // Reflow to width 10. A short unwrapped line should stay as-is.
             gd.reflow(10);
 
             let mut gc: GridCell;
@@ -2908,7 +2908,7 @@ mod tests {
             gd.scroll_history(8, 0);
             let hsize_before = gd.hsize;
 
-            // Reflow to same width — should be essentially a no-op.
+            // Reflow to same width. This should be essentially a no-op.
             gd.reflow(80);
             assert_eq!(gd.hsize, hsize_before);
 
@@ -3004,7 +3004,7 @@ mod tests {
 
         assert!(g1.visible_eq(&g2));
 
-        // Change one — should differ.
+        // Change one, which should differ.
         let other = make_rgb_fg_cell(b'E', 128, 64, 33);
         g2.set_cell(0, 0, &other);
         assert!(!g1.visible_eq(&g2));
@@ -3126,7 +3126,7 @@ mod tests {
             (*gd_ptr).view_set_cell(0, 0, &gc_x);
             assert_eq!(read_view_char(gd_ptr, 0, 0), b'X');
 
-            // Scroll into history — view row 0 is now a new empty line.
+            // Scroll into history. View row 0 is now a new empty line.
             (*gd_ptr).scroll_history(8, 0);
 
             // 'X' is now in history (Grid row 0), not visible view row 0.

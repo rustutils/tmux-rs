@@ -19,7 +19,7 @@ pub struct event_base {
 pub use event_impl::*;
 
 // ---------------------------------------------------------------------------
-// Evbuffer shim functions — bridge the C-shaped API to Evbuffer methods.
+// Evbuffer shim functions that bridge the C-shaped API to Evbuffer methods.
 // ---------------------------------------------------------------------------
 use super::evbuffer_eol_style;
 

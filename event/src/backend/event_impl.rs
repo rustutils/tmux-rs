@@ -1,7 +1,7 @@
 //! calloop-backed event loop implementation.
 //!
 //! Provides safe RAII wrappers (`TimerHandle`, `SignalHandle`, `IoHandle`,
-//! `defer`) and the core `event_init` / `event_loop` dispatch.
+//! `defer`) and the core `event_init` and `event_loop` dispatch.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -43,10 +43,10 @@ impl Drop for IoHandle {
 }
 
 /// Register an I/O event that calls `callback` when the fd is readable
-/// and/or writable.  The callback receives `(fd, fired_events)`.
+/// or writable, or both.  The callback receives `(fd, fired_events)`.
 ///
 /// `events` should be a combination of `EV_READ` and `EV_WRITE`.
-/// `EV_PERSIST` is always implied — the registration stays active until
+/// `EV_PERSIST` is always implied. The registration stays active until
 /// dropped.
 ///
 /// Returns `Some(IoHandle)` on success.  Drop the handle to deregister.
@@ -105,7 +105,7 @@ pub fn io_register(
                 Some(IoHandle { id })
             }
             Err(_) => {
-                // Non-epolable fd (regular file, etc.) — treat as always-ready.
+                // Non-epolable fd (regular file, etc.), so treat it as always ready.
                 // The callback fires on every event_loop iteration.
                 base.fallback_io.insert(
                     id,
@@ -129,10 +129,10 @@ pub fn io_register(
 /// Defer a callback to fire on the next event loop iteration.
 ///
 /// Used for resource cleanup where the callback needs to run *after* the
-/// current call stack unwinds — e.g. `server_client_free` must not run
+/// current call stack unwinds. For example, `server_client_free` must not run
 /// while we're still inside a callback that references the client.
 ///
-/// The callback is `FnOnce` — it fires exactly once, then is dropped.
+/// The callback is `FnOnce`: it fires exactly once, then is dropped.
 /// Unlike `timer_add`, this returns no handle: the caller cannot cancel
 /// the deferred work.
 pub fn defer(callback: Box<dyn FnOnce()>) {
@@ -299,7 +299,7 @@ use tmux_log::log_debug;
 use super::super::{EV_READ, EV_SIGNAL, EV_TIMEOUT, EV_WRITE, EVLOOP_NONBLOCK, event_log_cb};
 use super::event_base;
 
-/// A ready event notification — queued when a calloop source fires.
+/// A ready event notification, queued when a calloop source fires.
 struct ReadyEvent {
     id: u64,
     fd: c_int,
@@ -326,7 +326,7 @@ struct Registry {
     registrations: HashMap<u64, Registration>,
     /// Non-epolable fds (regular files, etc.) that are always ready.
     /// Maps event id → (fd, events).  The actual callback is in
-    /// `io_callbacks`; these fire on every `event_loop` iteration.
+    /// `io_callbacks`. These fire on every `event_loop` iteration.
     fallback_io: HashMap<u64, (c_int, c_short)>,
     /// Closures for safe timer API (`timer_add`).  Keyed by event id.
     timer_callbacks: HashMap<u64, Box<dyn Fn()>>,

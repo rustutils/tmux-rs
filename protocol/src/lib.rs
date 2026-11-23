@@ -1,20 +1,20 @@
-//! Client/server IPC protocol for tmux-rs.
+//! Client-server IPC protocol for tmux-rs.
 //!
 //! Three concerns live here:
 //!
-//! 1. **Message vocabulary** — the [`msgtype`] enum of recognized
+//! 1. **Message vocabulary**: the [`msgtype`] enum of recognized
 //!    message kinds, the `msg_*` payload structs that accompany them,
 //!    and the [`PROTOCOL_VERSION`] constant that gates handshake
 //!    compatibility.
-//! 2. **Wire framing** — the [`imsg`] module owns `imsgbuf`, the
-//!    per-connection state (read buffer + write queue + received-fd
-//!    queue) and the `imsg_read` / `imsg_get` / `imsg_compose*` /
+//! 2. **Wire framing**: the [`imsg`] module owns `imsgbuf`, the
+//!    per-connection state (read buffer, write queue and received-fd
+//!    queue) and the `imsg_read`, `imsg_get`, `imsg_compose*` and
 //!    `imsg_flush` lifecycle. Messages are length-prefixed with an
 //!    `imsg_hdr`, optionally carry a file descriptor via `SCM_RIGHTS`,
 //!    and are capped at `MAX_IMSGSIZE` bytes.
-//! 3. **Buffer primitives** — the [`imsg_buffer`] module holds the
+//! 3. **Buffer primitives**: the [`imsg_buffer`] module holds the
 //!    `ibuf` byte-buffer and `msgbuf` output-queue types, plus the
-//!    `ibuf_add_*` / `ibuf_get_*` accessors used to marshal
+//!    `ibuf_add_*` and `ibuf_get_*` accessors used to marshal
 //!    fixed-width integers with explicit endianness.
 //!
 //! The current surface is C-shaped (free functions over raw pointers)
@@ -35,13 +35,13 @@ pub mod imsg_buffer;
 /// continue on mismatch.
 pub const PROTOCOL_VERSION: i32 = 8;
 
-/// Message types exchanged on the client/server imsg socket.
+/// Message types exchanged on the client-server imsg socket.
 ///
 /// The three numeric ranges group messages by lifecycle:
-/// - `100..=112` — client identification (sent during the handshake).
-/// - `200..=218` — runtime commands and lifecycle events (attach,
+/// - `100..=112`: client identification (sent during the handshake).
+/// - `200..=218`: runtime commands and lifecycle events (attach,
 ///   detach, resize, shutdown, etc.).
-/// - `300..=307` — file read/write streaming for commands that proxy
+/// - `300..=307`: file read and write streaming for commands that proxy
 ///   I/O between client and server (`load-buffer`, `save-buffer`, ...).
 ///
 /// Zero is reserved so a zero-initialized `msgtype` isn't undefined
@@ -100,7 +100,7 @@ pub enum msgtype {
 /// Error returned by [`msgtype::try_from`] when the numeric value on
 /// the wire doesn't correspond to any known variant. Appears when a
 /// peer advertises a protocol version we recognize but sends a message
-/// kind that was added in a later revision — handled by dropping the
+/// kind that was added in a later revision. This is handled by dropping the
 /// message.
 #[derive(Debug)]
 pub struct InvalidEnumValue;
@@ -174,7 +174,7 @@ pub struct msg_read_open {
     pub fd: i32,
 }
 
-/// Payload of [`msgtype::MSG_READ`]: stream id; the actual bytes follow
+/// Payload of [`msgtype::MSG_READ`]: stream id. The actual bytes follow
 /// in the imsg payload after the struct.
 #[repr(C)]
 pub struct msg_read_data {
@@ -206,7 +206,7 @@ pub struct msg_write_open {
     pub flags: i32,
 }
 
-/// Payload of [`msgtype::MSG_WRITE`]: stream id; the bytes to write
+/// Payload of [`msgtype::MSG_WRITE`]: stream id. The bytes to write
 /// follow in the imsg payload after the struct.
 #[repr(C)]
 pub struct msg_write_data {

@@ -4,7 +4,7 @@
 //! or a receiver while it drains). `msgbuf` is the per-connection
 //! output queue of ibufs waiting for `sendmsg(2)`.
 //!
-//! This module was ported from OpenBSD's `imsg_buffer.c`; the public
+//! This module was ported from OpenBSD's `imsg_buffer.c`. The public
 //! C-shaped API (`ibuf_*`, `msgbuf_*` free functions taking raw
 //! pointers) is preserved for now so the existing call sites in
 //! `proc.rs` and `compat/imsg.rs` continue to work unchanged.
@@ -554,7 +554,7 @@ unsafe fn msgbuf_drain(msgbuf: *mut msgbuf, mut n: usize) {
             if n >= ibuf_size(buf) {
                 n -= ibuf_size(buf);
                 ibuf_dequeue(msgbuf, buf);
-                // don't increment i — next element shifted down
+                // don't increment i because the next element shifted down
             } else {
                 (*buf).rpos += n;
                 n = 0;

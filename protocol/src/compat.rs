@@ -1,13 +1,13 @@
 //! Internal copies of the BSD-style `libc` helpers used by the imsg
 //! layer. Duplicated (rather than shared via another workspace crate)
-//! because the footprint is small and stable; the originals live in
+//! because the footprint is small and stable. The originals live in
 //! `src/compat/` and are used by other parts of tmux-rs.
 
 use core::ffi::c_void;
 use core::ptr::null_mut;
 
 // ---------------------------------------------------------------------
-// errno — platform-specific accessor. Matches the main crate's
+// errno: platform-specific accessor. Matches the main crate's
 // `crate::errno!()` macro.
 // ---------------------------------------------------------------------
 
@@ -26,8 +26,8 @@ macro_rules! errno {
 pub(crate) use errno;
 
 // ---------------------------------------------------------------------
-// getdtablecount — number of open file descriptors for this process.
-// OpenBSD has a syscall; on Linux we count `/proc/self/fd` entries.
+// getdtablecount: number of open file descriptors for this process.
+// OpenBSD has a syscall. On Linux we count `/proc/self/fd` entries.
 // ---------------------------------------------------------------------
 
 pub(crate) fn getdtablecount() -> i32 {
@@ -39,7 +39,7 @@ pub(crate) fn getdtablecount() -> i32 {
 }
 
 // ---------------------------------------------------------------------
-// freezero — scrub-then-free, for memory that may hold sensitive data.
+// freezero: scrub-then-free, for memory that may hold sensitive data.
 // ---------------------------------------------------------------------
 
 pub(crate) unsafe fn freezero(ptr: *mut c_void, size: usize) {
@@ -52,8 +52,8 @@ pub(crate) unsafe fn freezero(ptr: *mut c_void, size: usize) {
 }
 
 // ---------------------------------------------------------------------
-// recallocarray — realloc with zero-fill on grow; scrub-on-shrink.
-// OpenBSD extension; ported here for the ibuf grow path.
+// recallocarray: realloc with zero-fill on grow and scrub on shrink.
+// OpenBSD extension, ported here for the ibuf grow path.
 // ---------------------------------------------------------------------
 
 pub(crate) unsafe fn recallocarray(

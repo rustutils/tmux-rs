@@ -1,14 +1,14 @@
-//! Per-cell data types: `GridCell` and its packed/extended companions.
+//! Per-cell data types: `GridCell` and its packed and extended companions.
 //!
 //! Each screen position is represented by a `GridCell` during computation,
 //! but stored on disk-like [`GridLine`](super::GridLine) storage as a
 //! compact `GridCellEntry`. When a cell carries styling that doesn't fit
-//! the packed form (RGB fg/bg, extended attributes, hyperlinks), it spills
+//! the packed form (RGB fg or bg, extended attributes, hyperlinks), it spills
 //! into a `GridExtdEntry` side-table indexed by
 //! [`GridCellEntryUnion::offset`].
 //!
 //! The impl blocks for `Grid` itself (accessors, mutators, scroll, reflow)
-//! remain in `tmux-rs::grid_.rs` — that's where they have access to the
+//! remain in `tmux-rs::grid_.rs`, where they have access to the
 //! process-global timestamp and the other tmux-rs helpers. The pure data
 //! definitions live here so future consumers (`tmux-grid`) can depend on
 //! the types without pulling the whole tmux-rs crate.
@@ -21,7 +21,7 @@ use crate::{GridAttr, GridFlag};
 ///
 /// `Copy` because it's tiny (~40 bytes) and gets passed around freely
 /// by value during rendering. For the on-Grid packed form see
-/// [`GridCellEntry`]; for the RGB/extended spill-over see
+/// [`GridCellEntry`], and for the RGB and extended spill-over see
 /// [`GridExtdEntry`].
 #[derive(Copy, Clone)]
 pub struct GridCell {
@@ -35,8 +35,8 @@ pub struct GridCell {
 }
 
 impl GridCell {
-    /// Const constructor — used by the `GRID_DEFAULT_CELL` / `PADDING_CELL`
-    /// / `CLEARED_CELL` statics. All fields are positional to mirror the
+    /// Const constructor used by the `GRID_DEFAULT_CELL`, `PADDING_CELL`
+    /// and `CLEARED_CELL` statics. All fields are positional to mirror the
     /// original C struct literal form.
     pub const fn new(
         data: Utf8Data,

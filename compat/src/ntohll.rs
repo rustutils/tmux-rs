@@ -1,5 +1,5 @@
 //! 64-bit network-to-host byte order conversion. On little-endian hosts
-//! `ntohll` is a byte-reverse; on big-endian hosts it's the identity.
+//! `ntohll` is a byte-reverse. On big-endian hosts it's the identity.
 //! Replaces a `C2Rust` port of OpenBSD's `ntohll.c` with the idiomatic
 //! `u64::from_be`.
 

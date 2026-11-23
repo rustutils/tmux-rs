@@ -15,7 +15,7 @@
 //! Calloop-backed event loop and evbuffer implementation for tmux-rs.
 //!
 //! Provides safe RAII wrappers (`TimerHandle`, `SignalHandle`, `IoHandle`,
-//! `defer`) and the core `event_init`/`event_loop` dispatch, plus a
+//! `defer`) and the core `event_init` and `event_loop` dispatch, plus a
 //! pure-Rust `Evbuffer` replacement for libevent's evbuffer.
 //!
 //! Module `backend` is named to avoid the name clash with the external
@@ -61,7 +61,7 @@ pub enum evbuffer_eol_style {
 pub type event_log_cb = Option<unsafe extern "C-unwind" fn(severity: c_int, msg: *const u8)>;
 
 // ---------------------------------------------------------------------------
-// Evbuffer — pure-Rust buffered I/O replacement for libevent's evbuffer.
+// Evbuffer: pure-Rust buffered I/O replacement for libevent's evbuffer.
 // ---------------------------------------------------------------------------
 
 mod buf;
@@ -72,7 +72,7 @@ pub use buf::Evbuffer;
 pub type evbuffer = Evbuffer;
 
 // ---------------------------------------------------------------------------
-// Backend — calloop-based event loop (named `backend` to avoid the clash
+// Backend: calloop-based event loop (named `backend` to avoid the clash
 // with the external `::calloop` crate this module wraps).
 // ---------------------------------------------------------------------------
 

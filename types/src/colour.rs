@@ -9,8 +9,8 @@
 //! Only the primitives that multiple subsystems need (splitting an RGB
 //! value, testing "is this the palette-default colour?") live here. The
 //! broader conversion functions (`colour_find_rgb`, `colour_tostring`,
-//! parsing, options integration) remain in `tmux-rs::colour` for now —
-//! they have external dependencies.
+//! parsing, options integration) remain in `tmux-rs::colour` for now
+//! because they have external dependencies.
 
 /// High-bit tag: this colour is an 8-bit 256-palette index (low byte).
 pub const COLOUR_FLAG_256: i32 = 0x01000000;
@@ -30,7 +30,7 @@ pub fn COLOUR_DEFAULT(c: i32) -> bool {
 }
 
 /// Extract the (r, g, b) bytes from a packed RGB colour. Does **not**
-/// check the `COLOUR_FLAG_RGB` tag — callers that don't know the colour
+/// check the `COLOUR_FLAG_RGB` tag. Callers that don't know the colour
 /// form must check first.
 #[inline]
 pub fn colour_split_rgb(c: i32) -> (u8, u8, u8) {

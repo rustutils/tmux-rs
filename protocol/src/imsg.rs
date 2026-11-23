@@ -6,11 +6,11 @@
 //!
 //! `imsg_read` pulls bytes (and any accompanying fds) from the socket
 //! into the read buffer. `imsg_get` peels one complete message off the
-//! read buffer. `imsg_compose` / `imsg_composev` / `imsg_compose_ibuf`
+//! read buffer. `imsg_compose`, `imsg_composev` and `imsg_compose_ibuf`
 //! queue a message for sending. `imsg_flush` drains the write queue
 //! until it's empty or the socket blocks.
 //!
-//! Ported from OpenBSD's `imsg.c`; the public API preserves the
+//! Ported from OpenBSD's `imsg.c`. The public API preserves the
 //! C-shaped free-function surface so existing call sites keep working.
 
 #![allow(dead_code)]

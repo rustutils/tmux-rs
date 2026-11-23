@@ -14,8 +14,8 @@
 //! Terminal text attribute parsing and formatting.
 //!
 //! Converts between [`GridAttr`] bitflags and their string representation.
-//! Supports 14 attributes (bright/bold, dim, underscore variants, blink, reverse,
-//! hidden, italics, strikethrough, overline, acs/charset).
+//! Supports 14 attributes (bright or bold, dim, underscore variants, blink, reverse,
+//! hidden, italics, strikethrough, overline, acs or charset).
 //!
 //! String format uses comma-separated names (e.g. `"bold,italics,underline"`).
 //! Delimiters can be commas, spaces, or pipes. Parsing is case-insensitive.
@@ -63,7 +63,7 @@ pub fn attributes_tostring(attr: GridAttr) -> Cow<'static, str> {
 /// Parses a delimiter-separated attribute string into [`GridAttr`] bitflags.
 /// Accepts commas, spaces, or pipes as delimiters. Case-insensitive.
 /// `"none"` and `"default"` return empty attributes.
-/// Returns `Err(())` if the string is empty, starts/ends with a delimiter,
+/// Returns `Err(())` if the string is empty, starts or ends with a delimiter,
 /// or contains an unrecognized attribute name.
 /// Note: `"bold"` is an alias for `"bright"`.
 #[expect(
@@ -170,7 +170,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // attributes_fromstring — valid inputs
+    // attributes_fromstring: valid inputs
     // ---------------------------------------------------------------
 
     #[test]
@@ -256,7 +256,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // attributes_fromstring — invalid inputs
+    // attributes_fromstring: invalid inputs
     // ---------------------------------------------------------------
 
     #[test]

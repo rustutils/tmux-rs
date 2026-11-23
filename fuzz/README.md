@@ -44,7 +44,7 @@ directories. Child processes inherit these restrictions, so even if code under
 test spawns a shell command, it cannot modify the filesystem.
 
 The sandbox requires Linux 5.13+ with Landlock enabled (check `cat /sys/kernel/security/lsm`).
-It is configured with `CompatLevel::HardRequirement` — the fuzzer refuses to run
+It is configured with `CompatLevel::HardRequirement`, so the fuzzer refuses to run
 if Landlock is not available.
 
 When adding new targets:

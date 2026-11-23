@@ -21,13 +21,13 @@
 //! let round = Utf8Data::from_char(uc);      // was: utf8_to_data
 //! ```
 //!
-//! The freestanding fns are shims over these methods — a future
+//! The freestanding fns are shims over these methods. A future
 //! refactor can migrate callers and delete them.
 
 // Several of the freestanding fns are translated-from-C with nested
-// pointer arithmetic; inline SAFETY comments explain each site.
+// pointer arithmetic. Inline SAFETY comments explain each site.
 #![allow(unsafe_op_in_unsafe_fn)]
-// `utf8_item_index` / `utf8_item_data` are the snake_case names the
+// `utf8_item_index` and `utf8_item_data` are the snake_case names the
 // tmux-rs tree references via re-export. Rename is tracked separately.
 #![allow(non_camel_case_types)]
 
@@ -35,8 +35,8 @@ use std::cell::RefCell;
 
 use libc::wchar_t;
 
-// libc crate doesn't expose these on Linux; declare the externs directly.
-// (Not widely a portability issue — tmux-rs already ships for Linux/macOS/BSD.)
+// The libc crate doesn't expose these on Linux, so declare the externs directly.
+// (Not widely a portability issue: tmux-rs already ships for Linux, macOS and BSD.)
 unsafe extern "C" {
     fn mbtowc(pwc: *mut wchar_t, s: *const u8, n: usize) -> i32;
     fn wctomb(s: *mut u8, wc: wchar_t) -> i32;
@@ -72,11 +72,11 @@ pub use data::{UTF8_SIZE, Utf8Char, Utf8Data};
 
 /// Result of a streaming UTF-8 decode or an encode-to-packed-form.
 ///
-/// - `More` — need another byte (streaming decode in progress).
-/// - `Done` — complete, result is valid.
-/// - `Error` — sequence is malformed or cannot be represented.
+/// - `More`: need another byte (streaming decode in progress).
+/// - `Done`: complete, result is valid.
+/// - `Error`: sequence is malformed or cannot be represented.
 ///
-/// Associated consts `UTF8_MORE`/`UTF8_DONE`/`UTF8_ERROR` are provided
+/// Associated consts `UTF8_MORE`, `UTF8_DONE` and `UTF8_ERROR` are provided
 /// as aliases so legacy call sites (spelled `utf8_state::UTF8_DONE`)
 /// keep working during the migration.
 #[repr(i32)]
@@ -98,10 +98,10 @@ impl Utf8State {
 // Bit packing for Utf8Char
 //
 // Layout (u32):
-//   bits 31..29 — width + 1 (so 0 is sentinel "unset")
-//   bits 28..24 — size (up to UTF8_SIZE)
-//   bits 23..0  — either the low bytes of the char (size ≤ 3) or an
-//                 intern-table index (size > 3)
+//   bits 31..29: width + 1 (so 0 is sentinel "unset")
+//   bits 28..24: size (up to UTF8_SIZE)
+//   bits 23..0:  either the low bytes of the char (size ≤ 3) or an
+//                intern-table index (size > 3)
 // ---------------------------------------------------------------------
 
 fn utf8_get_size(uc: Utf8Char) -> u8 {
@@ -121,7 +121,7 @@ fn utf8_set_width(width: u8) -> Utf8Char {
 // Intern table
 //
 // Characters wider than 3 bytes can't fit in the packed form's low 24
-// bits; instead we store them in a thread-local interning table and
+// bits. Instead we store them in a thread-local interning table and
 // use the low bits as an index. The table is append-only and caps at
 // 2^24 entries.
 // ---------------------------------------------------------------------
@@ -151,7 +151,7 @@ impl utf8_item_data {
     }
 
     fn initialized_slice(&self) -> &[u8] {
-        // SAFETY: type invariant — bytes up to `size` were written by `new`.
+        // SAFETY: type invariant. Bytes up to `size` were written by `new`.
         unsafe { std::slice::from_raw_parts(self.data.as_ptr().cast(), self.size as usize) }
     }
 }
@@ -424,7 +424,7 @@ pub fn utf8_in_table(find: wchar_t, table: &[wchar_t]) -> bool {
 // ---------------------------------------------------------------------
 
 /// Pack a fully-decoded `Utf8Data` into a `Utf8Char`. For sizes ≤ 3
-/// the packed form stores the bytes inline; larger sequences are
+/// the packed form stores the bytes inline, and larger sequences are
 /// stored in the intern table and the packed form holds an index.
 ///
 /// Returns `Done` on success. Returns `Error` and substitutes a
@@ -478,7 +478,7 @@ pub unsafe fn utf8_from_data(ud: *const Utf8Data, uc: *mut Utf8Char) -> Utf8Stat
 }
 
 /// Unpack a `Utf8Char` back into a `Utf8Data`. The inverse of
-/// [`utf8_from_data`]; for sizes > 3 this consults the intern table.
+/// [`utf8_from_data`]. For sizes > 3 this consults the intern table.
 pub fn utf8_to_data(uc: Utf8Char) -> Utf8Data {
     let mut ud = Utf8Data {
         data: [0; UTF8_SIZE],
@@ -558,8 +558,8 @@ pub unsafe fn utf8_width(ud: *mut Utf8Data, width: *mut i32) -> Utf8State {
             return Utf8State::Done;
         }
         // `unicode-width` is a pure-Rust replacement for the former
-        // `utf8proc_wcwidth` / libc `wcwidth` path. Returns None for
-        // control chars — we map those to 0 (C1) or 1 (other) to
+        // `utf8proc_wcwidth` and libc `wcwidth` path. Returns None for
+        // control chars. We map those to 0 (C1) or 1 (other) to
         // preserve the historical behavior.
         let columns = char::from_u32(wc as u32).and_then(unicode_width::UnicodeWidthChar::width);
         *width = match columns {
@@ -581,7 +581,7 @@ pub unsafe fn utf8_width(ud: *mut Utf8Data, width: *mut i32) -> Utf8State {
 }
 
 /// Decode `*ud` (raw bytes) into a wide character (`*wc`). Uses libc
-/// `mbtowc` — the current locale must be UTF-8 for this to produce
+/// `mbtowc`, so the current locale must be UTF-8 for this to produce
 /// Unicode codepoints.
 ///
 /// # Safety
@@ -634,8 +634,8 @@ pub unsafe fn utf8_fromwc(wc: wchar_t, ud: *mut Utf8Data) -> Utf8State {
 // ---------------------------------------------------------------------
 
 /// Start a streaming decode: initialize `*ud` from a lead byte `ch`.
-/// Returns `More` if `ch` was a valid lead for a 2–4 byte sequence;
-/// `Error` otherwise.
+/// Returns `More` if `ch` was a valid lead for a 2–4 byte sequence,
+/// or `Error` otherwise.
 ///
 /// # Safety
 /// `ud` must be writable for a full `Utf8Data`.
@@ -693,7 +693,7 @@ pub unsafe fn utf8_append(ud: *mut Utf8Data, ch: c_uchar) -> Utf8State {
 }
 
 /// Validate a NUL-terminated byte string: every byte must either be a
-/// printable ASCII character (0x20..=0x7e) or start/continue a valid
+/// printable ASCII character (0x20..=0x7e) or start or continue a valid
 /// UTF-8 sequence.
 ///
 /// # Safety
@@ -745,7 +745,7 @@ pub unsafe fn utf8_isvalid(mut s: *const u8) -> bool {
 /// pointer for reading.
 pub unsafe fn utf8_cstrhas(set: *const u8, ud: *const Utf8Data) -> bool {
     // Walk `set` byte by byte, accumulating each codepoint via
-    // utf8_open/utf8_append, comparing each completed codepoint
+    // utf8_open and utf8_append, comparing each completed codepoint
     // against `ud`.
     if set.is_null() {
         return false;
@@ -763,7 +763,7 @@ pub unsafe fn utf8_cstrhas(set: *const u8, ud: *const Utf8Data) -> bool {
             };
             let byte = *p;
             if (0xc2..=0xf4).contains(&byte) {
-                // Multi-byte — try streaming decode.
+                // Multi-byte, so try streaming decode.
                 let mut state = utf8_open(&raw mut candidate, byte);
                 while state == Utf8State::More {
                     p = p.add(1);
@@ -782,7 +782,7 @@ pub unsafe fn utf8_cstrhas(set: *const u8, ud: *const Utf8Data) -> bool {
                     p = p.add(1);
                 }
             } else {
-                // Single byte — direct compare.
+                // Single byte, so compare directly.
                 if (*ud).size == 1 && (*ud).data[0] == byte {
                     return true;
                 }
@@ -805,7 +805,7 @@ pub unsafe fn utf8_cstrhas(set: *const u8, ud: *const Utf8Data) -> bool {
 pub enum Utf8Error {
     /// Input was malformed, too long, or the intern table is full.
     /// The packed form produced in error cases is a replacement char
-    /// (space or double-space depending on requested width) — see
+    /// (space or double-space depending on requested width). See
     /// [`utf8_from_data`] for details.
     Invalid,
 }
@@ -828,7 +828,7 @@ impl Utf8Data {
     }
 
     /// Encode into the packed [`Utf8Char`] form. Returns `Err` if the
-    /// sequence is invalid or the intern table is full — a substitute
+    /// sequence is invalid or the intern table is full. A substitute
     /// placeholder is still produced by [`utf8_from_data`], but the
     /// safe wrapper surfaces the error rather than silently masking.
     pub fn encode(&self) -> Result<Utf8Char, Utf8Error> {
@@ -878,7 +878,7 @@ impl Utf8Data {
         unsafe { utf8_cstrhas(set.as_ptr().cast(), self as *const Utf8Data) }
     }
 
-    /// Zeroed placeholder — equivalent to the C `{0}` initializer pattern.
+    /// Zeroed placeholder, equivalent to the C `{0}` initializer pattern.
     /// Used as the starting state for streaming decode via [`Utf8Data::open`].
     pub const fn empty() -> Self {
         Utf8Data {
@@ -979,7 +979,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // utf8_set_size / utf8_get_size round-trip
+    // utf8_set_size and utf8_get_size round-trip
     // ---------------------------------------------------------------
 
     #[test]
@@ -991,7 +991,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // utf8_set_width / utf8_get_width round-trip
+    // utf8_set_width and utf8_get_width round-trip
     // ---------------------------------------------------------------
 
     #[test]
@@ -1003,7 +1003,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // utf8_from_data / utf8_to_data round-trip for small (<=3 byte)
+    // utf8_from_data and utf8_to_data round-trip for small (<=3 byte)
     // ---------------------------------------------------------------
 
     #[test]
@@ -1110,7 +1110,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // utf8_open / utf8_append — encoding/decoding UTF-8 sequences
+    // utf8_open and utf8_append: encoding and decoding UTF-8 sequences
     // ---------------------------------------------------------------
 
     #[test]

@@ -1,13 +1,13 @@
 //! Bitflag types describing per-cell, per-line, and per-string styling options.
 //!
-//! These are the "pure data" portion of the Grid model — moved first into
+//! These are the "pure data" portion of the Grid model, moved first into
 //! `tmux-types` because they have no dependencies on other Grid helpers.
 //! The types, their constants, and the `GRID_ATTR_ALL_UNDERSCORE` aggregate
 //! all preserve their original names and values so the rest of the codebase
 //! (which re-imports them via `pub use tmux_types::*;`) is unaffected.
 
 bitflags::bitflags! {
-    /// Per-cell text attributes: bright/dim/italic/etc. SGR state. Stored
+    /// Per-cell text attributes: bright, dim, italic and other SGR state. Stored
     /// packed in `GridCell.attr` and propagated through the renderer.
     #[repr(transparent)]
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -29,7 +29,7 @@ bitflags::bitflags! {
     }
 }
 
-/// Combined mask for every underscore variant — used to zero out all
+/// Combined mask for every underscore variant, used to zero out all
 /// underscore bits atomically when style resets (e.g. when `NOUNDERSCORE`
 /// is selected).
 pub const GRID_ATTR_ALL_UNDERSCORE: GridAttr = GridAttr::GRID_ATTR_UNDERSCORE
@@ -55,7 +55,7 @@ bitflags::bitflags! {
 }
 
 bitflags::bitflags! {
-    /// Per-line flags: wrapping, liveness, and prompt/output markers used
+    /// Per-line flags: wrapping, liveness, and prompt and output markers used
     /// for copy-mode search and command-history scrubbing.
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq)]
@@ -69,7 +69,7 @@ bitflags::bitflags! {
 }
 
 bitflags::bitflags! {
-    /// Options for `Grid::string_cells` — whether to emit escape sequences,
+    /// Options for `Grid::string_cells`: whether to emit escape sequences,
     /// escape them for printing, trim trailing spaces, or include padding cells.
     #[repr(transparent)]
     #[derive(Copy, Clone, Eq, PartialEq)]
@@ -83,7 +83,7 @@ bitflags::bitflags! {
 }
 
 bitflags::bitflags! {
-    /// Grid-level flags. Currently only `HISTORY` — set when the Grid
+    /// Grid-level flags. Currently only `HISTORY`, set when the Grid
     /// retains scrollback history. Omitted for ephemeral screens
     /// (popups, menus, alternate-screen mode).
     #[repr(transparent)]

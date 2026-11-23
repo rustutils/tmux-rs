@@ -3,7 +3,7 @@
 //!
 //! Layout: `celldata` holds the packed-form cells in order, `extddata`
 //! is a side-table for cells whose style needed the extended form, and
-//! `flags` + `time` carry per-line metadata used by reflow, search, and
+//! `flags` and `time` carry per-line metadata used by reflow, search, and
 //! copy-mode.
 
 use libc::time_t;
@@ -11,7 +11,7 @@ use libc::time_t;
 use crate::{GridCellEntry, GridExtdEntry, GridLineFlag};
 
 /// One row of cells. Lines are stored contiguously in
-/// `Grid.linedata: Vec<GridLine>`; logical "scrollback" is just the
+/// `Grid.linedata: Vec<GridLine>`. Logical "scrollback" is just the
 /// prefix `0..hsize` and the visible screen is `hsize..hsize+sy`.
 pub struct GridLine {
     pub celldata: Vec<GridCellEntry>,
@@ -29,7 +29,7 @@ pub struct GridLine {
 }
 
 impl GridLine {
-    /// Create a new empty Grid line — used both for initial Grid
+    /// Create a new empty Grid line, used both for initial Grid
     /// construction and for refilling the visible area after a scroll.
     pub fn new() -> Self {
         Self {

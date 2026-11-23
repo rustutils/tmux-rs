@@ -11,24 +11,24 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-//! Grid reader — cursor navigation over a terminal Grid.
+//! Grid reader: cursor navigation over a terminal Grid.
 //!
 //! A `GridReader` provides stateful cursor movement over a `Grid`, used
-//! primarily by copy mode for word/character jumping, selection, and search.
+//! primarily by copy mode for word and character jumping, selection, and search.
 //! The reader tracks a `(cx, cy)` position and the Grid it operates on.
 //!
 //! ## Coordinate system
 //! - `cx`: column (0-based, left to right)
-//! - `cy`: row (0-based, absolute — includes scrollback history lines)
+//! - `cy`: row (0-based, absolute, includes scrollback history lines)
 //! - `hsize`: number of history (scrollback) lines above the visible area
 //! - `sy`: number of visible rows
 //! - Total Grid height: `hsize + sy`
 //!
 //! ## Word boundaries
 //! Word movement functions classify characters into three categories:
-//! 1. **Whitespace** — space characters (matched by `WHITESPACE`)
-//! 2. **Separators** — configurable set (e.g. `-_@.`), from `word-separators` option
-//! 3. **Word characters** — everything else (letters, digits, etc.)
+//! 1. **Whitespace**: space characters (matched by `WHITESPACE`)
+//! 2. **Separators**: configurable set (e.g. `-_@.`), from `word-separators` option
+//! 3. **Word characters**: everything else (letters, digits, etc.)
 //!
 //! Word boundaries occur between adjacent characters of different categories.
 //!
@@ -495,7 +495,7 @@ mod tests {
     use crate::{GridAttr, GridCell};
 
     /// Helper: create a Grid and fill lines with ASCII text. Registers
-    /// the test codec so `in_set` / `cursor_next_word` / etc. can run
+    /// the test codec so `in_set`, `cursor_next_word` and others can run
     /// without the tmux-rs utf8 machinery.
     fn make_grid_with_text(lines: &[&str], width: u32) -> Grid {
         let mut gd = Grid::new(width, lines.len() as u32, 0);
@@ -592,7 +592,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Start/end of line
+    // Start and end of line
     // ---------------------------------------------------------------
 
     #[test]
@@ -614,7 +614,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Jump forward / backward
+    // Jump forward and backward
     // ---------------------------------------------------------------
 
     #[test]
@@ -682,7 +682,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
-    // Next word / previous word
+    // Next word and previous word
     // ---------------------------------------------------------------
 
     #[test]

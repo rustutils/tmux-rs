@@ -33,7 +33,7 @@ use std::ffi::c_int;
 pub struct Evbuffer {
     /// Backing storage.
     buf: Vec<u8>,
-    /// Read cursor — bytes before this index have been logically consumed.
+    /// Read cursor. Bytes before this index have been logically consumed.
     cursor: usize,
 }
 

@@ -18,7 +18,7 @@
 //! raised the global level above zero (one level per `-v` flag).
 //!
 //! Two entry points:
-//! * [`log_debug!`] — crate-local macro that preserves the call-site
+//! * [`log_debug!`]: crate-local macro that preserves the call-site
 //!   `file:line`.
 //! * [`::log`] crate adapter installed by [`log_install_logger`], so
 //!   `::log::debug!` routes through the same sanitization and format.
@@ -180,8 +180,8 @@ fn log_write_at(args: std::fmt::Arguments, prefix: &str, file: &str, line: u32) 
 }
 
 /// Adapter that routes `log` crate records into our existing log pipeline
-/// (stravis sanitization + custom timestamp/file:line format). Installed
-/// once at startup by [`log_install_logger`]; remains registered across
+/// (stravis sanitization and the custom timestamp and file:line format). Installed
+/// once at startup by [`log_install_logger`] and remains registered across
 /// fork (child inherits it, file handle is re-opened by `log_open`).
 struct TmuxLogger;
 
@@ -210,13 +210,13 @@ impl ::log::Log for TmuxLogger {
 
 static TMUX_LOGGER: TmuxLogger = TmuxLogger;
 
-/// Install the `log` crate adapter. Idempotent — subsequent calls are
+/// Install the `log` crate adapter. Idempotent: subsequent calls are
 /// no-ops (`set_logger` errors are silently ignored). Call once during
 /// process startup.
 pub fn log_install_logger() {
     let _ = ::log::set_logger(&TMUX_LOGGER);
-    // Allow `log::debug!` etc. through the macro's compile-time gate;
-    // our enabled() gate + LOG_LEVEL handle runtime filtering.
+    // Allow `log::debug!` etc. through the macro's compile-time gate.
+    // Our enabled() gate and LOG_LEVEL handle runtime filtering.
     ::log::set_max_level(::log::LevelFilter::Trace);
 }
 
@@ -252,7 +252,7 @@ mod tests {
 
     use super::*;
 
-    /// Serialize tests — they mutate process-wide `LOG_FILE` and `LOG_LEVEL`.
+    /// Serialize tests because they mutate process-wide `LOG_FILE` and `LOG_LEVEL`.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     /// Swap `LOG_FILE` to a tempfile, raise `LOG_LEVEL`, return a guard that
@@ -333,7 +333,7 @@ mod tests {
     #[test]
     fn stravis_sanitizes_control_chars() {
         let mut cap = LogCapture::new();
-        // Embed a newline and a tab — stravis with VIS_NL|VIS_TAB must escape them.
+        // Embed a newline and a tab. stravis with VIS_NL|VIS_TAB must escape them.
         log_debug!("a\nb\tc");
         let contents = cap.read_contents();
         // stravis VIS_CSTYLE emits \n and \t literal backslash-escapes.
@@ -353,14 +353,14 @@ mod tests {
 
     #[test]
     fn log_level_zero_disables_output() {
-        // Capture sets LOG_LEVEL to 1; override back to 0 mid-test.
+        // Capture sets LOG_LEVEL to 1, so override it back to 0 mid-test.
         let mut cap = LogCapture::new();
         LOG_LEVEL.store(0, DEFAULT_ORDERING);
         log_debug!("should not appear");
         ::log::debug!("also should not appear");
         let contents = cap.read_contents();
         // Note: log_debug_rs early-returns on empty LOG_FILE but not on
-        // LOG_LEVEL; the adapter checks LOG_LEVEL explicitly. So the
+        // LOG_LEVEL. The adapter checks LOG_LEVEL explicitly. So the
         // log_debug! call DOES write (legacy behavior preserved) while
         // ::log::debug! does not. This test documents that fact.
         assert!(
