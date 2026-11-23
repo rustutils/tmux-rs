@@ -12,6 +12,9 @@
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 use crate::*;
+use crate::hook_monitor::{
+    hooks_monitor_fired, hooks_monitor_get, hooks_monitor_to_string, monitor_target_string,
+};
 use crate::options_::*;
 
 pub static CMD_SHOW_OPTIONS_ENTRY: cmd_entry = cmd_entry {
@@ -55,8 +58,8 @@ pub static CMD_SHOW_HOOKS_ENTRY: cmd_entry = cmd_entry {
     name: "show-hooks",
     alias: None,
 
-    args: args_parse::new("F:gpt:w", 0, 1, None),
-    usage: "[-gpw] [-F format] [-t target-pane] [hook]",
+    args: args_parse::new("BF:gpt:w", 0, 1, None),
+    usage: "[-Bgpw] [-F format] [-t target-pane] [hook]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -73,6 +76,10 @@ pub static CMD_SHOW_HOOKS_ENTRY: cmd_entry = cmd_entry {
 /// How show-options prints an option without -F: the value only with
 /// -v, otherwise the name, `[key]`, `*` if inherited and the value,
 /// quoted for strings.
+/// How show-hooks -B prints a monitor, as set-hook -B takes it.
+const SHOW_HOOKS_MONITOR_TEMPLATE: &CStr =
+    c"#{option_name}:#{hook_monitor_target}:#{hook_monitor_format}";
+
 const SHOW_OPTIONS_TEMPLATE: &CStr = c"#{?option_value_only,#{option_value},#{option_name}#{?option_has_array_key,[#{option_array_key}],}#{?option_is_parent,*,}#{?option_has_value, #{?option_is_string,#{q/a:option_value},#{option_value}},}}";
 
 /// show-options, show-window-options and show-hooks.
@@ -84,6 +91,8 @@ unsafe fn cmd_show_options_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
         let quiet = args_has(args, 'q');
 
         let window = std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_WINDOW_OPTIONS_ENTRY) as i32;
+        let show_monitors =
+            std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_HOOKS_ENTRY) && args_has(args, 'B');
 
         if args_count(args) == 0 {
             let scope = match options_scope_from_flags(args, window, target, &raw mut oo) {
@@ -94,6 +103,12 @@ unsafe fn cmd_show_options_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
                     return cmd_retval::CMD_RETURN_ERROR;
                 }
             };
+            if show_monitors {
+                for o in options_entries(oo) {
+                    cmd_show_hooks_print_monitor(self_, item, o);
+                }
+                return cmd_retval::CMD_RETURN_NORMAL;
+            }
             return cmd_show_options_all(self_, item, scope, oo);
         }
         let expanded = format_single_from_target(item, args_string(args, 0));
@@ -124,7 +139,9 @@ unsafe fn cmd_show_options_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
             o = options_get(&mut *oo, &name);
             parent = true;
         }
-        if !o.is_null() {
+        if !o.is_null() && show_monitors {
+            cmd_show_hooks_print_monitor(self_, item, o);
+        } else if !o.is_null() {
             // An empty array has nothing inherited to show.
             if key.is_none() && options_is_array(o) && options_array_keys(o).is_empty() {
                 parent = false;
@@ -222,6 +239,55 @@ unsafe fn cmd_show_options_print(
     }
 }
 
+/// Prints the monitor of a hook option (show-hooks -B), with -F or the
+/// monitor template. Nothing for an option without a monitor.
+unsafe fn cmd_show_hooks_print_monitor(self_: *mut cmd, item: *mut cmdq_item, o: *mut options_entry) {
+    unsafe {
+        let args = cmd_get_args(self_);
+        let Some(value) = hooks_monitor_to_string(o) else {
+            return;
+        };
+        let Some((target, format)) = hooks_monitor_get(o) else {
+            return;
+        };
+        let template = args_get_(args, 'F');
+        let template = if template.is_null() {
+            SHOW_HOOKS_MONITOR_TEMPLATE.as_ptr().cast()
+        } else {
+            template
+        };
+
+        let ft = format_create_from_target(item);
+        format_add!(ft, "option_name", "{}", options_name(o));
+        format_add!(ft, "option_value", "{}", value);
+        format_add!(ft, "option_value_only", "0");
+        format_add!(ft, "option_is_parent", "0");
+        format_add!(ft, "option_is_array", "0");
+        format_add!(ft, "option_is_string", "1");
+        format_add!(ft, "option_is_hook", "1");
+        format_add!(ft, "option_is_user", "1");
+        format_add!(ft, "option_has_value", "1");
+        format_add!(ft, "option_array_key", "");
+        format_add!(ft, "option_has_array_key", "0");
+        format_add!(ft, "hook_monitor_target", "{}", monitor_target_string(target));
+        format_add!(ft, "hook_monitor_format", "{}", format);
+        let (fire_count, fire_time) = hooks_monitor_fired(o);
+        format_add!(ft, "hook_fire_count", "{}", fire_count);
+        if fire_time != 0 {
+            let tv = timeval {
+                tv_sec: fire_time,
+                tv_usec: 0,
+            };
+            format_add_tv(ft, c!("hook_fire_time"), &tv);
+        }
+        let line = format_expand(ft, template);
+        format_free(ft);
+
+        cmdq_print!(item, "{}", cstr_to_string_lossy(line));
+        free_(line);
+    }
+}
+
 /// Prints every option of a tree: user options first, then the table
 /// options of the scope. Hooks only for show-hooks or with -H.
 unsafe fn cmd_show_options_all(
@@ -241,7 +307,8 @@ unsafe fn cmd_show_options_all(
                 continue;
             }
             let name = options_name(o);
-            let is_user_hook = name.starts_with('@') && hooks_is_event(name);
+            let is_user_hook =
+                name.starts_with('@') && (hooks_is_event(name) || (*o).monitor().is_some());
             if show_hooks {
                 if is_user_hook {
                     cmd_show_options_print(self_, item, o, None, false);

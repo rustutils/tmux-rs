@@ -204,6 +204,9 @@ pub trait OptionsExt {
     type Style;
     /// A tag for the tree an entry belongs to.
     type Owner: Copy + PartialEq;
+    /// What watches a hook option (set-hook -B). It is dropped with the
+    /// entry, so dropping it must undo whatever it registered.
+    type Monitor;
 
     fn parse_command(s: &str) -> Result<Self::Command, String>;
     fn print_command(cmd: &Self::Command) -> String;
@@ -422,6 +425,7 @@ pub struct OptionEntry<X: OptionsExt> {
     cached: bool,
     fire_count: u32,
     fire_time: i64,
+    monitor: Option<X::Monitor>,
 }
 
 impl<X: OptionsExt> OptionEntry<X> {
@@ -435,7 +439,23 @@ impl<X: OptionsExt> OptionEntry<X> {
             cached: false,
             fire_count: 0,
             fire_time: 0,
+            monitor: None,
         }
+    }
+
+    /// The monitor of a hook option, as C's `monitor_data`.
+    pub fn monitor(&self) -> Option<&X::Monitor> {
+        self.monitor.as_ref()
+    }
+
+    pub fn monitor_mut(&mut self) -> Option<&mut X::Monitor> {
+        self.monitor.as_mut()
+    }
+
+    /// Replaces the monitor and returns the old one, so the caller
+    /// decides when it is dropped.
+    pub fn set_monitor(&mut self, monitor: Option<X::Monitor>) -> Option<X::Monitor> {
+        std::mem::replace(&mut self.monitor, monitor)
     }
 
     pub fn name(&self) -> &str {
@@ -1057,6 +1077,7 @@ mod tests {
         type Command = String;
         type Style = String;
         type Owner = u32;
+        type Monitor = std::rc::Rc<()>;
 
         fn parse_command(s: &str) -> Result<String, String> {
             if s.contains("bad") {
@@ -1564,6 +1585,33 @@ mod tests {
         o.hook_fired(100);
         o.hook_fired(105);
         assert_eq!((o.fire_count(), o.fire_time()), (2, 105));
+    }
+
+    #[test]
+    fn monitor_goes_with_the_entry() {
+        let mut oo = tree();
+        let token = std::rc::Rc::new(());
+        oo.set_string("@m", b"", false)
+            .set_monitor(Some(token.clone()));
+        assert!(oo.get_only("@m").unwrap().monitor().is_some());
+        // Changing the value keeps it.
+        oo.set_string("@m", b"x", false);
+        assert_eq!(std::rc::Rc::strong_count(&token), 2);
+        // Removing the entry drops it.
+        oo.remove("@m");
+        assert_eq!(std::rc::Rc::strong_count(&token), 1);
+        // So does replacing the entry, or dropping the tree.
+        oo.set_default(&TABLE[5]).set_monitor(Some(token.clone()));
+        oo.set_default(&TABLE[5]);
+        assert_eq!(std::rc::Rc::strong_count(&token), 1);
+        oo.set_string("@m", b"", false).set_monitor(Some(token.clone()));
+        drop(oo);
+        assert_eq!(std::rc::Rc::strong_count(&token), 1);
+        // set_monitor hands back the old one.
+        let mut oo = tree();
+        let o = oo.set_string("@m", b"", false);
+        o.set_monitor(Some(token.clone()));
+        assert!(o.set_monitor(None).is_some());
     }
 
     #[test]

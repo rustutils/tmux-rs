@@ -82,10 +82,10 @@
 4 src/cmd_/cmd_server_access.rs
 2 src/cmd_/cmd_set_buffer.rs
 2 src/cmd_/cmd_set_environment.rs
-9 src/cmd_/cmd_set_option.rs
+12 src/cmd_/cmd_set_option.rs
 4 src/cmd_/cmd_show_environment.rs
 4 src/cmd_/cmd_show_messages.rs
-6 src/cmd_/cmd_show_options.rs
+8 src/cmd_/cmd_show_options.rs
 2 src/cmd_/cmd_show_prompt_history.rs
 12 src/cmd_/cmd_source_file.rs
 2 src/cmd_/cmd_split_window.rs
@@ -105,6 +105,7 @@
 60 src/file.rs
 453 src/format.rs
 28 src/format_draw_.rs
+22 src/hook_monitor.rs
 12 src/hooks.rs
 14 src/hyperlinks_.rs
 12 src/image_.rs

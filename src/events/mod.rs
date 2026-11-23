@@ -235,6 +235,9 @@ pub unsafe fn events_fire(name: &str, mut payload: Payload, item: *mut cmdq_item
                 Sink::Control => control_notify_event(name, &payload),
                 Sink::Hooks => hooks_event(name, &payload, item),
                 Sink::WaitFor(waiter) => cmd_wait_for_event(waiter, &payload),
+                Sink::HookMonitor(id) => {
+                    crate::hook_monitor::hooks_monitor_event(id, name, &payload);
+                }
             }
         }
     }

@@ -41,6 +41,9 @@ pub enum Sink {
     Hooks,
     /// A `wait-for -E` waiter, by its number.
     WaitFor(u32),
+    /// A hook monitor (set-hook -B), by its number. It takes only the
+    /// events its own monitor fires.
+    HookMonitor(u32),
 }
 
 /// Identifies a registered sink, to remove it.

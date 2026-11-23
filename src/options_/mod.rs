@@ -63,6 +63,7 @@ impl OptionsExt for COptions {
     type Command = CmdList;
     type Style = style;
     type Owner = *mut options;
+    type Monitor = crate::hook_monitor::HookMonitor;
 
     fn parse_command(s: &str) -> Result<CmdList, String> {
         // SAFETY: parsing a string does not touch option trees.

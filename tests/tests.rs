@@ -8,6 +8,7 @@ mod cursor;
 mod environment;
 mod format_strings;
 pub mod harness;
+mod hook_monitors;
 mod hooks;
 mod input_keys;
 mod key_bindings;

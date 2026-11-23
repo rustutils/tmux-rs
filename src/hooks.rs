@@ -191,7 +191,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, hd: &mut HookData) {
 /// # Safety
 /// `item` must be null or valid, and the payload's entities valid or gone
 /// from their registries.
-unsafe fn hooks_insert_event(
+pub(crate) unsafe fn hooks_insert_event(
     item: *mut cmdq_item,
     name: &str,
     payload: &Payload,

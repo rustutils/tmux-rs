@@ -194,13 +194,11 @@ impl MonitorSet {
     }
 
     /// How often an item has reported.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by show-hooks -B, after F2"))]
     pub fn fire_count(&self, name: &str) -> u32 {
         self.items.get(name).map_or(0, |item| item.fire_count)
     }
 
     /// When an item last reported, 0 if never.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by show-hooks -B, after F2"))]
     pub fn fire_time(&self, name: &str) -> i64 {
         self.items.get(name).map_or(0, |item| item.fire_time)
     }

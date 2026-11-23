@@ -12,6 +12,8 @@
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 use crate::*;
+use crate::hook_monitor::{HookTree, hooks_monitor_add, hooks_monitor_remove};
+use crate::monitor::{MonitorFlags, monitor_parse};
 use crate::options_::*;
 
 pub static CMD_SET_OPTION_ENTRY: cmd_entry = cmd_entry {
@@ -54,8 +56,8 @@ pub static CMD_SET_HOOK_ENTRY: cmd_entry = cmd_entry {
     name: "set-hook",
     alias: None,
 
-    args: args_parse::new("agpERt:uw", 1, 2, Some(cmd_set_option_args_parse)),
-    usage: "[-agpERuw] [-t target-pane] hook [command]",
+    args: args_parse::new("agpERTt:uB:w", 0, 2, Some(cmd_set_option_args_parse)),
+    usage: "[-agpERTuw] [-B name:what:format] [-t target-pane] [hook] [command]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -68,10 +70,101 @@ pub static CMD_SET_HOOK_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 };
 
-pub unsafe fn cmd_set_option_args_parse(_args: *mut args, idx: u32) -> args_parse_type {
+/// The value of set-option and the command of set-hook may be a command
+/// block. With set-hook -B the only argument is the command.
+pub unsafe fn cmd_set_option_args_parse(args: *mut args, idx: u32) -> args_parse_type {
+    // SAFETY: args is the arguments being parsed, flags are done.
+    if unsafe { args_has(args, 'B') } {
+        return args_parse_type::ARGS_PARSE_COMMANDS_OR_STRING;
+    }
     match idx {
         1 => args_parse_type::ARGS_PARSE_COMMANDS_OR_STRING,
         _ => args_parse_type::ARGS_PARSE_STRING,
+    }
+}
+
+/// set-hook -B: adds a monitor to hook `@name`, or removes it with -u.
+/// An argument sets the hook's command, as set-option would.
+///
+/// # Safety
+/// `self_` and `item` must be valid.
+unsafe fn cmd_set_hook_monitor_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
+    unsafe {
+        let args = cmd_get_args(self_);
+        let target = cmdq_get_target(item);
+        let error = |message: String| {
+            cmdq_error!(item, "{}", message);
+            cmd_retval::CMD_RETURN_ERROR
+        };
+        if args_count(args) > 1 {
+            return error("too many arguments".into());
+        }
+
+        let value = cstr_to_string_lossy(args_get_(args, 'B'));
+        let parsed = monitor_parse(&value);
+        let name = match (&parsed, args_has(args, 'u')) {
+            (Some((name, _, _)), _) => name.clone(),
+            // With -u a value that does not parse is a name.
+            (None, true) => value.clone(),
+            (None, false) => return error(format!("invalid subscription: {value}")),
+        };
+        if !name.starts_with('@') {
+            return error("monitor hook name must start with @".into());
+        }
+
+        let mut oo: *mut options = null_mut();
+        let scope = match options_scope_from_name(args, 0, &name, target, &raw mut oo) {
+            Ok(scope) => scope,
+            Err(cause) => return error(cause),
+        };
+
+        if args_has(args, 'u') {
+            hooks_monitor_remove(oo, &name);
+            return cmd_retval::CMD_RETURN_NORMAL;
+        }
+        let Some((_, what, format)) = parsed else {
+            unreachable!("checked above");
+        };
+
+        if args_count(args) != 0 {
+            let mut value = CStr::from_ptr(args_string(args, 0).cast()).to_bytes().to_vec();
+            if args_has(args, 'F') {
+                let expanded = format_single_from_target(item, args_string(args, 0));
+                value = CStr::from_ptr(expanded.cast()).to_bytes().to_vec();
+                free_(expanded);
+            }
+            let o = options_get_only(oo, &name);
+            if !args_has(args, 'o') || o.is_null() {
+                if args_has(args, 'a') && !o.is_null() {
+                    let old = CStr::from_ptr(options_get_string(oo, &name).cast());
+                    value = [old.to_bytes(), &value].concat();
+                }
+                options_set_string_bytes(oo, &name, &value, false);
+                options_push_changes(&name);
+            }
+        }
+
+        let global = oo == GLOBAL_OPTIONS || oo == GLOBAL_S_OPTIONS || oo == GLOBAL_W_OPTIONS;
+        let tree = if oo == GLOBAL_OPTIONS {
+            HookTree::Server
+        } else if oo == GLOBAL_S_OPTIONS {
+            HookTree::GlobalSession
+        } else if oo == GLOBAL_W_OPTIONS {
+            HookTree::GlobalWindow
+        } else if scope == OPTIONS_TABLE_PANE {
+            HookTree::Pane((*target).wp.expect("pane scope has a pane"))
+        } else if scope == OPTIONS_TABLE_WINDOW {
+            HookTree::Window(WindowId((*winlink_window((*target).wl)).id))
+        } else {
+            HookTree::Session((*target).s.expect("session scope has a session"))
+        };
+        let session = if global { None } else { (*target).s };
+        let flags = MonitorFlags {
+            initial: false,
+            only_true: args_has(args, 'T'),
+        };
+        hooks_monitor_add(oo, tree, &name, what, &format, flags, session);
+        cmd_retval::CMD_RETURN_NORMAL
     }
 }
 
@@ -83,6 +176,10 @@ pub unsafe fn cmd_set_option_args_parse(_args: *mut args, idx: u32) -> args_pars
 unsafe fn cmd_set_hook_event_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     unsafe {
         let args = cmd_get_args(self_);
+        if args_count(args) == 0 {
+            cmdq_error!(item, "missing argument");
+            return cmd_retval::CMD_RETURN_ERROR;
+        }
         if args_count(args) != 1 {
             cmdq_error!(item, "too many arguments");
             return cmd_retval::CMD_RETURN_ERROR;
@@ -111,6 +208,13 @@ pub unsafe fn cmd_set_option_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         let hook = std::ptr::eq(cmd_get_entry(self_), &CMD_SET_HOOK_ENTRY);
         if hook && args_has(args, 'E') {
             return cmd_set_hook_event_exec(self_, item);
+        }
+        if hook && args_has(args, 'B') {
+            return cmd_set_hook_monitor_exec(self_, item);
+        }
+        if args_count(args) == 0 {
+            cmdq_error!(item, "missing argument");
+            return cmd_retval::CMD_RETURN_ERROR;
         }
 
         // Expand argument.
