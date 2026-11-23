@@ -68,6 +68,20 @@ pub fn io_register(
         _ => return None,
     };
 
+    let fallback_events = events & (super::super::EV_READ | super::super::EV_WRITE);
+
+    // A regular file is always ready. epoll refuses it, but kqueue accepts
+    // it and then never reports end of file, so a reader would wait
+    // forever. Treat it as always ready on every platform.
+    if is_regular_file(fd) {
+        return with_registry(|base| {
+            let id = base.alloc_id();
+            base.fallback_io.insert(id, (fd, fallback_events));
+            base.io_callbacks.insert(id, callback);
+            IoHandle { id }
+        });
+    }
+
     // Dup the fd so calloop gets its own epoll registration.
     // SAFETY: dup only reads the fd number. A bad fd makes it fail.
     let dup_fd = unsafe { libc::dup(fd) };
@@ -107,19 +121,27 @@ pub fn io_register(
             Err(_) => {
                 // Non-epolable fd (regular file, etc.), so treat it as always ready.
                 // The callback fires on every event_loop iteration.
-                base.fallback_io.insert(
-                    id,
-                    (
-                        fd,
-                        events & (super::super::EV_READ | super::super::EV_WRITE),
-                    ),
-                );
+                base.fallback_io.insert(id, (fd, fallback_events));
                 base.io_callbacks.insert(id, callback);
                 Some(IoHandle { id })
             }
         }
     })
     .flatten()
+}
+
+/// Whether `fd` refers to a regular file. False for a bad fd.
+fn is_regular_file(fd: c_int) -> bool {
+    // SAFETY: fstat only reads the fd number and writes `sb`, which is
+    // read only after fstat succeeded and so initialised it.
+    let mode = unsafe {
+        let mut sb = std::mem::MaybeUninit::<libc::stat>::uninit();
+        if libc::fstat(fd, sb.as_mut_ptr()) != 0 {
+            return false;
+        }
+        sb.assume_init().st_mode
+    };
+    (mode & libc::S_IFMT) == libc::S_IFREG
 }
 
 // ---------------------------------------------------------------------------
@@ -785,6 +807,62 @@ mod tests {
         assert_eq!(order[0], "deferred");
         assert!(order.contains(&"timer"));
         assert!(order.contains(&"deferred again"));
+    }
+
+    /// A temporary regular file with some content, removed on drop.
+    struct TempFile(std::path::PathBuf, std::fs::File);
+
+    impl TempFile {
+        fn new(name: &str) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("tmux-event-{}-{name}", std::process::id()));
+            std::fs::write(&path, b"data").unwrap();
+            let file = std::fs::File::open(&path).unwrap();
+            Self(path, file)
+        }
+    }
+
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
+    }
+
+    #[test]
+    fn regular_files_are_recognised() {
+        use std::os::fd::AsRawFd;
+        let file = TempFile::new("kind");
+        assert!(is_regular_file(file.1.as_raw_fd()));
+        let (reader, _writer) = std::io::pipe().unwrap();
+        assert!(!is_regular_file(reader.as_raw_fd()));
+        assert!(!is_regular_file(-1));
+    }
+
+    /// A regular file is always ready, also at end of file. kqueue
+    /// accepts a file but stops reporting it once the reader is at the
+    /// end, so a reader waiting for end of file used to hang on macOS.
+    #[test]
+    fn regular_file_at_end_of_file_is_ready() {
+        use std::io::Read;
+        use std::os::fd::AsRawFd;
+        let mut file = TempFile::new("eof");
+        let mut contents = Vec::new();
+        file.1.read_to_end(&mut contents).unwrap();
+
+        let fired = Rc::new(Cell::new(0));
+        let f = fired.clone();
+        // SAFETY: the loop is set up and run on this thread only.
+        let _handle = unsafe {
+            event_init();
+            let handle = io_register(
+                file.1.as_raw_fd(),
+                crate::EV_READ,
+                Box::new(move |_, _| f.set(f.get() + 1)),
+            );
+            event_loop(crate::EVLOOP_NONBLOCK);
+            handle
+        };
+        assert_eq!(fired.get(), 1);
     }
 
     fn pipe_pair() -> (c_int, c_int) {
