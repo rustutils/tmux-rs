@@ -424,6 +424,21 @@ fn control_mode_exits_after_toggling_no_output() {
     assert!(exited, "control client did not exit after its input closed");
 }
 
+/// Whether the process `pid` is still running. A zombie counts as gone:
+/// the daemonized server's parent is init, and in a container without a
+/// real init (GitHub's runs `tail -f /dev/null`) nobody reaps it.
+fn process_running(pid: i32) -> bool {
+    if let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        // The state follows the command name, which is in parentheses.
+        let state = stat
+            .rsplit_once(')')
+            .and_then(|(_, rest)| rest.trim_start().chars().next());
+        return state != Some('Z');
+    }
+    // Without /proc (macOS), ask the kernel. ESRCH means it is gone.
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
 /// A control client that never reads its output must not keep the server
 /// alive forever. tmux 3.8 gives up on it after 10 seconds.
 #[test]
@@ -452,7 +467,7 @@ fn server_exits_despite_stuck_control_client() {
     let start = Instant::now();
     let mut gone = false;
     while start.elapsed() < Duration::from_secs(25) {
-        if unsafe { libc::kill(pid, 0) } != 0 {
+        if !process_running(pid) {
             gone = true;
             break;
         }
