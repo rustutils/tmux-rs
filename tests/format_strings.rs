@@ -437,3 +437,13 @@ fn exponential_format_is_cut_off() {
     );
     tmux.cmd().args(["has-session"]).run().assert_success();
 }
+
+#[test]
+fn literal_modifier() {
+    let tmux = setup();
+    test_format(&tmux, "[#{l:a b}]", "[a b]");
+    // Escapes are removed outside #{} and kept inside.
+    test_format(&tmux, "[#{l:#,x#}}]", "[,x}]");
+    test_format(&tmux, "[#{l:#{session_name}}]", "[#{session_name}]");
+    test_format(&tmux, "[#{l:#{a#,b}}]", "[#{a#,b}]");
+}

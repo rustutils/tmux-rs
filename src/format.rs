@@ -3567,30 +3567,44 @@ unsafe fn format_find(
 }
 
 /// Unescape escaped characters.
-pub unsafe fn format_unescape(mut s: *const u8) -> *mut u8 {
+pub unsafe fn format_unescape(s: *const u8) -> *mut u8 {
+    // SAFETY: the caller passes a valid NUL-terminated string, and the new
+    // buffer has room for the result and its NUL.
     unsafe {
-        let mut cp = xmalloc(strlen(s) + 1).as_ptr().cast();
-        let out = cp;
-        let mut brackets = 0;
-        while *s != b'\0' {
-            if *s == b'#' && *s.add(1) == b'{' {
-                brackets += 1;
-            }
-            if brackets == 0 && *s == b'#' && !strchr(c!(",#{}:"), *s.add(1) as i32).is_null() {
-                s = s.add(1);
-                *cp = *s;
-                cp = cp.add(1);
-                continue;
-            }
-            if *s == b'}' {
-                brackets -= 1;
-            }
-            *cp = *s;
-            cp = cp.add(1);
-        }
-        *cp = b'\0';
-        out
+        let out = format_unescape_bytes(CStr::from_ptr(s.cast()).to_bytes());
+        let cp: *mut u8 = xmalloc(out.len() + 1).as_ptr().cast();
+        std::ptr::copy_nonoverlapping(out.as_ptr(), cp, out.len());
+        *cp.add(out.len()) = b'\0';
+        cp
     }
+}
+
+/// Removes the # escapes in front of `,#{}:` outside any #{}, for the l
+/// modifier. Text inside #{} is copied as it is.
+fn format_unescape_bytes(s: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len());
+    let mut brackets = 0i32;
+    let mut i = 0;
+    while let Some(&ch) = s.get(i) {
+        let next = s.get(i + 1).copied();
+        if ch == b'#' && next == Some(b'{') {
+            brackets += 1;
+        }
+        if brackets == 0
+            && ch == b'#'
+            && let Some(escaped) = next.filter(|c| b",#{}:".contains(c))
+        {
+            out.push(escaped);
+            i += 2;
+            continue;
+        }
+        if ch == b'}' {
+            brackets -= 1;
+        }
+        out.push(ch);
+        i += 1;
+    }
+    out
 }
 
 /// Remove escaped characters.
