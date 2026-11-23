@@ -692,48 +692,28 @@ pub unsafe fn utf8_append(ud: *mut Utf8Data, ch: c_uchar) -> Utf8State {
     Utf8State::Done
 }
 
-/// Validate a NUL-terminated byte string: every byte must either be a
-/// printable ASCII character (0x20..=0x7e) or start or continue a valid
-/// UTF-8 sequence.
+/// Check that `s` holds only printable ASCII (0x20 to 0x7e) and complete,
+/// valid UTF-8 characters. Control characters, DEL and malformed UTF-8
+/// make it fail. This is C tmux's utf8_isvalid on a slice.
+///
+/// C decodes each character with mbtowc, which in the UTF-8 locale tmux
+/// runs in accepts exactly what `str::from_utf8` accepts (no overlong
+/// forms, no surrogates, nothing above U+10FFFF). Checking with the
+/// standard library keeps this independent of the process locale.
+pub fn utf8_is_valid(s: &[u8]) -> bool {
+    std::str::from_utf8(s).is_ok_and(|text| {
+        text.chars()
+            .all(|c| !c.is_ascii() || (' '..='~').contains(&c))
+    })
+}
+
+/// [`utf8_is_valid`] on a NUL-terminated byte string.
 ///
 /// # Safety
 /// `s` must be a valid NUL-terminated byte string.
-pub unsafe fn utf8_isvalid(mut s: *const u8) -> bool {
-    unsafe {
-        let mut ud: Utf8Data = Utf8Data {
-            data: [0; UTF8_SIZE],
-            have: 0,
-            size: 0,
-            width: 0,
-        };
-        let end = {
-            let mut p = s;
-            while *p != 0 {
-                p = p.add(1);
-            }
-            p
-        };
-        while s < end {
-            let mut more = utf8_open(&raw mut ud, *s);
-            if more == Utf8State::More {
-                while {
-                    s = s.add(1);
-                    s < end && more == Utf8State::More
-                } {
-                    more = utf8_append(&raw mut ud, *s);
-                }
-                if more == Utf8State::Done {
-                    continue;
-                }
-                return false;
-            }
-            if *s < 0x20 || *s > 0x7e {
-                return false;
-            }
-            s = s.add(1);
-        }
-    }
-    true
+pub unsafe fn utf8_isvalid(s: *const u8) -> bool {
+    // SAFETY: the caller guarantees `s` is NUL-terminated.
+    utf8_is_valid(unsafe { std::ffi::CStr::from_ptr(s.cast()) }.to_bytes())
 }
 
 /// Word-set membership: does the character described by `ud` appear
@@ -931,10 +911,9 @@ impl Utf8Data {
     }
 }
 
-/// Safe variant of [`utf8_isvalid`] taking a `&CStr`.
+/// [`utf8_is_valid`] taking a `&CStr`.
 pub fn utf8_is_valid_cstr(s: &std::ffi::CStr) -> bool {
-    // SAFETY: `CStr::as_ptr` yields a valid NUL-terminated byte string.
-    unsafe { utf8_isvalid(s.as_ptr().cast()) }
+    utf8_is_valid(s.to_bytes())
 }
 #[cfg(test)]
 mod tests {
@@ -1224,5 +1203,29 @@ mod tests {
             utf8_from_data(&ud, &mut uc2);
         }
         assert_eq!(uc1, uc2, "same input should produce same compact encoding");
+    }
+
+    #[test]
+    fn is_valid_accepts_printable_ascii_and_utf8() {
+        assert!(utf8_is_valid(b""));
+        assert!(utf8_is_valid(b"buffer0 a\\b #(x)"));
+        assert!(utf8_is_valid("caf\u{e9} \u{4e2d}".as_bytes()));
+    }
+
+    #[test]
+    fn is_valid_rejects_control_and_malformed() {
+        assert!(!utf8_is_valid(b"a\tb"));
+        assert!(!utf8_is_valid(b"\x01"));
+        assert!(!utf8_is_valid(b"del\x7f"));
+        assert!(!utf8_is_valid(b"bad\xff"));
+        // A lead byte without its continuation bytes.
+        assert!(!utf8_is_valid(b"caf\xc3"));
+        assert!(!utf8_is_valid(b"\xc3x"));
+    }
+
+    #[test]
+    fn is_valid_cstr_agrees() {
+        assert!(utf8_is_valid_cstr(c"ok"));
+        assert!(!utf8_is_valid_cstr(c"no\n"));
     }
 }
