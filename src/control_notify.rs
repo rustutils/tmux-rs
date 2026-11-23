@@ -12,270 +12,222 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+//! Control mode notifications (`%window-add @1`) for events.
+//!
+//! The control sink is registered for the events in [`CONTROL_EVENTS`] when
+//! the server starts. [`control_notify_event`] gets each such event with
+//! its payload and writes the notification to every control client that
+//! should see it. The text and the rules for who gets what follow tmux
+//! 3.8's control-notify.c.
+
+use crate::events::{Payload, Sink, events_add_sink};
 use crate::*;
 
-macro_rules! CONTROL_SHOULD_NOTIFY_CLIENT {
-    ($c:expr) => {
-        !$c.is_null() && (*$c).flags.intersects(client_flag::CONTROL)
-    };
+/// The events control clients are told about.
+const CONTROL_EVENTS: [&str; 14] = [
+    "pane-mode-changed",
+    "window-layout-changed",
+    "window-pane-changed",
+    "window-unlinked",
+    "window-linked",
+    "window-renamed",
+    "client-session-changed",
+    "client-detached",
+    "session-renamed",
+    "session-created",
+    "session-closed",
+    "session-window-changed",
+    "paste-buffer-changed",
+    "paste-buffer-deleted",
+];
+
+/// Registers the control sink for its events, at server start.
+pub fn control_build_events() {
+    for name in CONTROL_EVENTS {
+        events_add_sink(name, Sink::Control);
+    }
 }
 
-pub unsafe fn control_notify_pane_mode_changed(pane: c_int) {
+/// Whether `c` is a control client that is set up and not exiting.
+///
+/// # Safety
+/// `c` must be a valid client.
+unsafe fn control_should_notify(c: *mut client) -> bool {
     unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    continue;
-                }
+        (*c).flags.intersects(client_flag::CONTROL)
+            && !(*c).flags.intersects(client_flag::EXIT)
+            && (*c).control_state.is_some()
+    }
+}
 
-                control_write!(c, "%pane-mode-changed %{}", pane);
-            }
+/// The control clients to notify, attached to a session if
+/// `need_session`.
+///
+/// # Safety
+/// The client registry must hold valid clients.
+unsafe fn control_clients(need_session: bool) -> Vec<*mut client> {
+    unsafe {
+        clients_iter()
+            .filter(|&c| control_should_notify(c))
+            .filter(|&c| !need_session || !client_get_session(c).is_null())
+            .collect()
+    }
+}
+
+/// Writes a notification line to every control client that should see
+/// it, `attached` limiting it to clients with a session.
+///
+/// # Safety
+/// The client registry must hold valid clients.
+unsafe fn control_notify_all(line: &str, attached: bool) {
+    unsafe {
+        for c in control_clients(attached) {
+            control_write!(c, "{}", line);
         }
     }
 }
 
-pub unsafe fn control_notify_window_layout_changed(w: *mut window) {
-    let template = c!(
-        "%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}"
-    );
-
+/// The control sink: writes the notification for an event.
+///
+/// # Safety
+/// The client registry must hold valid clients, and the payload's entities
+/// must be valid or gone from their registries.
+pub unsafe fn control_notify_event(name: &str, payload: &Payload) {
     unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) || client_get_session(c).is_null() {
-                    continue;
-                }
-                let s = client_get_session(c);
-
-                if winlink_find_by_window_id(&raw mut (*s).windows, (*w).id).is_null() {
-                    continue;
-                }
-
-                // When the last pane in a window is closed it won't have a
-                // layout root and we don't need to inform the client about the
-                // layout change because the whole window will go away soon.
-                if window_layout_root(w).is_null() {
-                    continue;
-                }
-
-                if let Some(wl) = winlink_find_by_window(&raw mut (*s).windows, w) {
-                    let cp =
-                        format_single(null_mut(), cstr_to_str(template), c, null_mut(), wl.as_ptr(), null_mut());
-                    control_write!(c, "{}", _s(cp));
-                    free_(cp);
+        let window = || payload.get_window("window").and_then(|id| window_from_id(id));
+        match name {
+            "pane-mode-changed" => {
+                if let Some(value) = payload.print("pane") {
+                    control_notify_all(&format!("%pane-mode-changed {value}"), false);
                 }
             }
-        }
-    }
-}
-
-pub unsafe fn control_notify_window_pane_changed(w: *mut window) {
-    unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    continue;
-                }
-
-                control_write!(
-                    c,
-                    "%window-pane-changed @{} %{}",
-                    (*w).id,
-                    (*window_active_pane(w)).id,
-                );
-            }
-        }
-    }
-}
-
-pub unsafe fn control_notify_window_unlinked(_s: *mut session, w: *mut window) {
-    unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) || client_get_session(c).is_null() {
-                    continue;
-                }
-                let cs = client_get_session(c);
-
-                if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
-                    control_write!(c, "%window-close @{}", (*w).id);
-                } else {
-                    control_write!(c, "%unlinked-window-close @{}", (*w).id);
+            "window-layout-changed" => {
+                if let Some(w) = window() {
+                    control_notify_layout_changed(w);
                 }
             }
-        }
-    }
-}
-
-pub unsafe fn control_notify_window_linked(_s: *mut session, w: *mut window) {
-    unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) || client_get_session(c).is_null() {
-                    continue;
+            "window-pane-changed" => {
+                let Some(w) = window() else { return };
+                let active = window_active_pane(w);
+                if active.is_null() {
+                    return;
                 }
-                let cs = client_get_session(c);
-
-                if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
-                    control_write!(c, "%window-add @{}", (*w).id);
-                } else {
-                    control_write!(c, "%unlinked-window-add @{}", (*w).id);
+                let line = format!("%window-pane-changed @{} %{}", (*w).id, (*active).id);
+                control_notify_all(&line, false);
+            }
+            "window-unlinked" | "window-linked" | "window-renamed" => {
+                if let Some(w) = window() {
+                    control_notify_window(name, w);
                 }
             }
-        }
-    }
-}
-
-pub unsafe fn control_notify_window_renamed(w: *mut window) {
-    unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) || client_get_session(c).is_null() {
-                    continue;
+            "client-session-changed" => {
+                let Some(cc) = payload.get_client("client").and_then(|id| client_from_id(id)) else {
+                    return;
+                };
+                let s = client_get_session(cc);
+                if s.is_null() {
+                    return;
                 }
-                let cs = client_get_session(c);
-
-                if !winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
-                    control_write!(c, "%window-renamed @{} {}", (*w).id, (*w).name.as_deref().unwrap_or(""));
-                } else {
-                    control_write!(c, "%unlinked-window-renamed @{} {}", (*w).id, (*w).name.as_deref().unwrap_or(""),);
-                }
-            }
-        }
-    }
-}
-
-pub unsafe fn control_notify_client_session_changed(cc: *mut client) {
-    unsafe {
-        if client_get_session(cc).is_null() {
-            return;
-        }
-        let s = client_get_session(cc);
-
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) || client_get_session(c).is_null() {
-                    continue;
-                }
-
-                if cc == c {
-                    control_write!(c, "%session-changed ${} {}", (*s).id, (*s).name);
-                } else {
-                    control_write!(
-                        c,
-                        "%client-session-changed {} ${} {}",
-                        _s((*cc).name),
-                        (*s).id,
-                        (*s).name,
-                    );
+                for c in control_clients(true) {
+                    if c == cc {
+                        control_write!(c, "%session-changed ${} {}", (*s).id, (*s).name);
+                    } else {
+                        control_write!(
+                            c,
+                            "%client-session-changed {} ${} {}",
+                            _s((*cc).name),
+                            (*s).id,
+                            (*s).name
+                        );
+                    }
                 }
             }
-        }
-    }
-}
-
-pub unsafe fn control_notify_client_detached(cc: *mut client) {
-    unsafe {
-        for c in clients_iter() {
-            {
-                if CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    control_write!(c, "%client-detached {}", _s((*cc).name));
+            "client-detached" => {
+                if let Some(cc) = payload.get_client("client").and_then(|id| client_from_id(id)) {
+                    let line = format!("%client-detached {}", _s((*cc).name));
+                    control_notify_all(&line, false);
                 }
             }
-        }
-    }
-}
-
-pub unsafe fn control_notify_session_renamed(s: *mut session) {
-    unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    continue;
+            "session-renamed" => {
+                if let Some(s) = payload.get_session("session").and_then(|id| session_from_id(id)) {
+                    let line = format!("%session-renamed ${} {}", (*s).id, (*s).name);
+                    control_notify_all(&line, false);
                 }
-
-                control_write!(c, "%session-renamed ${} {}", (*s).id, (*s).name);
             }
-        }
-    }
-}
-
-pub unsafe fn control_notify_session_created(_: *mut session) {
-    unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    continue;
+            "session-created" | "session-closed" => control_notify_all("%sessions-changed", false),
+            "session-window-changed" => {
+                // A session being destroyed has no current window any more.
+                let Some(s) = payload.get_session("session").and_then(|id| session_from_id(id)) else {
+                    return;
+                };
+                if (*s).curw.is_null() {
+                    return;
                 }
-
-                control_write!(c, "%sessions-changed");
-            }
-        }
-    }
-}
-
-pub unsafe fn control_notify_session_closed(_: *mut session) {
-    unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    continue;
-                }
-
-                control_write!(c, "%sessions-changed");
-            }
-        }
-    }
-}
-
-pub unsafe fn control_notify_session_window_changed(s: *mut session) {
-    unsafe {
-        // A deferred notification can fire after the session was destroyed
-        // (which clears curw) while the notification still holds a
-        // reference to it. There is no window to report then.
-        if (*s).curw.is_null() {
-            return;
-        }
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    continue;
-                }
-
-                control_write!(
-                    c,
+                let line = format!(
                     "%session-window-changed ${} @{}",
                     (*s).id,
-                    (*winlink_window((*s).curw)).id,
+                    (*winlink_window((*s).curw)).id
                 );
+                control_notify_all(&line, false);
             }
+            "paste-buffer-changed" | "paste-buffer-deleted" => {
+                if let Some(buffer) = payload.get_string("paste_buffer") {
+                    control_notify_all(&format!("%{name} {buffer}"), false);
+                }
+            }
+            _ => {}
         }
     }
 }
 
-pub unsafe fn control_notify_paste_buffer_changed(name: *const u8) {
+/// %layout-change for every control client whose session has the window,
+/// formatted for that client.
+///
+/// # Safety
+/// `w` must be a valid window and the client registry hold valid clients.
+unsafe fn control_notify_layout_changed(w: *mut window) {
+    const TEMPLATE: &str =
+        "%layout-change #{window_id} #{window_layout} #{window_visible_layout} #{window_raw_flags}";
     unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    continue;
-                }
-
-                control_write!(c, "%paste-buffer-changed {}", _s(name));
-            }
+        // When the last pane in a window is closed it has no layout root,
+        // and the window goes away soon, so there is nothing to tell.
+        if (*w).winlinks.is_empty() || window_layout_root(w).is_null() {
+            return;
+        }
+        for c in control_clients(true) {
+            let s = client_get_session(c);
+            let Some(wl) = winlink_find_by_window(&raw mut (*s).windows, w) else {
+                continue;
+            };
+            let cp = format_single(null_mut(), TEMPLATE, c, s, wl.as_ptr(), null_mut());
+            control_write!(c, "{}", _s(cp));
+            free_(cp);
         }
     }
 }
 
-pub unsafe fn control_notify_paste_buffer_deleted(name: *const u8) {
+/// %window-add, %window-close or %window-renamed for clients whose session
+/// has the window, the %unlinked-window-* form for the others.
+///
+/// # Safety
+/// `w` must be a valid window and the client registry hold valid clients.
+unsafe fn control_notify_window(event: &str, w: *mut window) {
     unsafe {
-        for c in clients_iter() {
-            {
-                if !CONTROL_SHOULD_NOTIFY_CLIENT!(c) {
-                    continue;
-                }
-
-                control_write!(c, "%paste-buffer-deleted {}", _s(name));
+        let (kind, suffix) = match event {
+            "window-linked" => ("window-add", String::new()),
+            "window-unlinked" => ("window-close", String::new()),
+            _ => (
+                "window-renamed",
+                format!(" {}", (*w).name.as_deref().unwrap_or("")),
+            ),
+        };
+        for c in control_clients(true) {
+            let cs = client_get_session(c);
+            if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
+                control_write!(c, "%unlinked-{} @{}{}", kind, (*w).id, suffix);
+            } else {
+                control_write!(c, "%{} @{}{}", kind, (*w).id, suffix);
             }
         }
     }

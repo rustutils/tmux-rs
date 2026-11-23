@@ -259,7 +259,7 @@ pub unsafe fn layout_parse(w: *mut window, mut layout: *const u8) -> Result<(), 
 
             layout_print_cell(w, lc, __func__, 0);
 
-            notify_window(c"window-layout-changed", w);
+            events_fire_window("window-layout-changed", w);
 
             return Ok(());
         }

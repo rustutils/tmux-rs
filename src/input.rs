@@ -2047,7 +2047,7 @@ unsafe fn input_csi_dispatch_winops(ictx: &mut input_ctx) {
                         0 | 2 => {
                             screen_pop_title(s);
                             if !wp.is_null() {
-                                notify_pane(c"pane-title-changed", wp);
+                                input_fire_pane_title_changed(wp, &(*s).title.to_string_lossy());
                                 server_redraw_window_borders(w);
                                 server_status_window(w);
                             }
@@ -2429,7 +2429,7 @@ unsafe fn input_exit_osc(ictx: &mut input_ctx) {
                     && options_get_number_((*wp).options, "allow-set-title") != 0
                     && screen_set_title((*sctx).s, p.cast()) != 0
                 {
-                    notify_pane(c"pane-title-changed", wp);
+                    input_fire_pane_title_changed(wp, &cstr_to_string_lossy(p.cast::<u8>()));
                     server_redraw_window_borders(window_pane_window(wp));
                     server_status_window(window_pane_window(wp));
                 }
@@ -2467,6 +2467,18 @@ unsafe fn input_enter_apc(ictx: &mut input_ctx) {
     ictx.flags &= !input_flags::INPUT_LAST;
 }
 
+/// Fires pane-title-changed with the new title.
+///
+/// # Safety
+/// `wp` must be a valid pane in a valid window.
+pub unsafe fn input_fire_pane_title_changed(wp: *mut window_pane, title: &str) {
+    unsafe {
+        let mut payload = crate::events::payload_for_pane(wp);
+        payload.set_string("new_title", title);
+        crate::events::events_fire("pane-title-changed", payload, null_mut());
+    }
+}
+
 /// APC terminator (ST) received.
 unsafe fn input_exit_apc(ictx: &mut input_ctx) {
     unsafe {
@@ -2479,7 +2491,7 @@ unsafe fn input_exit_apc(ictx: &mut input_ctx) {
         log_debug!("input_exit_apc: \"{}\"", _s(ictx.input_buf.as_ptr()));
 
         if screen_set_title((*sctx).s, ictx.input_buf.as_ptr().cast()) != 0 && !wp.is_null() {
-            notify_pane(c"pane-title-changed", wp);
+            input_fire_pane_title_changed(wp, &cstr_to_string_lossy(ictx.input_buf.as_ptr().cast::<u8>()));
             server_redraw_window_borders(window_pane_window(wp));
             server_status_window(window_pane_window(wp));
         }
@@ -3037,7 +3049,7 @@ unsafe fn input_osc_52(ictx: &mut input_ctx, p: *const u8) {
             outlen as u32,
         );
         screen_write_stop(&raw mut ctx);
-        notify_pane(c"pane-set-clipboard", wp);
+        events_fire_pane("pane-set-clipboard", wp);
 
         paste_add(None, std::slice::from_raw_parts(out, outlen as usize));
         free_(out);

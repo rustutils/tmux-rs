@@ -207,7 +207,7 @@ pub unsafe fn cmd_select_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
         if args_has(args, 'T') {
             let title = format_single_from_target(item, args_get_(args, 'T'));
             if screen_set_title(&raw mut (*wp).base, title) != 0 {
-                notify_pane(c"pane-title-changed", wp);
+                input_fire_pane_title_changed(wp, &cstr_to_string_lossy(title));
                 server_redraw_window_borders(window_pane_window(wp));
                 server_status_window(window_pane_window(wp));
             }

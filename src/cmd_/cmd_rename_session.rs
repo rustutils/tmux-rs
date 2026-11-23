@@ -53,12 +53,19 @@ unsafe fn cmd_rename_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
             return cmd_retval::CMD_RETURN_ERROR;
         }
 
+        let mut payload = crate::events::payload_for_session(s);
+        payload.set_string("old_name", &*(*s).name);
+        payload.set_string("new_name", &*newname);
+
         (*(&raw mut SESSIONS)).remove(&*(*s).name);
         (*s).name = newname.clone().into();
         (*(&raw mut SESSIONS)).insert(newname, s);
+        // The payload was built before the rename, its session item has
+        // to carry the new name.
+        payload.set("session", crate::events::payload_session(s));
 
         server_status_session(s);
-        notify_session(c"session-renamed", s);
+        crate::events::events_fire("session-renamed", payload, null_mut());
     }
 
     cmd_retval::CMD_RETURN_NORMAL

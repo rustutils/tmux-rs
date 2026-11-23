@@ -217,11 +217,21 @@ pub unsafe fn cmd_show_options_all(
         let mut o: *mut options_entry;
         let mut parent;
 
-        if !std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_HOOKS_ENTRY) {
-            for o in options_entries(oo) {
-                if options_table_entry(o).is_null() {
+        // User options. Those set with set-hook are hooks: show-hooks
+        // lists them and show-options only with -H.
+        let show_hooks = std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_HOOKS_ENTRY);
+        for o in options_entries(oo) {
+            if !options_table_entry(o).is_null() {
+                continue;
+            }
+            let name = options_name(o);
+            let is_user_hook = name.starts_with('@') && hooks_is_event(name);
+            if show_hooks {
+                if is_user_hook {
                     cmd_show_options_print(self_, item, o, -1, 0);
                 }
+            } else if !is_user_hook || args_has(args, 'H') {
+                cmd_show_options_print(self_, item, o, -1, 0);
             }
         }
 

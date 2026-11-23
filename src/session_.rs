@@ -262,7 +262,7 @@ pub unsafe fn session_destroy(s: *mut session, notify: i32, from: *const u8) {
 
         (*(&raw mut SESSIONS)).remove(&*(*s).name);
         if notify != 0 {
-            notify_session(c"session-closed", s);
+            events_fire_session("session-closed", s);
         }
 
         (*s).tio = None; // Box<termios> dropped
@@ -276,8 +276,7 @@ pub unsafe fn session_destroy(s: *mut session, notify: i32, from: *const u8) {
             winlink_stack_remove(&raw mut (*s).lastw, wl);
         }
         while let Some(&wl) = (*(&raw mut (*s).windows)).values().next() {
-            let w = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-            notify_session_window(c"window-unlinked", s, w);
+            events_fire_winlink("window-unlinked", wl);
             winlink_remove(&raw mut (*s).windows, wl);
         }
 
@@ -408,7 +407,7 @@ pub unsafe fn session_attach(
         }
         (*wl).session = Some(SessionId((*s).id));
         winlink_set_window(wl, w);
-        notify_session_window(c"window-linked", s, w);
+        events_fire_winlink("window-linked", wl);
 
         session_group_synchronize_from(s);
         Ok(wl)
@@ -423,8 +422,7 @@ pub unsafe fn session_detach(s: *mut session, wl: *mut winlink) -> i32 {
         }
 
         (*wl).flags &= !WINLINK_ALERTFLAGS;
-        let w_unlink = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-        notify_session_window(c"window-unlinked", s, w_unlink);
+        events_fire_winlink("window-unlinked", wl);
         winlink_stack_remove(&raw mut (*s).lastw, wl);
         winlink_remove(&raw mut (*s).windows, wl);
 
@@ -586,8 +584,32 @@ pub unsafe fn session_set_current(s: *mut session, wl: *mut winlink) -> i32 {
         winlink_clear_flags(wl);
         window_update_activity(NonNull::new_unchecked(w_cur));
         tty_update_window_offset(w_cur);
-        notify_session(c"session-window-changed", s);
+        session_fire_window_changed(s, wl, old);
         0
+    }
+}
+
+/// Fires session-window-changed, with the new and old current window.
+///
+/// # Safety
+/// `s` and `wl` must be valid, `old` null or a valid winlink.
+unsafe fn session_fire_window_changed(s: *mut session, wl: *mut winlink, old: *mut winlink) {
+    unsafe {
+        let mut fs: cmd_find_state = zeroed();
+        cmd_find_from_winlink(&raw mut fs, wl, cmd_find_flags::empty());
+        let mut payload = crate::events::Payload::new();
+        payload.set_target(crate::events::payload_target(&raw const fs));
+        payload.set("session", crate::events::payload_session(s));
+        let w = winlink_window(wl);
+        payload.set("window", crate::events::payload_window(w));
+        payload.set("new_window", crate::events::payload_window(w));
+        payload.set_int("window_index", (*wl).idx);
+        payload.set_int("new_window_index", (*wl).idx);
+        if !old.is_null() {
+            payload.set("old_window", crate::events::payload_window(winlink_window(old)));
+            payload.set_int("old_window_index", (*old).idx);
+        }
+        crate::events::events_fire("session-window-changed", payload, null_mut());
     }
 }
 
@@ -740,8 +762,7 @@ pub unsafe fn session_group_synchronize1(target: *mut session, s: *mut session) 
             (*wl2).session = Some(SessionId((*s).id));
             let w_src = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
             winlink_set_window(wl2, w_src);
-            let w_dst = (*wl2).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-            notify_session_window(c"window-linked", s, w_dst);
+            events_fire_winlink("window-linked", wl2);
             (*wl2).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
         }
 
@@ -773,7 +794,7 @@ pub unsafe fn session_group_synchronize1(target: *mut session, s: *mut session) 
             let w_old = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
             let wl2 = if w_old.is_null() { null_mut() } else { winlink_find_by_window_id(&raw mut (*s).windows, (*w_old).id) };
             if wl2.is_null() {
-                notify_session_window(c"window-unlinked", s, w_old);
+                events_fire_winlink("window-unlinked", wl);
             }
             winlink_remove(&raw mut old_windows, wl);
         }

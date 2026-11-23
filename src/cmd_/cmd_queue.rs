@@ -14,7 +14,6 @@
 use crate::cfg_::cfg_add_cause;
 use crate::xmalloc::xcalloc1;
 use crate::*;
-use crate::options_::*;
 
 // #define cmdq_get_callback(cb, data) cmdq_get_callback1(#cb, cb, data)
 macro_rules! cmdq_get_callback {
@@ -365,89 +364,53 @@ macro_rules! cmdq_insert_hook {
 pub(crate) use cmdq_insert_hook;
 
 pub unsafe fn cmdq_insert_hook_(
-    s: *mut session,
-    mut item: *mut cmdq_item,
+    _s: *mut session,
+    item: *mut cmdq_item,
     current: *mut cmd_find_state,
     format_args: std::fmt::Arguments,
 ) {
     unsafe {
-        let state = (*item).state;
-        let cmd = (*item).cmd;
-        let args = cmd_get_args(cmd);
-        let mut flag: u8;
-        const SIZEOF_TMP: usize = 32;
-        let mut buf: [u8; 32] = zeroed();
-        let tmp = &raw mut buf as *mut u8;
-
         if (*(*item).state)
             .flags
             .intersects(cmdq_state_flags::CMDQ_STATE_NOHOOKS)
         {
             return;
         }
-        let oo = if s.is_null() {
-            GLOBAL_S_OPTIONS
-        } else {
-            (*s).options
-        };
-
         let name: String = format_args.to_string();
+        let args = cmd_get_args((*item).cmd);
 
-        let o = options_get(&mut *oo, &name);
-        if o.is_null() {
-            return;
+        let mut payload = crate::events::Payload::new();
+        if !current.is_null() {
+            payload.set_target(crate::events::payload_target(current));
         }
-        log_debug!("running hook {} (parent {:p})", name, item);
-
-        // The hooks get a new state because they should not update the current
-        // target or formats for any subsequent commands.
-        let new_state = cmdq_new_state(
-            current,
-            &raw mut (*state).event,
-            cmdq_state_flags::CMDQ_STATE_NOHOOKS,
-        );
-        cmdq_add_format!(new_state, c!("hook"), "{}", name);
 
         let arguments = args_print(args);
-        cmdq_add_format!(new_state, c!("hook_arguments"), "{}", _s(arguments),);
+        payload.set_string("arguments", cstr_to_string_lossy(arguments));
         free_(arguments);
 
         for i in 0..args_count(args) {
-            _ = xsnprintf_!(tmp, SIZEOF_TMP, "hook_argument_{}", i);
-            cmdq_add_format!(new_state, tmp, "{}", _s(args_string(args, i)));
+            payload.set_string(&format!("argument_{i}"), cstr_to_string_lossy(args_string(args, i)));
         }
         for ae in args_entry_list(args) {
-            flag = (*ae).flag;
+            let flag = (*ae).flag;
             let value = args_get(args, flag);
+            let key = format!("flag_{}", flag as char);
             if value.is_null() {
-                _ = xsnprintf_!(tmp, SIZEOF_TMP, "hook_flag_{}", flag as char);
-                cmdq_add_format!(new_state, tmp, "1");
+                payload.set_string(&key, "1");
             } else {
-                _ = xsnprintf_!(tmp, SIZEOF_TMP, "hook_flag_{}", flag as char);
-                cmdq_add_format!(new_state, tmp, "{}", _s(value));
+                payload.set_string(&key, cstr_to_string_lossy(value));
             }
-
             for (i, av) in args_flag_values(args, flag).iter().enumerate() {
-                _ = xsnprintf_!(tmp, SIZEOF_TMP, "hook_flag_{}_{}", flag as char, i);
                 if let args_value::String { string } = av {
-                    cmdq_add_format!(new_state, tmp, "{}", _s(string.as_ptr().cast::<u8>()));
+                    payload.set_string(
+                        &format!("flag_{}_{i}", flag as char),
+                        string.to_string_lossy(),
+                    );
                 }
             }
         }
 
-        for a in options_array_items(o) {
-            let cmdlist = (*options_array_item_value(a)).cmdlist;
-            if !cmdlist.is_null() {
-                let new_item = cmdq_get_command(cmdlist, new_state);
-                if !item.is_null() {
-                    item = cmdq_insert_after(item, new_item);
-                } else {
-                    item = cmdq_append(null_mut(), new_item);
-                }
-            }
-        }
-
-        cmdq_free_state(new_state);
+        crate::events::events_fire(&name, payload, item);
     }
 }
 

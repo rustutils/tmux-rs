@@ -62,9 +62,11 @@ cfg_pub_mods! {
     mod control;
     mod control_notify;
     mod environ_;
+    mod events;
     mod file;
     mod format;
     mod format_draw_;
+    mod hooks;
     mod global;
     mod hyperlinks_;
     mod input;
@@ -79,7 +81,6 @@ cfg_pub_mods! {
     mod menu_;
     mod mode_tree;
     mod names;
-    mod notify;
     mod options_;
     mod options_table;
     mod osdep;
@@ -151,7 +152,7 @@ use crate::{
         cmd_find::*,
         cmd_log_argv,
         cmd_queue::*,
-        cmd_wait_for::{cmd_wait_for_client_lost, cmd_wait_for_flush},
+        cmd_wait_for::{cmd_wait_for_client_lost, cmd_wait_for_event, cmd_wait_for_flush},
         *,
     },
     cmd_parse::*,
@@ -160,9 +161,14 @@ use crate::{
     control::{control_write, *},
     control_notify::*,
     environ_::*,
+    events::{
+        events_fire_client, events_fire_pane, events_fire_session, events_fire_window,
+        events_fire_winlink,
+    },
     file::*,
     format::*,
     format_draw_::*,
+    hooks::*,
     hyperlinks_::*,
     input::*,
     input_keys::*,
@@ -176,7 +182,6 @@ use crate::{
     message_log::*,
     mode_tree::*,
     names::*,
-    notify::*,
     options_::{options, options_array_item},
     options_table::*,
     osdep::*,
@@ -2849,6 +2854,21 @@ pub(crate) fn i32_to_ordering(value: i32) -> std::cmp::Ordering {
         0 => std::cmp::Ordering::Equal,
         1.. => std::cmp::Ordering::Greater,
     }
+}
+
+/// A C string as a String, with invalid UTF-8 replaced by U+FFFD and an
+/// empty string for a null pointer.
+///
+/// # Safety
+/// `ptr` must be null or a NUL terminated string.
+pub(crate) unsafe fn cstr_to_string_lossy(ptr: *const u8) -> String {
+    if ptr.is_null() {
+        return String::new();
+    }
+    // SAFETY: the caller guarantees a NUL terminated string.
+    unsafe { CStr::from_ptr(ptr.cast()) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 pub(crate) unsafe fn cstr_to_str<'a>(ptr: *const u8) -> &'a str {

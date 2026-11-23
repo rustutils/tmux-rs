@@ -427,12 +427,44 @@ pub unsafe fn server_client_set_session(c: *mut client, s: *mut session) {
             alerts_check_session(&*s);
             tty_update_client_offset(c);
             status_timer_start(NonNull::new_unchecked(c));
-            notify_client(c"client-session-changed", c);
+            server_client_fire_session_changed(c, old);
             server_redraw_client(c);
         }
 
         server_check_unattached();
         server_update_socket();
+    }
+}
+
+/// Fires client-session-changed, with the new and old session.
+///
+/// # Safety
+/// `c` must be a valid client, `old` null or a valid session.
+unsafe fn server_client_fire_session_changed(c: *mut client, old: *mut session) {
+    unsafe {
+        let mut payload = crate::events::payload_for_client(c);
+        if let Some(s) = payload.get("session").cloned() {
+            payload.set("new_session", s);
+        }
+        if !old.is_null() {
+            payload.set("old_session", crate::events::payload_session(old));
+        }
+        crate::events::events_fire("client-session-changed", payload, null_mut());
+    }
+}
+
+/// Fires client-resized, with the new and old size.
+///
+/// # Safety
+/// `c` must be a valid client.
+unsafe fn server_client_fire_resized(c: *mut client, old_sx: u32, old_sy: u32) {
+    unsafe {
+        let mut payload = crate::events::payload_for_client(c);
+        payload.set_uint("width", (*c).tty.sx);
+        payload.set_uint("height", (*c).tty.sy);
+        payload.set_uint("old_width", old_sx);
+        payload.set_uint("old_height", old_sy);
+        crate::events::events_fire("client-resized", payload, null_mut());
     }
 }
 
@@ -460,7 +492,7 @@ pub unsafe fn server_client_lost(c: *mut client) {
 
         if (*c).flags.intersects(client_flag::ATTACHED) {
             server_client_attached_lost(c);
-            notify_client(c"client-detached", c);
+            events_fire_client("client-detached", c);
         }
 
         if (*c).flags.intersects(client_flag::CONTROL) {
@@ -1888,7 +1920,7 @@ pub unsafe fn server_client_update_latest(c: *mut client) {
             recalculate_size(w, 0);
         }
 
-        notify_client(c"client-active", c);
+        events_fire_client("client-active", c);
     }
 }
 
@@ -3054,6 +3086,7 @@ unsafe fn server_client_dispatch_message(c: *mut client, imsg: *mut imsg) -> i32
                 }
 
                 if !(*c).flags.intersects(client_flag::CONTROL) {
+                    let (old_sx, old_sy) = ((*c).tty.sx, (*c).tty.sy);
                     server_client_update_latest(c);
                     tty_resize(&raw mut (*c).tty);
                     tty_repeat_requests(&raw mut (*c).tty);
@@ -3065,7 +3098,7 @@ unsafe fn server_client_dispatch_message(c: *mut client, imsg: *mut imsg) -> i32
                     }
                     server_redraw_client(c);
                     if !client_get_session(c).is_null() {
-                        notify_client(c"client-resized", c);
+                        server_client_fire_resized(c, old_sx, old_sy);
                     }
                 }
             }

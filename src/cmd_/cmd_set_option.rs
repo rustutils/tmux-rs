@@ -54,8 +54,8 @@ pub static CMD_SET_HOOK_ENTRY: cmd_entry = cmd_entry {
     name: "set-hook",
     alias: None,
 
-    args: args_parse::new("agpRt:uw", 1, 2, Some(cmd_set_option_args_parse)),
-    usage: "[-agpRuw] [-t target-pane] hook [command]",
+    args: args_parse::new("agpERt:uw", 1, 2, Some(cmd_set_option_args_parse)),
+    usage: "[-agpERuw] [-t target-pane] hook [command]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -75,9 +75,41 @@ pub unsafe fn cmd_set_option_args_parse(_args: *mut args, idx: u32) -> args_pars
     }
 }
 
+/// set-hook -E: fires a user event, whose name starts with `@`, with the
+/// command's target as payload.
+///
+/// # Safety
+/// `self_` and `item` must be valid.
+unsafe fn cmd_set_hook_event_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
+    unsafe {
+        let args = cmd_get_args(self_);
+        if args_count(args) != 1 {
+            cmdq_error!(item, "too many arguments");
+            return cmd_retval::CMD_RETURN_ERROR;
+        }
+        let argument = format_single_from_target(item, args_string(args, 0));
+        let name = cstr_to_string_lossy(argument);
+        free_(argument);
+        if !name.starts_with('@') {
+            cmdq_error!(item, "event name must start with @");
+            return cmd_retval::CMD_RETURN_ERROR;
+        }
+
+        let target = cmdq_get_target(item);
+        let mut payload = crate::events::Payload::new();
+        payload.set_target(crate::events::payload_target(target));
+        crate::events::payload_add_find_state(&mut payload, cmdq_get_client(item), target);
+        crate::events::events_fire(&name, payload, null_mut());
+        cmd_retval::CMD_RETURN_NORMAL
+    }
+}
+
 pub unsafe fn cmd_set_option_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     unsafe {
         let args = cmd_get_args(self_);
+        if std::ptr::eq(cmd_get_entry(self_), &CMD_SET_HOOK_ENTRY) && args_has(args, 'E') {
+            return cmd_set_hook_event_exec(self_, item);
+        }
         let append = args_has(args, 'a');
         let target = cmdq_get_target(item);
         let mut oo: *mut options = null_mut();
@@ -101,7 +133,7 @@ pub unsafe fn cmd_set_option_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
 
                 // If set-hook -R, fire the hook straight away.
                 if std::ptr::eq(cmd_get_entry(self_), &CMD_SET_HOOK_ENTRY) && args_has(args, 'R') {
-                    notify_hook(item, argument);
+                    hooks_run(item, cstr_to_str(argument));
                     free_(argument);
                     return cmd_retval::CMD_RETURN_NORMAL;
                 }
@@ -200,6 +232,9 @@ pub unsafe fn cmd_set_option_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
                         break 'fail;
                     }
                     options_set_string!(oo, &name, append, "{}", _s(value));
+                    if std::ptr::eq(cmd_get_entry(self_), &CMD_SET_HOOK_ENTRY) {
+                        hooks_add_event(&name);
+                    }
                 } else if idx == -1 && !options_is_array(parent) {
                     if let Err(cause) = options_from_string(
                         oo,

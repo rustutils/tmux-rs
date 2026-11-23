@@ -17,6 +17,8 @@ use crate::options_::*;
 
 pub unsafe fn resize_window(w: *mut window, mut sx: u32, mut sy: u32, xpixel: i32, ypixel: i32) {
     unsafe {
+        let (old_sx, old_sy) = ((*w).sx, (*w).sy);
+
         // Check size limits.
         sx = sx.clamp(WINDOW_MINIMUM, WINDOW_MAXIMUM);
         sy = sy.clamp(WINDOW_MINIMUM, WINDOW_MAXIMUM);
@@ -55,8 +57,13 @@ pub unsafe fn resize_window(w: *mut window, mut sx: u32, mut sy: u32, xpixel: i3
 
         tty_update_window_offset(w);
         server_redraw_window(w);
-        notify_window(c"window-layout-changed", w);
-        notify_window(c"window-resized", w);
+        events_fire_window("window-layout-changed", w);
+        let mut payload = crate::events::payload_for_window(w);
+        payload.set_uint("width", (*w).sx);
+        payload.set_uint("height", (*w).sy);
+        payload.set_uint("old_width", old_sx);
+        payload.set_uint("old_height", old_sy);
+        crate::events::events_fire("window-resized", payload, null_mut());
         (*w).flags &= !window_flag::RESIZE;
     }
 }

@@ -134,8 +134,7 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
                 // Can't use session_detach as it will destroy session
                 // if this makes it empty.
                 (*wl).flags &= !WINLINK_ALERTFLAGS;
-                let w_unlink = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-                notify_session_window(c"window-unlinked", s, w_unlink);
+                events_fire_winlink("window-unlinked", wl);
                 winlink_stack_remove(&raw mut (*s).lastw, wl);
                 winlink_remove(&raw mut (*s).windows, wl);
 
@@ -216,7 +215,8 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
 
         // Fire notification if new window.
         if !(*sc).flags.intersects(SPAWN_RESPAWN) {
-            notify_session_window(c"window-linked", s, w);
+            events_fire_window("window-created", w);
+            events_fire_winlink("window-linked", (*sc).wl);
         }
 
         session_group_synchronize_from(s);
@@ -587,7 +587,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             }
         }
         if !(*sc).flags.intersects(SPAWN_NONOTIFY) {
-            notify_window(c"window-layout-changed", w);
+            events_fire_window("window-layout-changed", w);
         }
 
         Ok(NonNull::new(new_wp).unwrap())

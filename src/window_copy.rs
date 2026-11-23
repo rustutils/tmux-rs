@@ -5506,7 +5506,7 @@ pub unsafe fn window_copy_copy_buffer(
             screen_write_start_pane(&raw mut ctx, wp, null_mut());
             screen_write_setselection(&raw mut ctx, c!(""), buf.cast(), len as u32);
             screen_write_stop(&raw mut ctx);
-            notify_pane(c"pane-set-clipboard", wp);
+            events_fire_pane("pane-set-clipboard", wp);
         }
 
         let prefix = cstr_to_bytes(prefix).map(String::from_utf8_lossy);
@@ -5600,7 +5600,7 @@ pub unsafe fn window_copy_append_selection(wme: *mut window_mode_entry) {
             screen_write_start_pane(&raw mut ctx, wp, null_mut());
             screen_write_setselection(&raw mut ctx, c!(""), buf.cast(), len as u32);
             screen_write_stop(&raw mut ctx);
-            notify_pane(c"pane-set-clipboard", wp);
+            events_fire_pane("pane-set-clipboard", wp);
         }
 
         // The top buffer followed by the selection, under the top buffer's

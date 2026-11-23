@@ -174,7 +174,7 @@ pub unsafe fn layout_set_even(w: *mut window, type_: layout_type) {
         layout_print_cell(w, window_layout_root(w), __func__, 1);
 
         window_resize(w, (*lc).sx, (*lc).sy, -1, -1);
-        notify_window(c"window-layout-changed", w);
+        events_fire_window("window-layout-changed", w);
         server_redraw_window(w);
     }
 }
@@ -290,7 +290,7 @@ pub unsafe fn layout_set_main_h(w: *mut window) {
         layout_print_cell(w, window_layout_root(w), __func__, 1);
 
         window_resize(w, (*lc).sx, (*lc).sy, -1, -1);
-        notify_window(c"window-layout-changed", w);
+        events_fire_window("window-layout-changed", w);
         server_redraw_window(w);
     }
 }
@@ -392,7 +392,7 @@ pub unsafe fn layout_set_main_h_mirrored(w: *mut window) {
         layout_print_cell(w, window_layout_root(w), __func__, 1);
 
         window_resize(w, (*lc).sx, (*lc).sy, -1, -1);
-        notify_window(c"window-layout-changed", w);
+        events_fire_window("window-layout-changed", w);
         server_redraw_window(w);
     }
 }
@@ -494,7 +494,7 @@ pub unsafe fn layout_set_main_v(w: *mut window) {
         layout_print_cell(w, window_layout_root(w), __func__, 1);
 
         window_resize(w, (*lc).sx, (*lc).sy, -1, -1);
-        notify_window(c"window-layout-changed", w);
+        events_fire_window("window-layout-changed", w);
         server_redraw_window(w);
     }
 }
@@ -595,7 +595,7 @@ pub unsafe fn layout_set_main_v_mirrored(w: *mut window) {
         layout_print_cell(w, window_layout_root(w), __func__, 1);
 
         window_resize(w, (*lc).sx, (*lc).sy, -1, -1);
-        notify_window(c"window-layout-changed", w);
+        events_fire_window("window-layout-changed", w);
         server_redraw_window(w);
     }
 }
@@ -722,7 +722,7 @@ pub unsafe fn layout_set_tiled(w: *mut window) {
         layout_print_cell(w, window_layout_root(w), __func__, 1);
 
         window_resize(w, (*lc).sx, (*lc).sy, -1, -1);
-        notify_window(c"window-layout-changed", w);
+        events_fire_window("window-layout-changed", w);
         server_redraw_window(w);
     }
 }

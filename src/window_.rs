@@ -754,14 +754,33 @@ pub unsafe fn window_remove_ref(w: *mut window, from: *const u8) {
     }
 }
 
+/// Fires window-pane-changed, with the new and old active pane.
+///
+/// # Safety
+/// `w` and `wp` must be valid, `lastwp` null or a valid pane.
+unsafe fn window_fire_pane_changed(w: *mut window, wp: *mut window_pane, lastwp: *mut window_pane) {
+    unsafe {
+        let mut payload = crate::events::payload_for_pane(wp);
+        payload.set("window", crate::events::payload_window(w));
+        payload.set("new_pane", crate::events::payload_pane(wp));
+        if !lastwp.is_null() {
+            payload.set("old_pane", crate::events::payload_pane(lastwp));
+        }
+        crate::events::events_fire("window-pane-changed", payload, null_mut());
+    }
+}
+
 pub unsafe fn window_set_name(w: *mut window, new_name: *const u8) {
     unsafe {
         let visited = utf8_stravis_(
             CStr::from_ptr(new_name.cast()).to_bytes(),
             vis_flags::VIS_OCTAL | vis_flags::VIS_CSTYLE | vis_flags::VIS_TAB | vis_flags::VIS_NL,
         );
-        (*w).name = Some(String::from_utf8_lossy(&visited).into_owned());
-        notify_window(c"window-renamed", w);
+        let last = (*w).name.replace(String::from_utf8_lossy(&visited).into_owned());
+        let mut payload = crate::events::payload_for_window(w);
+        payload.set_string("old_name", last.unwrap_or_default());
+        payload.set_string("new_name", (*w).name.as_deref().unwrap_or(""));
+        crate::events::events_fire("window-renamed", payload, null_mut());
     }
 }
 
@@ -873,7 +892,7 @@ pub unsafe fn window_pane_update_focus(wp: *mut window_pane) {
                     (*wp).event_output.add(b"\x1b[O");
                     window_pane_arm_write(wp);
                 }
-                notify_pane(c"pane-focus-out", wp);
+                events_fire_pane("pane-focus-out", wp);
                 (*wp).flags &= !window_pane_flags::PANE_FOCUSED;
             } else if focused && !(*wp).flags.intersects(window_pane_flags::PANE_FOCUSED) {
                 log_debug!("{}: %%{} focus in", "window_pane_update_focus", (*wp).id);
@@ -881,7 +900,7 @@ pub unsafe fn window_pane_update_focus(wp: *mut window_pane) {
                     (*wp).event_output.add(b"\x1b[I");
                     window_pane_arm_write(wp);
                 }
-                notify_pane(c"pane-focus-in", wp);
+                events_fire_pane("pane-focus-in", wp);
                 (*wp).flags |= window_pane_flags::PANE_FOCUSED;
             } else {
                 log_debug!(
@@ -921,7 +940,7 @@ pub unsafe fn window_set_active_pane(w: *mut window, wp: *mut window_pane, notif
         tty_update_window_offset(w);
 
         if notify != 0 {
-            notify_window(c"window-pane-changed", w);
+            window_fire_pane_changed(w, wp, lastwp);
         }
     }
     1
@@ -1055,7 +1074,7 @@ pub unsafe fn window_zoom(wp: *mut window_pane) -> i32 {
         window_set_saved_layout_root(w, window_layout_root(w));
         layout_init(w, wp);
         (*w).flags |= window_flag::ZOOMED;
-        notify_window(c"window-layout-changed", w);
+        events_fire_window("window-layout-changed", w);
 
         0
     }
@@ -1079,7 +1098,7 @@ pub unsafe fn window_unzoom(w: *mut window, notify: i32) -> i32 {
         layout_fix_panes(&*w, null_mut());
 
         if notify != 0 {
-            notify_window(c"window-layout-changed", w);
+            events_fire_window("window-layout-changed", w);
         }
 
         0
@@ -1179,7 +1198,7 @@ pub unsafe fn window_lost_pane(w: *mut window, wp: *mut window_pane) {
             if !new_active.is_null() {
                 window_pane_stack_remove(&raw mut (*w).last_panes, new_active);
                 (*new_active).flags |= window_pane_flags::PANE_CHANGED;
-                notify_window(c"window-pane-changed", w);
+                window_fire_pane_changed(w, new_active, wp);
                 window_update_focus(w);
             }
         }
@@ -1628,6 +1647,31 @@ pub unsafe fn window_pane_resize(wp: *mut window_pane, sx: u32, sy: u32) {
     }
 }
 
+/// Fires a pane mode event, with the mode before and after and whether a
+/// mode was entered or left.
+///
+/// # Safety
+/// `wp` must be a valid pane in a valid window.
+unsafe fn window_fire_pane_mode_changed(
+    name: &str,
+    wp: *mut window_pane,
+    previous: Option<&str>,
+    current: Option<&str>,
+    entered: bool,
+) {
+    unsafe {
+        let mut payload = crate::events::payload_for_pane(wp);
+        if let Some(current) = current {
+            payload.set_string("current_mode", current);
+        }
+        if let Some(previous) = previous {
+            payload.set_string("previous_mode", previous);
+        }
+        payload.set_int("mode_entered", entered as i32);
+        crate::events::events_fire(name, payload, null_mut());
+    }
+}
+
 pub unsafe fn window_pane_set_mode(
     wp: *mut window_pane,
     swp: *mut window_pane,
@@ -1639,6 +1683,7 @@ pub unsafe fn window_pane_set_mode(
         if !(*wp).modes.is_empty() && (*(&(*wp).modes)[0]).mode == mode {
             return 1;
         }
+        let oname = (*wp).modes.first().map(|&wme| (*(*wme).mode).name);
 
         let mut found_idx: Option<usize> = None;
         for (i, &wme) in (*wp).modes.iter().enumerate() {
@@ -1670,7 +1715,9 @@ pub unsafe fn window_pane_set_mode(
 
         server_redraw_window_borders(window_pane_window(wp));
         server_status_window(window_pane_window(wp));
-        notify_pane(c"pane-mode-changed", wp);
+        let name = (*mode).name;
+        window_fire_pane_mode_changed("pane-mode-entered", wp, oname, Some(name), true);
+        window_fire_pane_mode_changed("pane-mode-changed", wp, oname, Some(name), true);
 
         0
     }
@@ -1684,6 +1731,7 @@ pub unsafe fn window_pane_reset_mode(wp: *mut window_pane) {
         }
 
         let wme = (*wp).modes.remove(0);
+        let previous = (*(*wme).mode).name;
         ((*(*wme).mode).free)(NonNull::new(wme).unwrap());
         drop(Box::from_raw(wme));
 
@@ -1701,7 +1749,9 @@ pub unsafe fn window_pane_reset_mode(wp: *mut window_pane) {
 
         server_redraw_window_borders(window_pane_window(wp));
         server_status_window(window_pane_window(wp));
-        notify_pane(c"pane-mode-changed", wp);
+        let current = (*wp).modes.first().map(|&wme| (*(*wme).mode).name);
+        window_fire_pane_mode_changed("pane-mode-exited", wp, Some(previous), current, false);
+        window_fire_pane_mode_changed("pane-mode-changed", wp, Some(previous), current, false);
     }
 }
 

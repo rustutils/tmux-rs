@@ -212,7 +212,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("differs:send-prefix", "Track 3: new command flags"),
     ("differs:set-buffer", "Track 3: new command flags"),
     ("differs:set-environment", "Track 3: new command flags"),
-    ("differs:set-hook", "Track 3: new command flags"),
+    ("differs:set-hook", "after F2: hook monitors, -B and -T"),
     ("differs:show-environment", "Track 3: new command flags"),
     ("differs:show-hooks", "Track 3: new command flags"),
     ("differs:show-options", "Track 3: new command flags"),
@@ -220,7 +220,6 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("differs:show-window-options", "Track 3: new command flags"),
     ("differs:split-window", "Track 3: new command flags"),
     ("differs:swap-pane", "Track 3: new command flags"),
-    ("differs:wait-for", "Track 3: new command flags"),
     ("missing:new-pane", "Track 3: floating panes"),
     ("missing:switch-mode", "Track 3: switch-mode"),
 ];

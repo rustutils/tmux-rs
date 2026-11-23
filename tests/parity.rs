@@ -175,6 +175,20 @@ fn options_match_tmux_3_8() {
     check("options", &actual, known::OPTIONS, &r, &cc);
 }
 
+/// The hook options, in order. The options test does not see them,
+/// because show-options leaves hooks out.
+#[test]
+fn hooks_match_tmux_3_8() {
+    let Some((rust, c)) = servers() else { return };
+    for scope in ["-g", "-gw"] {
+        assert_eq!(
+            rust.run(&["show-hooks", scope]),
+            c.run(&["show-hooks", scope]),
+            "show-hooks {scope}"
+        );
+    }
+}
+
 #[test]
 fn commands_match_tmux_3_8() {
     let Some((rust, c)) = servers() else { return };

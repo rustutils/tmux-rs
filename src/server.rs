@@ -260,6 +260,8 @@ pub unsafe fn server_start(
         // CLIENT_REGISTRY is already initialized as BTreeMap::new() in the static.
         SESSIONS = BTreeMap::new();
         key_bindings_init();
+        control_build_events();
+        hooks_build_events();
         message_log_reset();
         let mut start_time: timeval = zeroed();
         gettimeofday(&raw mut start_time, null_mut());

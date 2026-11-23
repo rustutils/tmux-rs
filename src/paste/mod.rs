@@ -34,7 +34,8 @@ pub use store::{PasteBuffer, PasteError, PasteEvent, PasteStore};
 
 use crate::global::with_paste;
 use crate::options_::options_get_number_;
-use crate::{GLOBAL_OPTIONS, notify_paste_buffer};
+use crate::GLOBAL_OPTIONS;
+use crate::events::{Payload, events_fire};
 
 /// Whether there are no paste buffers.
 pub fn paste_is_empty() -> bool {
@@ -66,11 +67,11 @@ pub fn paste_list() -> Vec<PasteBuffer> {
 /// Delete the buffer called `name`. Returns false if there is none.
 ///
 /// # Safety
-/// Raises a notification, see [`notify_paste_buffer`].
+/// Raises a notification, see [`events_fire`].
 pub unsafe fn paste_free(name: &str) -> bool {
     let event = with_paste(|store| store.delete(name));
     let found = event.is_some();
-    // SAFETY: the caller upholds notify_paste_buffer's requirements.
+    // SAFETY: the caller upholds events_fire's requirements.
     unsafe { paste_notify(event) };
     found
 }
@@ -85,7 +86,7 @@ pub unsafe fn paste_add(prefix: Option<&str>, data: impl Into<Rc<[u8]>>) {
     // SAFETY: the caller guarantees the global options exist.
     let limit = unsafe { buffer_limit() };
     let events = with_paste(|store| store.add(prefix, data, limit, now()));
-    // SAFETY: the caller upholds notify_paste_buffer's requirements.
+    // SAFETY: the caller upholds events_fire's requirements.
     unsafe { paste_notify(events) };
 }
 
@@ -98,7 +99,7 @@ pub unsafe fn paste_set(data: impl Into<Rc<[u8]>>, name: Option<&[u8]>) -> Resul
     // SAFETY: the caller guarantees the global options exist.
     let limit = unsafe { buffer_limit() };
     let events = with_paste(|store| store.set(name, data, limit, now()))?;
-    // SAFETY: the caller upholds notify_paste_buffer's requirements.
+    // SAFETY: the caller upholds events_fire's requirements.
     unsafe { paste_notify(events) };
     Ok(())
 }
@@ -109,7 +110,7 @@ pub unsafe fn paste_set(data: impl Into<Rc<[u8]>>, name: Option<&[u8]>) -> Resul
 /// Raises notifications.
 pub unsafe fn paste_rename(old: &str, new: &[u8]) -> Result<(), PasteError> {
     let events = with_paste(|store| store.rename(old, new))?;
-    // SAFETY: the caller upholds notify_paste_buffer's requirements.
+    // SAFETY: the caller upholds events_fire's requirements.
     unsafe { paste_notify(events) };
     Ok(())
 }
@@ -121,7 +122,7 @@ pub unsafe fn paste_rename(old: &str, new: &[u8]) -> Result<(), PasteError> {
 pub unsafe fn paste_replace(name: &str, data: impl Into<Rc<[u8]>>) -> bool {
     let event = with_paste(|store| store.replace(name, data));
     let found = event.is_some();
-    // SAFETY: the caller upholds notify_paste_buffer's requirements.
+    // SAFETY: the caller upholds events_fire's requirements.
     unsafe { paste_notify(event) };
     found
 }
@@ -129,16 +130,17 @@ pub unsafe fn paste_replace(name: &str, data: impl Into<Rc<[u8]>>) -> bool {
 /// Raise the notification for each event.
 ///
 /// # Safety
-/// See [`notify_paste_buffer`].
+/// See [`events_fire`].
 unsafe fn paste_notify(events: impl IntoIterator<Item = PasteEvent>) {
     for event in events {
-        // SAFETY: the caller upholds notify_paste_buffer's requirements.
-        unsafe {
-            match event {
-                PasteEvent::Changed(name) => notify_paste_buffer(&name, false),
-                PasteEvent::Deleted(name) => notify_paste_buffer(&name, true),
-            }
-        }
+        let (event_name, name) = match event {
+            PasteEvent::Changed(name) => ("paste-buffer-changed", name),
+            PasteEvent::Deleted(name) => ("paste-buffer-deleted", name),
+        };
+        let mut payload = Payload::new();
+        payload.set_string("paste_buffer", name);
+        // SAFETY: the caller upholds events_fire's requirements.
+        unsafe { events_fire(event_name, payload, std::ptr::null_mut()) };
     }
 }
 

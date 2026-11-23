@@ -270,7 +270,7 @@ pub unsafe fn server_link_window(
             if killflag {
                 // Can't use session_detach as it will destroy session
                 // if this makes it empty.
-                notify_session_window(c"window-unlinked", dst, winlink_window(dstwl));
+                events_fire_winlink("window-unlinked", dstwl);
                 (*dstwl).flags &= !WINLINK_ALERTFLAGS;
                 winlink_stack_remove(&raw mut (*dst).lastw, dstwl);
                 winlink_remove(&raw mut (*dst).windows, dstwl);
@@ -304,6 +304,26 @@ pub unsafe fn server_unlink_window(s: *mut session, wl: *mut winlink) {
         } else {
             server_redraw_session_group(s);
         }
+    }
+}
+
+/// Fires pane-died or pane-exited, with how the pane's process ended.
+///
+/// # Safety
+/// `wp` must be a valid pane in a valid window.
+unsafe fn server_fire_pane_exit(name: &str, wp: *mut window_pane) {
+    unsafe {
+        let status = (*wp).status;
+        let mut payload = crate::events::payload_for_pane(wp);
+        if WIFEXITED(status) {
+            payload.set_int("exit_status", WEXITSTATUS(status));
+        } else if WIFSIGNALED(status) {
+            // C's sig2name gives the number where there is no
+            // sys_signame, as with glibc. pane_dead_signal does the same.
+            payload.set_string("exit_signal", WTERMSIG(status).to_string());
+        }
+        payload.set_int("exit_success", (status == 0) as i32);
+        crate::events::events_fire(name, payload, null_mut());
     }
 }
 
@@ -351,7 +371,7 @@ pub unsafe fn server_destroy_pane(wp: *mut window_pane, notify: i32) {
 
                     gettimeofday(&raw mut (*wp).dead_time, null_mut());
                     if notify != 0 {
-                        notify_pane(c"pane-died", wp);
+                        server_fire_pane_exit("pane-died", wp);
                     }
 
                     let s = options_get_string_((*wp).options, "remain-on-exit-format");
@@ -379,7 +399,7 @@ pub unsafe fn server_destroy_pane(wp: *mut window_pane, notify: i32) {
         }
 
         if notify != 0 {
-            notify_pane(c"pane-exited", wp);
+            server_fire_pane_exit("pane-exited", wp);
         }
 
         server_unzoom_window(w);
