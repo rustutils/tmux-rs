@@ -823,6 +823,7 @@ dependencies = [
  "paste",
  "tempfile",
  "terminfo-lean",
+ "thiserror",
  "tmux-compat",
  "tmux-event",
  "tmux-grid",

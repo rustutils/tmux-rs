@@ -1780,8 +1780,9 @@ unsafe fn tty_keys_clipboard(
             return 0;
         }
 
-        // Create a paste buffer, which takes ownership of out.
-        paste_add(null_mut(), out, outlen as usize);
+        // Create a paste buffer with a copy of the data.
+        paste_add(None, std::slice::from_raw_parts(out.cast::<u8>(), outlen as usize));
+        free_(out);
         (*tty).clipboard_timer = None;
         (*tty).flags &= !tty_flags::TTY_OSC52QUERY;
 

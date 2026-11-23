@@ -102,7 +102,7 @@
 28 src/control_notify.rs
 26 src/environ_.rs
 60 src/file.rs
-463 src/format.rs
+455 src/format.rs
 28 src/format_draw_.rs
 14 src/hyperlinks_.rs
 12 src/image_.rs
@@ -115,7 +115,7 @@
 78 src/layout.rs
 16 src/layout_custom.rs
 26 src/layout_set.rs
-55 src/lib.rs
+57 src/lib.rs
 84 src/libc.rs
 11 src/main.rs
 24 src/menu_.rs
@@ -124,7 +124,7 @@
 24 src/notify.rs
 147 src/options_.rs
 12 src/osdep.rs
-72 src/paste.rs
+16 src/paste/mod.rs
 40 src/popup.rs
 39 src/proc.rs
 21 src/resize.rs

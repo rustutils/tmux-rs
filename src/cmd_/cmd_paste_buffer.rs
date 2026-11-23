@@ -41,21 +41,21 @@ unsafe fn cmd_paste_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
 
         let mut bufname = None;
         if args_has(args, 'b') {
-            bufname = Some(cstr_to_str(args_get(args, b'b')));
+            bufname = cstr_to_bytes(args_get(args, b'b'));
         }
 
         let pb;
         if let Some(bufname) = bufname {
-            pb = paste_get_name(Some(bufname));
-            if pb.is_null() {
-                cmdq_error!(item, "no buffer {bufname}");
+            pb = paste_get_name_bytes(bufname);
+            if pb.is_none() {
+                cmdq_error!(item, "no buffer {}", String::from_utf8_lossy(bufname));
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         } else {
-            pb = paste_get_top(null_mut());
+            pb = paste_get_top();
         }
 
-        if let Some(pb) = NonNull::new(pb)
+        if let Some(pb) = &pb
             && !(*wp).flags.intersects(window_pane_flags::PANE_INPUTOFF)
         {
             let mut sepstr = args_get(args, b's');
@@ -76,24 +76,16 @@ unsafe fn cmd_paste_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
                 window_pane_write_to_pty(wp, c!("\x1b[200~").cast(), 6);
             }
 
-            let mut bufsize: usize = 0;
-            let mut bufdata = paste_buffer_data_(pb, &mut bufsize);
-            let bufend = bufdata.add(bufsize);
-
-            loop {
-                let line: *mut u8 =
-                    libc::memchr(bufdata as _, b'\n' as i32, bufend.addr() - bufdata.addr()).cast();
-                if line.is_null() {
-                    break;
-                }
-
-                window_pane_write_to_pty(wp, bufdata.cast(), line.addr() - bufdata.addr());
+            // Each line is written followed by the separator instead of
+            // its newline.
+            let mut rest: &[u8] = pb.data();
+            while let Some(end) = memchr::memchr(b'\n', rest) {
+                window_pane_write_to_pty(wp, rest.as_ptr().cast(), end);
                 window_pane_write_to_pty(wp, sepstr.cast(), seplen);
-
-                bufdata = line.add(1);
+                rest = &rest[end + 1..];
             }
-            if bufdata != bufend {
-                window_pane_write_to_pty(wp, bufdata.cast(), bufend.addr() - bufdata.addr());
+            if !rest.is_empty() {
+                window_pane_write_to_pty(wp, rest.as_ptr().cast(), rest.len());
             }
 
             if bracket
@@ -105,10 +97,10 @@ unsafe fn cmd_paste_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
             }
         }
 
-        if let Some(non_null_pb) = NonNull::new(pb)
+        if let Some(pb) = pb
             && args_has(args, 'd')
         {
-            paste_free(non_null_pb);
+            paste_free(pb.name());
         }
 
         cmd_retval::CMD_RETURN_NORMAL

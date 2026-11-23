@@ -5509,7 +5509,9 @@ pub unsafe fn window_copy_copy_buffer(
             notify_pane(c"pane-set-clipboard", wp);
         }
 
-        paste_add(prefix, buf.cast(), len);
+        let prefix = cstr_to_bytes(prefix).map(String::from_utf8_lossy);
+        paste_add(prefix.as_deref(), std::slice::from_raw_parts(buf.cast::<u8>(), len));
+        free_(buf);
     }
 }
 
@@ -5588,9 +5590,8 @@ pub unsafe fn window_copy_append_selection(wme: *mut window_mode_entry) {
     unsafe {
         let wp: *mut window_pane = pane_ptr_from_id((*wme).wp);
         let mut ctx: screen_write_ctx = zeroed();
-        let mut bufsize = 0;
         let mut len: usize = 0;
-        let mut buf = window_copy_get_selection(wme, &raw mut len);
+        let buf = window_copy_get_selection(wme, &raw mut len);
         if buf.is_null() {
             return;
         }
@@ -5602,18 +5603,16 @@ pub unsafe fn window_copy_append_selection(wme: *mut window_mode_entry) {
             notify_pane(c"pane-set-clipboard", wp);
         }
 
-        let mut bufname = None;
-        let pb = paste_get_top(&raw mut bufname);
-        if !pb.is_null() {
-            let bufdata = paste_buffer_data(pb, &raw mut bufsize);
-            buf = xrealloc(buf.cast(), len + bufsize).as_ptr().cast();
-            libc::memmove(buf.add(bufsize).cast(), buf.cast(), len);
-            libc::memcpy(buf.cast(), bufdata.cast(), bufsize);
-            len += bufsize;
+        // The top buffer followed by the selection, under the top buffer's
+        // name.
+        let top = paste_get_top();
+        let mut data = Vec::new();
+        if let Some(pb) = &top {
+            data.extend_from_slice(pb.data());
         }
-        // paste_get_top returns a copy of the name, so it stays valid when
-        // paste_set frees the old buffer.
-        let _ = paste_set(buf, len, bufname.as_deref());
+        data.extend_from_slice(std::slice::from_raw_parts(buf.cast::<u8>(), len));
+        free_(buf);
+        let _ = paste_set(data, top.as_ref().map(|pb| pb.name().as_bytes()));
     }
 }
 

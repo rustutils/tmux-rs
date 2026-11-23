@@ -53,6 +53,7 @@ cfg_pub_mods! {
     mod arguments;
     mod bitstr;
     mod cfg_;
+    mod clean_name;
     mod client_;
     mod cmd_;
     mod cmd_parse;
@@ -64,6 +65,7 @@ cfg_pub_mods! {
     mod file;
     mod format;
     mod format_draw_;
+    mod global;
     mod hyperlinks_;
     mod input;
     mod input_keys;
@@ -2853,6 +2855,20 @@ pub(crate) fn i32_to_ordering(value: i32) -> std::cmp::Ordering {
 
 pub(crate) unsafe fn cstr_to_str<'a>(ptr: *const u8) -> &'a str {
     unsafe { cstr_to_str_(ptr).expect("cstr_to_str: null or non-UTF-8 pointer") }
+}
+
+/// The bytes of a NUL-terminated string, without the NUL, or `None` for a
+/// null pointer.
+///
+/// # Safety
+/// `ptr` must be null or point to a NUL-terminated string that lives and
+/// does not change for `'a`.
+pub(crate) unsafe fn cstr_to_bytes<'a>(ptr: *const u8) -> Option<&'a [u8]> {
+    if ptr.is_null() {
+        return None;
+    }
+    // SAFETY: the caller guarantees a valid NUL-terminated string.
+    Some(unsafe { std::ffi::CStr::from_ptr(ptr.cast()) }.to_bytes())
 }
 
 pub(crate) unsafe fn cstr_to_str_<'a>(ptr: *const u8) -> Option<&'a str> {

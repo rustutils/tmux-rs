@@ -56,16 +56,14 @@ unsafe fn cmd_load_buffer_done(
         if error != 0 {
             cmdq_error!(item, "{}: {}", strerror(error), _s(path));
         } else if bsize != 0 {
-            let copy = xmalloc(bsize).as_ptr();
-            memcpy_(copy, bdata as _, bsize);
-            if let Err(cause) = paste_set(copy as _, bsize, cstr_to_str_((*cdata).name)) {
+            let copy: std::rc::Rc<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
+            if let Err(cause) = paste_set(copy.clone(), cstr_to_bytes((*cdata).name)) {
                 cmdq_error!(item, "{}", cause);
-                free_(copy);
             } else if !tc.is_null()
                 && !client_get_session(tc).is_null()
                 && !(*tc).flags.intersects(client_flag::DEAD)
             {
-                tty_set_selection(&raw mut (*tc).tty, c!(""), copy as _, bsize);
+                tty_set_selection(&raw mut (*tc).tty, c!(""), copy.as_ptr(), bsize);
             }
             if !tc.is_null() {
                 server_client_unref(tc);

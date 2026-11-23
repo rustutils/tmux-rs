@@ -257,12 +257,13 @@ unsafe fn cmd_capture_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
         } else {
             let mut bufname = None;
             if args_has(args, 'b') {
-                bufname = cstr_to_str_(args_get(args, b'b'));
+                bufname = cstr_to_bytes(args_get(args, b'b'));
             }
 
-            if let Err(cause) = paste_set(buf, len, bufname) {
+            let data = std::slice::from_raw_parts(buf, len).to_vec();
+            free_(buf);
+            if let Err(cause) = paste_set(data, bufname) {
                 cmdq_error!(item, "{}", cause);
-                free_(buf);
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         }

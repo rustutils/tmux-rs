@@ -3004,9 +3004,10 @@ unsafe fn input_osc_52(ictx: &mut input_ctx, p: *const u8) {
         // log_debug("%s: %.*s %s", __func__, (int)(end - p - 1), p, flags);
 
         if streq_(end, "?") {
-            let pb = paste_get_top(null_mut());
-            if !pb.is_null() {
-                buf = paste_buffer_data(pb, &raw mut len);
+            let pb = paste_get_top();
+            if let Some(pb) = &pb {
+                buf = pb.data().as_ptr();
+                len = pb.data().len();
             }
             if ictx.input_end == input_end_type::INPUT_END_BEL {
                 input_reply_clipboard(ictx.event, buf, len, c!("\x07"));
@@ -3038,7 +3039,8 @@ unsafe fn input_osc_52(ictx: &mut input_ctx, p: *const u8) {
         screen_write_stop(&raw mut ctx);
         notify_pane(c"pane-set-clipboard", wp);
 
-        paste_add(null(), out.cast(), outlen as usize);
+        paste_add(None, std::slice::from_raw_parts(out, outlen as usize));
+        free_(out);
     }
 }
 

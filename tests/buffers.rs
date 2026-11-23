@@ -843,3 +843,146 @@ fn choose_buffer_ignores_modified_key_with_same_low_byte() {
     }
     assert_eq!(count(), 1, "d deletes the selected buffer");
 }
+
+// ---------------------------------------------------------------------------
+// tmux 3.8 buffer names and order
+// ---------------------------------------------------------------------------
+
+fn buffer_names(tmux: &TmuxTestHarness) -> Vec<String> {
+    let result = tmux
+        .cmd()
+        .args(["list-buffers", "-F", "#{buffer_name}"])
+        .run();
+    result.assert_success();
+    result.stdout_lines()
+}
+
+#[test]
+fn set_buffer_rejects_invalid_names() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    let result = tmux.cmd().args(["set-buffer", "-b", "a\tb", "x"]).run();
+    result.assert_failure();
+    assert!(
+        result.stderr_str().contains("invalid buffer name: a\tb"),
+        "stderr: {}",
+        result.stderr_str()
+    );
+
+    tmux.cmd()
+        .args(["set-buffer", "-b", "keep", "q"])
+        .run()
+        .assert_success();
+    let result = tmux
+        .cmd()
+        .args(["set-buffer", "-b", "keep", "-n", "n\u{1}"])
+        .run();
+    result.assert_failure();
+    assert!(
+        result.stderr_str().contains("invalid buffer name: n\u{1}"),
+        "stderr: {}",
+        result.stderr_str()
+    );
+    assert_eq!(buffer_names(&tmux), vec!["keep"]);
+}
+
+#[test]
+fn set_buffer_cleans_names() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    // A backslash is stored escaped, other printable names unchanged.
+    tmux.cmd()
+        .args(["set-buffer", "-b", "a\\b", "x"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "caf\u{e9}", "y"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "c", "z"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "c", "-n", "c\\d"])
+        .run()
+        .assert_success();
+    assert_eq!(buffer_names(&tmux), vec!["c\\\\d", "caf\u{e9}", "a\\\\b"]);
+}
+
+#[test]
+fn rename_buffer_to_itself_keeps_it() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    tmux.cmd()
+        .args(["set-buffer", "-b", "keep", "data"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "keep", "-n", "keep"])
+        .run()
+        .assert_success();
+    let content = tmux.cmd().args(["show-buffer", "-b", "keep"]).run();
+    content.assert_success();
+    assert_eq!(content.stdout_trimmed(), "data");
+}
+
+#[test]
+fn list_buffers_newest_first() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    tmux.cmd()
+        .args(["set-buffer", "-b", "x", "1"])
+        .run()
+        .assert_success();
+    tmux.cmd().args(["set-buffer", "2"]).run().assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "y", "3"])
+        .run()
+        .assert_success();
+    tmux.cmd().args(["set-buffer", "4"]).run().assert_success();
+    assert_eq!(buffer_names(&tmux), vec!["buffer1", "y", "buffer0", "x"]);
+
+    // Renaming keeps the place in the order. Replacing a buffer moves it
+    // to the front.
+    tmux.cmd()
+        .args(["set-buffer", "-b", "buffer0", "-n", "z"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "x", "5"])
+        .run()
+        .assert_success();
+    assert_eq!(buffer_names(&tmux), vec!["x", "buffer1", "y", "z"]);
+}
+
+#[test]
+fn buffer_sample_is_cut_after_escaping() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    // 101 control characters escape to 404 bytes, cut to 200 and "...".
+    let data = "\u{1}".repeat(101);
+    tmux.cmd()
+        .args(["set-buffer", "-b", "s", &data])
+        .run()
+        .assert_success();
+    let result = tmux
+        .cmd()
+        .args(["list-buffers", "-F", "#{buffer_sample}"])
+        .run();
+    result.assert_success();
+    assert_eq!(
+        result.stdout_trimmed(),
+        format!("{}...", "\\001".repeat(50))
+    );
+}

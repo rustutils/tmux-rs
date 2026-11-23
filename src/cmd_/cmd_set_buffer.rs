@@ -11,6 +11,8 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+use std::rc::Rc;
+
 use crate::*;
 
 pub static CMD_SET_BUFFER_ENTRY: cmd_entry = cmd_entry {
@@ -45,47 +47,42 @@ unsafe fn cmd_set_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
     unsafe {
         let args = cmd_get_args(self_);
         let tc = cmdq_get_target_client(item);
-        let mut pb;
-        let olddata;
-        let mut top_name: Option<String> = None;
 
-        let mut bufname = cstr_to_str_(args_get_(args, 'b'));
-        if bufname.is_none() {
-            pb = null_mut();
-        } else {
-            pb = paste_get_name(bufname);
-        }
+        // Names can be any bytes when they come from a client, but only
+        // valid UTF-8 can name an existing buffer.
+        let bufname = cstr_to_bytes(args_get_(args, 'b'));
+        let mut pb = bufname.and_then(paste_get_name_bytes);
 
         if std::ptr::eq(cmd_get_entry(self_), &CMD_DELETE_BUFFER_ENTRY) {
-            if pb.is_null() {
+            if pb.is_none() {
                 if let Some(bufname) = bufname {
-                    cmdq_error!(item, "unknown buffer: {}", bufname);
+                    cmdq_error!(item, "unknown buffer: {}", String::from_utf8_lossy(bufname));
                     return cmd_retval::CMD_RETURN_ERROR;
                 }
-                pb = paste_get_top(&raw mut top_name);
+                pb = paste_get_top();
             }
-            if pb.is_null() {
+            let Some(pb) = pb else {
                 cmdq_error!(item, "no buffer");
                 return cmd_retval::CMD_RETURN_ERROR;
-            }
-            paste_free(NonNull::new_unchecked(pb));
+            };
+            paste_free(pb.name());
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
         if args_has(args, 'n') {
-            if pb.is_null() {
+            if pb.is_none() {
                 if let Some(bufname) = bufname {
-                    cmdq_error!(item, "unknown buffer: {}", bufname);
+                    cmdq_error!(item, "unknown buffer: {}", String::from_utf8_lossy(bufname));
                     return cmd_retval::CMD_RETURN_ERROR;
                 }
-                pb = paste_get_top(&raw mut top_name);
-                bufname = top_name.as_deref();
+                pb = paste_get_top();
             }
-            if pb.is_null() {
+            let Some(pb) = pb else {
                 cmdq_error!(item, "no buffer");
                 return cmd_retval::CMD_RETURN_ERROR;
-            }
-            if let Err(cause) = paste_rename(bufname, cstr_to_str_(args_get_(args, 'n'))) {
+            };
+            let newname = cstr_to_bytes(args_get_(args, 'n')).unwrap_or_default();
+            if let Err(cause) = paste_rename(pb.name(), newname) {
                 cmdq_error!(item, "{}", cause);
                 return cmd_retval::CMD_RETURN_ERROR;
             }
@@ -96,33 +93,26 @@ unsafe fn cmd_set_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
             cmdq_error!(item, "no data specified");
             return cmd_retval::CMD_RETURN_ERROR;
         }
-        let newsize = strlen(args_string(args, 0));
-        if newsize == 0 {
+        let newdata = cstr_to_bytes(args_string(args, 0)).unwrap_or_default();
+        if newdata.is_empty() {
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
-        let mut bufsize = 0;
-        let mut bufdata = null_mut();
-
-        if let Some(pb_non_null) = NonNull::new(pb)
+        let mut bufdata = Vec::new();
+        if let Some(pb) = &pb
             && args_has(args, 'a')
         {
-            olddata = paste_buffer_data_(pb_non_null, &mut bufsize);
-            bufdata = xmalloc(bufsize).as_ptr().cast();
-            memcpy_(bufdata, olddata, bufsize);
+            bufdata.extend_from_slice(pb.data());
         }
+        bufdata.extend_from_slice(newdata);
+        let bufdata: Rc<[u8]> = bufdata.into();
 
-        bufdata = xrealloc_(bufdata, bufsize + newsize).as_ptr();
-        memcpy_(bufdata.add(bufsize), args_string(args, 0), newsize);
-        bufsize += newsize;
-
-        if let Err(cause) = paste_set(bufdata, bufsize, bufname) {
+        if let Err(cause) = paste_set(bufdata.clone(), bufname) {
             cmdq_error!(item, "{}", cause);
-            free_(bufdata);
             return cmd_retval::CMD_RETURN_ERROR;
         }
         if args_has(args, 'w') && !tc.is_null() {
-            tty_set_selection(&raw mut (*tc).tty, c!(""), bufdata, bufsize);
+            tty_set_selection(&raw mut (*tc).tty, c!(""), bufdata.as_ptr(), bufdata.len());
         }
 
         cmd_retval::CMD_RETURN_NORMAL

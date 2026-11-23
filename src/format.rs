@@ -126,7 +126,9 @@ pub struct format_tree {
     pub wl: *mut winlink,
     pub w: Option<WindowId>,
     pub wp: Option<PaneId>,
-    pub pb: *mut PasteBuffer,
+    /// The paste buffer the buffer_* formats describe, a copy taken when
+    /// the tree was set up.
+    pub pb: Option<PasteBuffer>,
 
     pub item: *mut cmdq_item,
     pub client: *mut client,
@@ -1324,33 +1326,16 @@ pub unsafe fn format_cb_alternate_saved_y(ft: &format_tree) -> format_table_type
     }
 }
 
-pub unsafe fn format_cb_buffer_name(ft: &format_tree) -> format_table_type {
-    unsafe {
-        if let Some(pb) = NonNull::new(ft.pb) {
-            return paste_buffer_name(pb).to_string().into();
-        }
-        format_table_type::None
-    }
+pub fn format_cb_buffer_name(ft: &format_tree) -> format_table_type {
+    ft.pb.as_ref().map_or(format_table_type::None, |pb| pb.name().to_string().into())
 }
 
-pub unsafe fn format_cb_buffer_sample(ft: &format_tree) -> format_table_type {
-    unsafe {
-        if !ft.pb.is_null() {
-            return paste_make_sample(ft.pb).into();
-        }
-        format_table_type::None
-    }
+pub fn format_cb_buffer_sample(ft: &format_tree) -> format_table_type {
+    ft.pb.as_ref().map_or(format_table_type::None, |pb| pb.sample().into())
 }
 
-pub unsafe fn format_cb_buffer_size(ft: &format_tree) -> format_table_type {
-    unsafe {
-        if !ft.pb.is_null() {
-            let mut size = 0usize;
-            paste_buffer_data(ft.pb, &mut size);
-            return format!("{size}").into();
-        }
-        format_table_type::None
-    }
+pub fn format_cb_buffer_size(ft: &format_tree) -> format_table_type {
+    ft.pb.as_ref().map_or(format_table_type::None, |pb| pb.data().len().to_string().into())
 }
 
 pub unsafe fn format_cb_client_cell_height(ft: &format_tree) -> format_table_type {
@@ -2778,17 +2763,13 @@ pub unsafe fn format_cb_wrap_flag(ft: &format_tree) -> format_table_type {
 }
 
 /// Callback for `buffer_created`.
-pub unsafe fn format_cb_buffer_created(ft: &format_tree) -> format_table_type {
-    unsafe {
-        if let Some(pb) = NonNull::new(ft.pb) {
-            format_table_type::Time(timeval {
-                tv_sec: paste_buffer_created(pb),
-                tv_usec: 0,
-            })
-        } else {
-            format_table_type::None
-        }
-    }
+pub fn format_cb_buffer_created(ft: &format_tree) -> format_table_type {
+    ft.pb.as_ref().map_or(format_table_type::None, |pb| {
+        format_table_type::Time(timeval {
+            tv_sec: pb.created(),
+            tv_usec: 0,
+        })
+    })
 }
 
 /// Callback for `client_activity`.
@@ -3175,6 +3156,7 @@ pub unsafe fn format_create(
         // xcalloc returns zeroed memory. HashMap is not valid when zeroed,
         // so we must use ptr::write to avoid dropping the invalid value.
         std::ptr::write(&raw mut (*ft).tree, HashMap::new());
+        std::ptr::write(&raw mut (*ft).pb, None);
 
         if !c.is_null() {
             (*ft).client = c;
@@ -3198,8 +3180,9 @@ pub unsafe fn format_free(ft: *mut format_tree) {
             free_(fe.value);
             free_(fe.key);
         }
-        // Drop the HashMap before freeing the raw allocation.
+        // Drop the HashMap and the buffer before freeing the raw allocation.
         std::ptr::drop_in_place(&raw mut (*ft).tree);
+        std::ptr::drop_in_place(&raw mut (*ft).pb);
 
         if !(*ft).client.is_null() {
             server_client_unref((*ft).client);
@@ -5341,8 +5324,7 @@ pub unsafe fn format_defaults(
             format_defaults_pane(ft, wp);
         }
 
-        let pb = paste_get_top(null_mut());
-        if !pb.is_null() {
+        if let Some(pb) = paste_get_top() {
             format_defaults_paste_buffer(ft, pb);
         }
     }
@@ -5401,9 +5383,12 @@ pub unsafe fn format_defaults_pane(ft: *mut format_tree, wp: *mut window_pane) {
 }
 
 /// Set default format keys for paste buffer.
-pub unsafe fn format_defaults_paste_buffer(ft: *mut format_tree, pb: *mut PasteBuffer) {
+///
+/// # Safety
+/// `ft` must be a valid format tree from [`format_create`].
+pub unsafe fn format_defaults_paste_buffer(ft: *mut format_tree, pb: PasteBuffer) {
     unsafe {
-        (*ft).pb = pb;
+        (*ft).pb = Some(pb);
     }
 }
 

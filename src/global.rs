@@ -1,0 +1,52 @@
+// Copyright (c) 2024 Patrick Elsen
+//
+// Permission to use, copy, modify, and distribute this software for any
+// purpose with or without fee is hereby granted, provided that the above
+// copyright notice and this permission notice appear in all copies.
+//
+// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+// WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+// MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+// ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+// WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
+// IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+// OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+//! The bridge from unconverted code to converted stores.
+//!
+//! Converted stores (see "Track 2 conventions" in the project notes) take
+//! the state they work on as `&mut self` and never touch globals. Until a
+//! Server struct owns them, each store lives in a thread local here and
+//! unconverted code reaches it with `with_x(|store| ...)`.
+//!
+//! Two rules keep this sound without any unsafe code:
+//!
+//! - A closure passed to `with_x` only works on the store and returns
+//!   values (names, `Rc` handles, events). It contains no unsafe code and
+//!   calls nothing that could reach the same store again, because a
+//!   second borrow of the `RefCell` panics. Notifications and other calls
+//!   out happen after the closure has returned.
+//! - Converted modules never use the bridge. They get the store they need
+//!   as an argument, so they keep working unchanged when the Server
+//!   struct replaces this file.
+//!
+//! The server is single threaded, so thread locals hold the same state a
+//! static would. Unit tests get a fresh store per test thread.
+#![forbid(unsafe_code)]
+
+use std::cell::RefCell;
+
+use crate::paste::PasteStore;
+
+thread_local! {
+    /// All paste buffers of this server.
+    static PASTE: RefCell<PasteStore> = RefCell::new(PasteStore::new());
+}
+
+/// Run `f` with the paste buffer store.
+///
+/// # Panics
+/// If `f` reaches the paste store again (see the module rules).
+pub fn with_paste<R>(f: impl FnOnce(&mut PasteStore) -> R) -> R {
+    PASTE.with_borrow_mut(f)
+}

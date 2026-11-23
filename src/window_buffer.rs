@@ -89,7 +89,9 @@ struct window_buffer_modedata {
 pub struct window_buffer_editdata {
     pub wp_id: u32,
     pub name: String,
-    pub pb: *mut PasteBuffer,
+    /// Order number of the buffer being edited, so the result is only
+    /// stored if the buffer with that name is still the same one.
+    pub order: u32,
 }
 
 unsafe fn window_buffer_add_item(data: *mut window_buffer_modedata) -> *mut window_buffer_itemdata {
@@ -136,13 +138,11 @@ pub unsafe fn window_buffer_build(
         (*data).item_list = null_mut();
         (*data).item_size = 0;
 
-        let mut pb = paste_walk(null_mut());
-        while let Some(pb_non_null) = NonNull::new(pb) {
+        for pb in paste_list() {
             let item = window_buffer_add_item(data);
-            (*item).name = (paste_buffer_name(pb_non_null)).to_string();
-            paste_buffer_data(pb, &raw mut (*item).size); // I'm sure if we follow alias rules on item.size here, so keep using older function
-            (*item).order = paste_buffer_order(pb_non_null);
-            pb = paste_walk(pb);
+            (*item).name = pb.name().to_string();
+            (*item).size = pb.data().len();
+            (*item).order = pb.order();
         }
 
         {
@@ -186,10 +186,9 @@ pub unsafe fn window_buffer_build(
         for i in 0..(*data).item_size {
             item = *(*data).item_list.add(i as usize);
 
-            pb = paste_get_name(Some(&(*item).name));
-            if pb.is_null() {
+            let Some(pb) = paste_get_name(&(*item).name) else {
                 continue;
-            }
+            };
             let ft = format_create(null_mut(), null_mut(), FORMAT_NONE, format_flags::empty());
             format_defaults(ft, null_mut(), s, wl, wp);
             format_defaults_paste_buffer(ft, pb);
@@ -233,21 +232,16 @@ pub unsafe fn window_buffer_draw(
         let cx = (*(*ctx).s).cx;
         let cy = (*(*ctx).s).cy;
 
-        let Some(pb) = NonNull::new(paste_get_name(Some(&(*item.unwrap().as_ptr()).name))) else {
+        let Some(pb) = paste_get_name(&(*item.unwrap().as_ptr()).name) else {
             return;
         };
 
-        let mut psize: usize = 0;
-        let mut end = paste_buffer_data_(pb, &mut psize);
-        let pdata = end;
+        // One line of the buffer per screen line, escaped.
+        let mut rest: &[u8] = pb.data();
         for i in 0..sy {
-            let start = end;
-            while end != pdata.add(psize) && *end != b'\n' {
-                end = end.add(1);
-            }
-            let vis = utf8_stravisx(
-                start,
-                end.offset_from(start) as usize,
+            let end = memchr::memchr(b'\n', rest).unwrap_or(rest.len());
+            let vis = utf8_stravis_(
+                &rest[..end],
                 vis_flags::VIS_OCTAL | vis_flags::VIS_CSTYLE | vis_flags::VIS_TAB,
             );
             if !vis.is_empty() {
@@ -262,10 +256,10 @@ pub unsafe fn window_buffer_draw(
                 );
             }
 
-            if end == pdata.add(psize) {
+            if end == rest.len() {
                 break;
             }
-            end = end.add(1);
+            rest = &rest[end + 1..];
         }
     }
 }
@@ -277,18 +271,12 @@ pub unsafe fn window_buffer_search(
 ) -> bool {
     unsafe {
         let item: NonNull<window_buffer_itemdata> = itemdata.cast();
-        let Some(pb) = NonNull::new(paste_get_name(Some(&(*item.as_ptr()).name))) else {
+        let name = &(*item.as_ptr()).name;
+        let Some(pb) = paste_get_name(name) else {
             return false;
         };
-        if (*item.as_ptr()).name.contains(cstr_to_str(ss)) {
-            return true;
-        }
-        let mut bufsize = 0;
-        let bufdata = paste_buffer_data_(pb, &mut bufsize);
-        let buf = std::slice::from_raw_parts(bufdata, bufsize);
-        let s = std::slice::from_raw_parts(ss, strlen(ss));
-
-        memchr::memmem::find(buf, s).is_some()
+        let s = cstr_to_bytes(ss).unwrap_or_default();
+        memchr::memmem::find(name.as_bytes(), s).is_some() || memchr::memmem::find(pb.data(), s).is_some()
     }
 }
 
@@ -322,14 +310,14 @@ pub unsafe fn window_buffer_get_key(
             wl = NonNull::new((*data.as_ptr()).fs.wl);
             wp = NonNull::new((*data.as_ptr()).fs.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()));
         }
-        let Some(pb) = NonNull::new(paste_get_name(Some(&(*item.as_ptr()).name))) else {
+        let Some(pb) = paste_get_name(&(*item.as_ptr()).name) else {
             return KEYC_NONE;
         };
 
         let ft = format_create(null_mut(), null_mut(), FORMAT_NONE, format_flags::empty());
         format_defaults(ft, null_mut(), None, None, None);
         format_defaults(ft, null_mut(), s, wl, wp);
-        format_defaults_paste_buffer(ft, pb.as_ptr());
+        format_defaults_paste_buffer(ft, pb);
         format_add!(ft, "line", "{line}");
 
         let expanded = format_expand(ft, (*data.as_ptr()).key_format);
@@ -452,9 +440,7 @@ pub unsafe fn window_buffer_do_delete(
             mode_tree_up((*data.as_ptr()).data, 0);
         }
 
-        if let Some(pb) = NonNull::new(paste_get_name(Some(&(*item.as_ptr()).name))) {
-            paste_free(pb);
-        }
+        paste_free(&(*item.as_ptr()).name);
     }
 }
 
@@ -468,7 +454,7 @@ pub unsafe fn window_buffer_do_paste(
         let data: NonNull<window_buffer_modedata> = modedata.cast();
         let item: NonNull<window_buffer_itemdata> = itemdata.cast();
 
-        if !paste_get_name(Some(&(*item.as_ptr()).name)).is_null() {
+        if paste_get_name(&(*item.as_ptr()).name).is_some() {
             mode_tree_run_command(
                 c,
                 null_mut(),
@@ -486,29 +472,36 @@ pub unsafe fn window_buffer_finish_edit(ed: *mut window_buffer_editdata) {
     }
 }
 
-pub unsafe fn window_buffer_edit_close_cb(buf: *mut u8, mut len: usize, arg: *mut c_void) {
+/// Store the text from the editor in the buffer being edited. Takes
+/// ownership of `buf`.
+pub unsafe fn window_buffer_edit_close_cb(buf: *mut u8, len: usize, arg: *mut c_void) {
     unsafe {
         let ed = arg as *mut window_buffer_editdata;
 
-        if buf.is_null() || len == 0 {
+        let new: Vec<u8> = if buf.is_null() {
+            Vec::new()
+        } else {
+            let new = std::slice::from_raw_parts(buf, len).to_vec();
+            free_(buf);
+            new
+        };
+        if new.is_empty() {
             window_buffer_finish_edit(ed);
             return;
         }
 
-        let pb = paste_get_name(Some(&(*ed).name));
-        if pb.is_null() || pb != (*ed).pb {
+        let Some(pb) = paste_get_name(&(*ed).name).filter(|pb| pb.order() == (*ed).order) else {
             window_buffer_finish_edit(ed);
             return;
-        }
-        let pb = NonNull::new(pb).expect("just checked");
+        };
 
-        let mut oldlen = 0;
-        let oldbuf = paste_buffer_data_(pb, &mut oldlen);
-        if oldlen != 0 && *oldbuf.add(oldlen - 1) != b'\n' && *buf.add(len - 1) == b'\n' {
-            len -= 1;
+        // Drop the newline an editor adds unless the buffer had one.
+        let mut new = new.as_slice();
+        if pb.data().last().is_some_and(|&c| c != b'\n') && new.last() == Some(&b'\n') {
+            new = &new[..new.len() - 1];
         }
-        if len != 0 {
-            paste_replace(pb, buf, len);
+        if !new.is_empty() {
+            paste_replace(&(*ed).name, new);
         }
 
         let wp = window_pane_find_by_id((*ed).wp_id);
@@ -531,20 +524,17 @@ unsafe fn window_buffer_start_edit(
     c: *mut client,
 ) {
     unsafe {
-        let Some(pb) = NonNull::new(paste_get_name(Some(&(*item).name))) else {
+        let Some(pb) = paste_get_name(&(*item).name) else {
             return;
         };
-        let mut len = 0;
-        let buf = paste_buffer_data_(pb, &mut len);
 
         let ed = Box::leak(Box::new(window_buffer_editdata {
             wp_id: (*pane_ptr_from_id((*data).wp)).id,
-            name: paste_buffer_name(pb).to_string(),
-            pb: pb.as_ptr(),
+            name: pb.name().to_string(),
+            order: pb.order(),
         })) as *mut window_buffer_editdata;
 
-        let buf = std::slice::from_raw_parts(buf, len);
-        if popup_editor(c, buf, Some(window_buffer_edit_close_cb), ed.cast()) != 0 {
+        if popup_editor(c, pb.data(), Some(window_buffer_edit_close_cb), ed.cast()) != 0 {
             window_buffer_finish_edit(ed);
         }
     }

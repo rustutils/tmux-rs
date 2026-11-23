@@ -477,10 +477,8 @@ pub unsafe fn popup_menu_done(_menu: *mut menu, _choice: u32, key: key_code, dat
 
         match key as u8 {
             b'p' => {
-                if let Some(pb) = NonNull::new(paste_get_top(null_mut())) {
-                    let mut len: usize = 0;
-                    let buf = paste_buffer_data_(pb, &mut len);
-                    job_write((*pd).job, buf as *const c_void, len);
+                if let Some(pb) = paste_get_top() {
+                    job_write((*pd).job, pb.data().as_ptr().cast(), pb.data().len());
                 }
             }
             b'F' => {

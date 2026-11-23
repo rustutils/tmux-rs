@@ -66,25 +66,28 @@ unsafe fn cmd_save_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
     unsafe {
         let args = cmd_get_args(self_);
         let c = cmdq_get_client(item);
-        let bufname = cstr_to_str_(args_get_(args, 'b'));
+        let bufname = cstr_to_bytes(args_get_(args, 'b'));
         
         let evb;
 
         let pb = if let Some(bufname) = bufname {
-            let Some(pb) = NonNull::new(paste_get_name(Some(bufname))) else {
-                cmdq_error!(item, "no buffer {}", bufname);
+            let Some(pb) = paste_get_name_bytes(bufname) else {
+                cmdq_error!(item, "no buffer {}", String::from_utf8_lossy(bufname));
                 return cmd_retval::CMD_RETURN_ERROR;
             };
             pb
         } else {
-            let Some(pb) = NonNull::new(paste_get_top(null_mut())) else {
+            let Some(pb) = paste_get_top() else {
                 cmdq_error!(item, "no buffers");
                 return cmd_retval::CMD_RETURN_ERROR;
             };
             pb
         };
-        let mut bufsize: usize = 0;
-        let bufdata = paste_buffer_data_(pb, &mut bufsize);
+        // A handle on the data, so it stays valid whatever happens to the
+        // buffer.
+        let data = pb.data().clone();
+        let bufdata = data.as_ptr();
+        let bufsize = data.len();
 
         let path = if std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_BUFFER_ENTRY) {
             if !client_get_session(c).is_null() || (*c).flags.intersects(client_flag::CONTROL) {

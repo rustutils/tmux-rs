@@ -1114,7 +1114,7 @@ unsafe fn status_prompt_paste(c: *mut client) -> i32 {
         // struct Utf8Data *ud, *udp;
         // enum utf8_state more;
 
-        let mut bufsize: usize = 0;
+        let bufsize: usize;
         let n: usize;
 
         let ud: *mut Utf8Data;
@@ -1123,11 +1123,12 @@ unsafe fn status_prompt_paste(c: *mut client) -> i32 {
             ud = (*c).prompt_saved;
             n = utf8_strlen((*c).prompt_saved);
         } else {
-            let pb = paste_get_top(null_mut());
-            if pb.is_null() {
+            let Some(pb) = paste_get_top() else {
                 return 0;
-            }
-            let bufdata: *const u8 = paste_buffer_data(pb, &raw mut bufsize).cast();
+            };
+            let data = pb.data().clone();
+            let bufdata: *const u8 = data.as_ptr();
+            bufsize = data.len();
             let mut udp = xreallocarray_::<Utf8Data>(null_mut(), bufsize + 1).as_ptr();
             ud = udp;
             let mut i: u32 = 0;
