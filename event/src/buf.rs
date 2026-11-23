@@ -70,6 +70,8 @@ impl Evbuffer {
     /// The caller must not read beyond `self.len()` bytes.
     #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        // SAFETY: cursor never exceeds buf.len(), so the result is in
+        // bounds or one past the end.
         unsafe { self.buf.as_mut_ptr().add(self.cursor) }
     }
 
@@ -123,6 +125,8 @@ impl Evbuffer {
 
         self.buf.reserve(howmuch);
         let start = self.buf.len();
+        // SAFETY: reserve made room for howmuch bytes after start, and
+        // set_len only covers the bytes read() wrote.
         unsafe {
             let ptr = self.buf.as_mut_ptr().add(start);
             let n = libc::read(fd, ptr.cast(), howmuch);
@@ -142,6 +146,7 @@ impl Evbuffer {
             return 0;
         }
         let data = self.as_slice();
+        // SAFETY: data is a valid slice for its whole length.
         let n = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
         if n > 0 {
             self.drain(n as usize);

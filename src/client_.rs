@@ -447,6 +447,7 @@ pub unsafe extern "C-unwind" fn client_main(
 fn client_write_all(fd: i32, mut data: &[u8]) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
     while !data.is_empty() {
+        // SAFETY: data is a valid slice for its whole length.
         let n = unsafe { libc::write(fd, data.as_ptr().cast(), data.len()) };
         if n >= 0 {
             data = &data[n as usize..];
@@ -485,6 +486,7 @@ fn client_wait_exit(fd: i32) {
         }
 
         let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        // SAFETY: pfd is a single valid pollfd.
         if unsafe { libc::poll(&raw mut pfd, 1, -1) } == -1 {
             if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
                 continue;
@@ -493,6 +495,7 @@ fn client_wait_exit(fd: i32) {
         }
 
         let mut chunk = [0u8; 4096];
+        // SAFETY: chunk is writable for its whole length.
         let n = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
         if n == 0 {
             break;

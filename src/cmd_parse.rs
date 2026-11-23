@@ -162,7 +162,7 @@ pub unsafe fn cmd_parse_get_error(file: Option<&str>, line: u32, error: &str) ->
     }
 }
 
-pub fn cmd_parse_print_commands(pi: &cmd_parse_input, cmdlist: &cmd_list) {
+pub unsafe fn cmd_parse_print_commands(pi: &cmd_parse_input, cmdlist: &cmd_list) {
     if pi.item.is_null()
         || !pi
             .flags
@@ -171,9 +171,8 @@ pub fn cmd_parse_print_commands(pi: &cmd_parse_input, cmdlist: &cmd_list) {
         return;
     }
 
-    let s = cmd_list_print(cmdlist, 0);
-
     unsafe {
+        let s = cmd_list_print(cmdlist, 0);
         if let Some(file) = pi.file {
             cmdq_print!(
                 pi.item,

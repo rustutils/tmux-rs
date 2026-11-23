@@ -53,7 +53,7 @@ unsafe fn cfg_done(_item: *mut cmdq_item, _data: *mut c_void) -> cmd_retval {
     }
 }
 
-pub fn start_cfg() {
+pub unsafe fn start_cfg() {
     // Configuration files are loaded without a client, so commands are run
     // in the global queue with item->client NULL.
     //

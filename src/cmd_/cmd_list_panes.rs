@@ -71,7 +71,7 @@ unsafe fn cmd_list_panes_session(
     }
 }
 
-fn cmd_list_panes_window(
+unsafe fn cmd_list_panes_window(
     self_: *mut cmd,
     s: *mut session,
     wl: *mut winlink,

@@ -36,6 +36,7 @@ pub fn xmalloc(size: usize) -> NonNull<c_void> {
 pub fn xcalloc(nmemb: usize, size: usize) -> NonNull<c_void> {
     debug_assert!(size != 0 && nmemb != 0, "xcalloc: zero size");
 
+    // SAFETY: calloc has no preconditions. Null is handled below.
     NonNull::new(unsafe { ::libc::calloc(nmemb, size) })
         .unwrap_or_else(|| panic!("xcalloc: allocating {nmemb} * {size}"))
 }
@@ -104,6 +105,7 @@ pub unsafe fn xstrdup(str: *const u8) -> NonNull<u8> {
 }
 
 pub fn xstrdup_(str: &CStr) -> NonNull<u8> {
+    // SAFETY: a CStr is NUL terminated.
     unsafe { xstrdup(str.as_ptr().cast()) }
 }
 
@@ -168,6 +170,8 @@ pub(crate) unsafe fn xsnprintf__(
             let remaining = self.length - self.written;
             let write_amount = buf.len().min(remaining);
 
+            // SAFETY: xsnprintf__'s caller guarantees buffer is valid for
+            // length bytes, and written + write_amount never exceeds length.
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     buf.as_ptr(),

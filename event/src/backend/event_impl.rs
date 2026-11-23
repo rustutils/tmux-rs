@@ -69,10 +69,12 @@ pub fn io_register(
     };
 
     // Dup the fd so calloop gets its own epoll registration.
+    // SAFETY: dup only reads the fd number. A bad fd makes it fail.
     let dup_fd = unsafe { libc::dup(fd) };
     if dup_fd < 0 {
         return None;
     }
+    // SAFETY: dup returned a new fd that nothing else owns.
     let owned_fd = unsafe { OwnedFd::from_raw_fd(dup_fd) };
     let generic = Generic::new(owned_fd, interest, Mode::Level);
 
@@ -476,6 +478,7 @@ fn pipe_nonblock() -> io::Result<(OwnedFd, OwnedFd)> {
         rustix::pipe::pipe().map_err(|e| io::Error::from_raw_os_error(e.raw_os_error()))?;
     // Set non-blocking and close-on-exec on both ends.
     for fd in [read_fd.as_raw_fd(), write_fd.as_raw_fd()] {
+        // SAFETY: both fds were just created and are owned here.
         unsafe {
             libc::fcntl(fd, libc::F_SETFL, libc::O_NONBLOCK);
             libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);

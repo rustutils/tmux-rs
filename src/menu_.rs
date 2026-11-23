@@ -163,7 +163,7 @@ pub unsafe fn menu_add_item(
     }
 }
 
-pub fn menu_create(title: &str) -> Box<menu> {
+pub unsafe fn menu_create(title: &str) -> Box<menu> {
     Box::new(menu {
         title: title.to_string(),
         items: Vec::new(),

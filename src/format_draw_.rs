@@ -27,6 +27,11 @@ struct format_range {
 type format_ranges = Vec<format_range>;
 
 /// Does this range match this style?
+/// The bytes of a fixed size string field up to its first NUL.
+fn until_nul(s: &[u8]) -> &[u8] {
+    &s[..s.iter().position(|&b| b == 0).unwrap_or(s.len())]
+}
+
 fn format_is_type(fr: &format_range, sy: &style) -> bool {
     if fr.type_ != sy.range_type {
         return false;
@@ -39,12 +44,7 @@ fn format_is_type(fr: &format_range, sy: &style) -> bool {
         style_range_type::STYLE_RANGE_PANE
         | style_range_type::STYLE_RANGE_WINDOW
         | style_range_type::STYLE_RANGE_SESSION => fr.argument == sy.range_argument,
-        style_range_type::STYLE_RANGE_USER => unsafe {
-            libc::strcmp(
-                (&raw const fr.string).cast(),
-                (&raw const sy.range_string).cast(),
-            ) == 0
-        },
+        style_range_type::STYLE_RANGE_USER => until_nul(&fr.string) == until_nul(&sy.range_string),
     }
 }
 

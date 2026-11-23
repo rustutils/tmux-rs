@@ -199,8 +199,12 @@ pub unsafe fn timersub(a: *const timeval, b: *const timeval, result: *mut timeva
     }
 }
 
+/// Compares timevals through pointers, for use with comparison operators.
 pub struct timer(*const libc::timeval);
 impl timer {
+    /// # Safety
+    ///
+    /// `ptr` must stay valid for reads as long as the timer exists.
     pub unsafe fn new(ptr: *const libc::timeval) -> Self {
         Self(ptr)
     }
@@ -208,11 +212,13 @@ impl timer {
 impl Eq for timer {}
 impl PartialEq for timer {
     fn eq(&self, other: &Self) -> bool {
+        // SAFETY: timer::new requires the pointer to stay valid.
         unsafe { (*self.0).tv_sec == (*other.0).tv_sec && (*self.0).tv_usec == (*other.0).tv_usec }
     }
 }
 impl Ord for timer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // SAFETY: timer::new requires the pointer to stay valid.
         unsafe {
             if (*self.0).tv_sec == (*other.0).tv_sec {
                 (*self.0).tv_usec.cmp(&(*other.0).tv_usec)

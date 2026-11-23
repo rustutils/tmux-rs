@@ -45,6 +45,7 @@ pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
     // SAFETY: we initialise `r` via `regcomp` before reading any field, and
     // call `regfree` unconditionally before returning.
     let mut r: regex_t = unsafe { mem::zeroed() };
+    // SAFETY: regmatch_t is plain integers, all zero is a valid value.
     let mut m: [regmatch_t; 10] = unsafe { mem::zeroed() };
 
     // SAFETY: `pattern` is a NUL-terminated CStr; `regcomp` reads it up to the

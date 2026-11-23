@@ -669,7 +669,7 @@ pub unsafe fn cmd_list_copy(
     }
 }
 
-pub fn cmd_list_print(cmdlist: &cmd_list, escaped: c_int) -> *mut u8 {
+pub unsafe fn cmd_list_print(cmdlist: &cmd_list, escaped: c_int) -> *mut u8 {
     unsafe {
         let mut len = 1;
         let mut buf: *mut u8 = xcalloc(1, len).cast().as_ptr();

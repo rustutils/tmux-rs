@@ -668,7 +668,7 @@ pub fn session_group_count(sg: &session_group) -> u32 {
 ///
 /// Sums `attached` across the group's sessions. The session pointers are
 /// still raw, so the dereference stays inside an `unsafe` block.
-pub fn session_group_attached_count(sg: &session_group) -> u32 {
+pub unsafe fn session_group_attached_count(sg: &session_group) -> u32 {
     sg.sessions.iter()
         .map(|&s| unsafe { (*s).attached })
         .sum()

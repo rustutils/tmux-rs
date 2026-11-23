@@ -30,7 +30,7 @@
 use core::ffi::CStr;
 use std::ffi::CString;
 use std::fs::File;
-use std::io::{BufWriter, LineWriter, Write};
+use std::io::{LineWriter, Write};
 use std::ptr::null_mut;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -98,30 +98,27 @@ pub fn log_toggle(name: &CStr) {
     }
 }
 
+/// Closes the log file.
+///
+/// The file is closed by hand and then forgotten. After fork, the fd may
+/// already be closed, and dropping a File whose fd is closed panics in
+/// debug builds (see `debug_assert_fd_is_open` in std).
 pub fn log_close() {
-    // If we drop the file when it's already closed it will panic in debug mode.
-    // Because of this and our use of fork, extra care has to be made when closing the file.
-    // see std::sys::pal::unix::fs::debug_assert_fd_is_open;
     use std::os::fd::AsRawFd;
     if let Some(mut old_handle) = LOG_FILE.lock().unwrap().take() {
-        let _flush_err = old_handle.flush(); // TODO
+        let _ = old_handle.flush();
         match old_handle.into_inner() {
-            Ok(file) => unsafe {
-                libc::close(file.as_raw_fd());
+            Ok(file) => {
+                // SAFETY: closing an fd number is memory safe. The File is
+                // forgotten right after, so the fd is not closed twice.
+                unsafe { libc::close(file.as_raw_fd()) };
                 std::mem::forget(file);
-            },
+            }
             Err(err) => {
-                let lw = err.into_inner();
-                // TODO this is invalid, and compiler version dependent, but prevents a memory leak
-                // need a way to properly get out the file and drop the buffer
-                unsafe {
-                    let bw = std::mem::transmute::<
-                        std::io::LineWriter<std::fs::File>,
-                        BufWriter<File>,
-                    >(lw);
-                    let (file, _) = bw.into_parts();
-                    std::mem::forget(file);
-                }
+                // The buffered data could not be written. The writer cannot
+                // be taken apart without the file, so leak it, buffer and
+                // fd included. This happens at most once per log file.
+                std::mem::forget(err.into_inner());
             }
         }
     }
@@ -145,35 +142,40 @@ fn log_vwrite_rs(args: std::fmt::Arguments, prefix: &str) {
 /// crate adapter, where the location comes from `log::Record` rather than
 /// `Location::caller()`).
 fn log_write_at(args: std::fmt::Arguments, prefix: &str, file: &str, line: u32) {
-    unsafe {
-        if LOG_FILE.lock().unwrap().is_none() {
-            return;
-        }
+    if LOG_FILE.lock().unwrap().is_none() {
+        return;
+    }
 
-        let msg = CString::new(format!("{args}")).unwrap();
-        let mut out = null_mut();
-        if stravis(
+    let msg = CString::new(format!("{args}")).unwrap();
+    let mut out = null_mut();
+    // SAFETY: msg is NUL terminated. stravis allocates out with malloc.
+    let ret = unsafe {
+        stravis(
             &mut out,
             msg.as_ptr().cast(),
             vis_flags::VIS_OCTAL | vis_flags::VIS_CSTYLE | vis_flags::VIS_TAB | vis_flags::VIS_NL,
-        ) == -1
-        {
-            return;
-        }
-        let duration = std::time::SystemTime::now()
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)
-            .unwrap_or_default();
-        let secs = duration.as_secs();
-        let micros = duration.subsec_micros();
+        )
+    };
+    if ret == -1 {
+        return;
+    }
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration.as_secs();
+    let micros = duration.subsec_micros();
 
-        let str_out = CStr::from_ptr(out.cast()).to_string_lossy();
-        if let Some(f) = LOG_FILE.lock().unwrap().as_mut() {
-            let _ = f.write_fmt(format_args!(
-                "{secs}.{micros:06} {file}:{line} {prefix}{str_out}\n"
-            ));
-        }
-
-        libc::free(out.cast());
+    // SAFETY: stravis succeeded, so out is a NUL terminated string from
+    // malloc. It is copied before it is freed.
+    let str_out = unsafe { CStr::from_ptr(out.cast()) }
+        .to_string_lossy()
+        .into_owned();
+    // SAFETY: out came from malloc and is not used after this.
+    unsafe { libc::free(out.cast()) };
+    if let Some(f) = LOG_FILE.lock().unwrap().as_mut() {
+        let _ = f.write_fmt(format_args!(
+            "{secs}.{micros:06} {file}:{line} {prefix}{str_out}\n"
+        ));
     }
 }
 

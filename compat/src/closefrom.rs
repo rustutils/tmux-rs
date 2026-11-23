@@ -19,7 +19,12 @@ unsafe extern "C" {
 
 #[cfg(target_os = "macos")]
 /// Closes all file descriptors >= `start_fd`.
-pub fn closefrom(start_fd: i32) {
+///
+/// # Safety
+///
+/// Nothing may use those file descriptors afterwards, for example because
+/// the process is about to exec.
+pub unsafe fn closefrom(start_fd: i32) {
     unsafe {
         let max_fd = libc::getdtablesize();
         for fd in start_fd..max_fd {

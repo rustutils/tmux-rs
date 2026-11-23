@@ -4,7 +4,7 @@
 # commit message and `just unsafe-limits --allow-raise`.
 # Files not listed have a limit of 0.
 11 compat/src/b64.rs
-2 compat/src/closefrom.rs
+3 compat/src/closefrom.rs
 2 compat/src/fdforkpty.rs
 8 compat/src/getpeereid.rs
 4 compat/src/getprogname.rs
@@ -23,14 +23,14 @@
 7 event/src/lib.rs
 67 grid/src/lib.rs
 21 grid/src/reader.rs
-3 log/src/lib.rs
+4 log/src/lib.rs
 5 protocol/src/compat.rs
 43 protocol/src/imsg.rs
 109 protocol/src/imsg_buffer.rs
 5 regsub/src/lib.rs
-17 src/alerts.rs
+26 src/alerts.rs
 97 src/arguments.rs
-11 src/cfg_.rs
+12 src/cfg_.rs
 34 src/client_.rs
 4 src/cmd_/cmd_attach_session.rs
 3 src/cmd_/cmd_bind_key.rs
@@ -55,7 +55,7 @@
 2 src/cmd_/cmd_list_buffers.rs
 2 src/cmd_/cmd_list_clients.rs
 10 src/cmd_/cmd_list_keys.rs
-7 src/cmd_/cmd_list_panes.rs
+8 src/cmd_/cmd_list_panes.rs
 2 src/cmd_/cmd_list_sessions.rs
 6 src/cmd_/cmd_list_windows.rs
 4 src/cmd_/cmd_load_buffer.rs
@@ -95,8 +95,8 @@
 2 src/cmd_/cmd_switch_client.rs
 2 src/cmd_/cmd_unbind_key.rs
 20 src/cmd_/cmd_wait_for.rs
-58 src/cmd_/mod.rs
-120 src/cmd_parse.rs
+59 src/cmd_/mod.rs
+121 src/cmd_parse.rs
 4 src/colour.rs
 2 src/compat/getopt.rs
 78 src/control.rs
@@ -104,11 +104,11 @@
 27 src/environ_.rs
 60 src/file.rs
 462 src/format.rs
-29 src/format_draw_.rs
+28 src/format_draw_.rs
 14 src/hyperlinks_.rs
 12 src/image_.rs
 32 src/image_sixel.rs
-105 src/input.rs
+106 src/input.rs
 22 src/input_keys.rs
 35 src/job_.rs
 32 src/key_bindings_.rs
@@ -119,7 +119,7 @@
 58 src/lib.rs
 84 src/libc.rs
 11 src/main.rs
-23 src/menu_.rs
+24 src/menu_.rs
 95 src/mode_tree.rs
 11 src/names.rs
 24 src/notify.rs
@@ -127,7 +127,7 @@
 12 src/osdep.rs
 71 src/paste.rs
 36 src/popup.rs
-38 src/proc.rs
+39 src/proc.rs
 21 src/resize.rs
 77 src/screen_.rs
 38 src/screen_redraw.rs
@@ -136,7 +136,7 @@
 18 src/server_acl.rs
 127 src/server_client.rs
 53 src/server_fn.rs
-76 src/session_.rs
+77 src/session_.rs
 6 src/spawn.rs
 97 src/status.rs
 59 src/style_.rs

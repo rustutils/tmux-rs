@@ -60,7 +60,7 @@ unsafe fn alerts_callback() {
     }
 }
 
-fn alerts_action_applies(wl: &winlink, name: &str) -> bool {
+unsafe fn alerts_action_applies(wl: &winlink, name: &str) -> bool {
     unsafe {
         let s = wl.session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if s.is_null() {
@@ -75,11 +75,11 @@ fn alerts_action_applies(wl: &winlink, name: &str) -> bool {
     }
 }
 
-fn alerts_check_all(w: &window) -> window_flag {
-    alerts_check_bell(w) | alerts_check_activity(w) | alerts_check_silence(w)
+unsafe fn alerts_check_all(w: &window) -> window_flag {
+    unsafe { alerts_check_bell(w) | alerts_check_activity(w) | alerts_check_silence(w) }
 }
 
-pub(crate) fn alerts_check_session(s: &session) {
+pub(crate) unsafe fn alerts_check_session(s: &session) {
     unsafe {
         for &wl in s.windows.values() {
             let w = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
@@ -88,7 +88,7 @@ pub(crate) fn alerts_check_session(s: &session) {
     }
 }
 
-fn alerts_enabled(w: &window, flags: window_flag) -> bool {
+unsafe fn alerts_enabled(w: &window, flags: window_flag) -> bool {
     unsafe {
         if flags.intersects(window_flag::BELL)
             && options_get_number___::<i64>(&*w.options, "monitor-bell") != 0
@@ -166,7 +166,7 @@ pub(crate) unsafe fn alerts_queue(w: NonNull<window>, flags: window_flag) {
     }
 }
 
-fn alerts_check_bell(w: &window) -> window_flag {
+unsafe fn alerts_check_bell(w: &window) -> window_flag {
     unsafe {
         if !w.flags.intersects(window_flag::BELL) {
             return window_flag::empty();
@@ -205,7 +205,7 @@ fn alerts_check_bell(w: &window) -> window_flag {
     window_flag::BELL
 }
 
-fn alerts_check_activity(w: &window) -> window_flag {
+unsafe fn alerts_check_activity(w: &window) -> window_flag {
     unsafe {
         if !w.flags.intersects(window_flag::ACTIVITY) {
             return window_flag::empty();
@@ -242,7 +242,7 @@ fn alerts_check_activity(w: &window) -> window_flag {
     window_flag::ACTIVITY
 }
 
-fn alerts_check_silence(w: &window) -> window_flag {
+unsafe fn alerts_check_silence(w: &window) -> window_flag {
     unsafe {
         if !w.flags.intersects(window_flag::SILENCE) {
             return window_flag::empty();
@@ -283,7 +283,7 @@ fn alerts_check_silence(w: &window) -> window_flag {
     window_flag::SILENCE
 }
 
-fn alerts_set_message(wl: &winlink, type_: &str, option: &str) {
+unsafe fn alerts_set_message(wl: &winlink, type_: &str, option: &str) {
     unsafe {
         let s = wl.session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if s.is_null() { return; }
