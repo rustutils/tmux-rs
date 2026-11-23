@@ -13,7 +13,10 @@ fn setup(cols: u16, rows: u16) -> (TmuxTestHarness, PtyClient) {
         .assert_success();
     tmux.wait_ready(Duration::from_secs(5));
     let mut client = PtyClient::attach(&tmux, cols, rows);
-    std::thread::sleep(Duration::from_millis(500));
+    // Wait for the shell's prompt. Typed text arriving before the shell
+    // runs is echoed by the terminal and then redrawn by the shell, so
+    // the screen would not match what the tests expect.
+    tmux.wait_for("#{cursor_x}", |x| x != "0", Duration::from_secs(10));
     client.read_raw(); // drain initial output
     (tmux, client)
 }
@@ -48,14 +51,34 @@ fn show_buffer(tmux: &TmuxTestHarness) -> String {
     tmux.cmd().args(["show-buffer"]).run().stdout_trimmed()
 }
 
-/// Helper: fill the pane with some known text by echoing lines.
-fn fill_pane(client: &mut PtyClient, lines: &[&str]) {
-    for line in lines {
-        client.write_str(&format!("echo '{line}'\r"));
-        std::thread::sleep(Duration::from_millis(100));
+/// Helper: type `command` into the pane's shell and wait until it has
+/// run: the line above the cursor is `last_line`, the last line it
+/// prints, and the cursor sits on the next prompt. A fixed sleep is not
+/// enough on a slow machine, such as a cold CI runner.
+fn run_in_pane(tmux: &TmuxTestHarness, client: &mut PtyClient, command: &str, last_line: &str) {
+    client.write_str(&format!("{command}\r"));
+    let start = std::time::Instant::now();
+    loop {
+        let y: usize = tmux.query("#{cursor_y}").parse().unwrap_or(0);
+        let screen = tmux.cmd().args(["capture-pane", "-p"]).run().stdout_str();
+        let above = y.checked_sub(1).and_then(|i| screen.lines().nth(i));
+        if above.map(str::trim_end) == Some(last_line) && tmux.query("#{cursor_x}") != "0" {
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{command:?} did not print {last_line:?} above the prompt:\n{screen}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
     }
-    std::thread::sleep(Duration::from_millis(300));
     client.read_raw(); // drain
+}
+
+/// Helper: fill the pane with some known text by echoing lines.
+fn fill_pane(tmux: &TmuxTestHarness, client: &mut PtyClient, lines: &[&str]) {
+    for line in lines {
+        run_in_pane(tmux, client, &format!("echo '{line}'"), line);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +160,7 @@ fn cursor_movement_vi() {
     set_mode_keys(&tmux, "vi");
 
     // Put some text in the pane
-    fill_pane(&mut client, &["AAAA", "BBBB", "CCCC"]);
+    fill_pane(&tmux, &mut client, &["AAAA", "BBBB", "CCCC"]);
 
     enter_copy_mode(&tmux);
 
@@ -184,7 +207,7 @@ fn copy_selection_vi() {
     let (tmux, mut client) = setup(80, 24);
     set_mode_keys(&tmux, "vi");
 
-    fill_pane(&mut client, &["SELECTME hello world"]);
+    fill_pane(&tmux, &mut client, &["SELECTME hello world"]);
 
     enter_copy_mode(&tmux);
     send_copy_cmd_with_args(&tmux, &["search-backward", "SELECTME"]);
@@ -245,7 +268,7 @@ fn search_vi_forward() {
 
     // Put some known text. "echo 'FINDME...'" appears once on the input line
     // and once on the output line. The cursor starts on the prompt below both.
-    fill_pane(&mut client, &["FINDME_MARKER somewhere in output"]);
+    fill_pane(&tmux, &mut client, &["FINDME_MARKER somewhere in output"]);
 
     enter_copy_mode(&tmux);
 
@@ -485,8 +508,12 @@ fn copy_mode_emacs_word_navigation() {
         .run()
         .assert_success();
     // Wait for the cat output to fully populate the pane before entering
-    // copy mode.
-    std::thread::sleep(Duration::from_millis(300));
+    // copy mode: the printf after it moves the cursor to (14,8).
+    tmux.wait_for(
+        "#{cursor_x},#{cursor_y}",
+        |v| v == "14,8",
+        Duration::from_secs(10),
+    );
     tmux.cmd().args(["copy-mode"]).run().assert_success();
     tmux.send_keys(&["-X", "history-top"]).assert_success();
     tmux.send_keys(&["-X", "start-of-line"]).assert_success();
@@ -621,9 +648,12 @@ fn rectangle_selection_vi() {
     set_mode_keys(&tmux, "vi");
 
     // printf produces 3 output lines without interleaved prompts.
-    client.write_str("printf 'AAAA BBBB\\nCCCC DDDD\\nEEEE FFFF\\n'\r");
-    std::thread::sleep(Duration::from_millis(500));
-    client.read_raw();
+    run_in_pane(
+        &tmux,
+        &mut client,
+        "printf 'AAAA BBBB\\nCCCC DDDD\\nEEEE FFFF\\n'",
+        "EEEE FFFF",
+    );
 
     enter_copy_mode(&tmux);
     // Go up 3 output lines to land on "AAAA BBBB"
@@ -657,7 +687,7 @@ fn rectangle_toggle_vi() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "vi");
 
-    fill_pane(&mut client, &["hello world"]);
+    fill_pane(&tmux, &mut client, &["hello world"]);
 
     enter_copy_mode(&tmux);
     send_copy_cmd(&tmux, "begin-selection");
@@ -687,7 +717,7 @@ fn jump_forward_vi() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "vi");
 
-    fill_pane(&mut client, &["abcdefghij"]);
+    fill_pane(&tmux, &mut client, &["abcdefghij"]);
 
     enter_copy_mode(&tmux);
     // Go up 1 line from the prompt to land on the echoed output line.
@@ -713,7 +743,7 @@ fn jump_backward_vi() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "vi");
 
-    fill_pane(&mut client, &["abcdefghij"]);
+    fill_pane(&tmux, &mut client, &["abcdefghij"]);
 
     enter_copy_mode(&tmux);
     // Go up 1 line from the prompt to land on the echoed output line.
@@ -739,7 +769,7 @@ fn jump_again_vi() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "vi");
 
-    fill_pane(&mut client, &["abcaefaghi"]);
+    fill_pane(&tmux, &mut client, &["abcaefaghi"]);
 
     enter_copy_mode(&tmux);
     // Go up 1 line from the prompt to land on the echoed output line.
@@ -765,7 +795,11 @@ fn search_backward_vi() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "vi");
 
-    fill_pane(&mut client, &["alpha beta gamma", "delta epsilon zeta"]);
+    fill_pane(
+        &tmux,
+        &mut client,
+        &["alpha beta gamma", "delta epsilon zeta"],
+    );
 
     enter_copy_mode(&tmux);
 
@@ -798,7 +832,7 @@ fn append_selection_vi() {
 
     // Verify append-selection doesn't crash the server (was a use-after-free
     // in paste_set when the borrowed buffer name was freed during replacement).
-    fill_pane(&mut client, &["ALPHA BETA"]);
+    fill_pane(&tmux, &mut client, &["ALPHA BETA"]);
 
     enter_copy_mode(&tmux);
     send_copy_cmd(&tmux, "cursor-up");
@@ -839,7 +873,7 @@ fn word_movement_vi() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "vi");
 
-    fill_pane(&mut client, &["one two three four"]);
+    fill_pane(&tmux, &mut client, &["one two three four"]);
 
     enter_copy_mode(&tmux);
     // Go up 1 line from the prompt to land on the echoed output line.
@@ -929,7 +963,7 @@ fn start_end_of_line_vi() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "vi");
 
-    fill_pane(&mut client, &["hello world test"]);
+    fill_pane(&tmux, &mut client, &["hello world test"]);
 
     enter_copy_mode(&tmux);
     send_copy_cmd(&tmux, "history-top");
@@ -956,9 +990,12 @@ fn back_to_indentation_vi() {
     set_mode_keys(&tmux, "vi");
 
     // Use printf to get a line with leading whitespace
-    client.write_str("printf '    indented\\n'\r");
-    std::thread::sleep(Duration::from_millis(300));
-    client.read_raw();
+    run_in_pane(
+        &tmux,
+        &mut client,
+        "printf '    indented\\n'",
+        "    indented",
+    );
 
     enter_copy_mode(&tmux);
     // Go up 1 line from the prompt to land on the indented output line.
@@ -985,9 +1022,12 @@ fn copy_pipe_vi() {
     set_mode_keys(&tmux, "vi");
 
     // Single output line, 1 line above the prompt.
-    client.write_str("printf 'PIPE_TEST_DATA here\\n'\r");
-    std::thread::sleep(Duration::from_millis(500));
-    client.read_raw();
+    run_in_pane(
+        &tmux,
+        &mut client,
+        "printf 'PIPE_TEST_DATA here\\n'",
+        "PIPE_TEST_DATA here",
+    );
 
     enter_copy_mode(&tmux);
     // Go up 1 output line to land on "PIPE_TEST_DATA here"
@@ -1031,7 +1071,7 @@ fn emacs_cursor_movement() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "emacs");
 
-    fill_pane(&mut client, &["emacs cursor test line"]);
+    fill_pane(&tmux, &mut client, &["emacs cursor test line"]);
 
     enter_copy_mode(&tmux);
     send_copy_cmd(&tmux, "history-top");
@@ -1071,7 +1111,7 @@ fn emacs_selection_with_begin_selection() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "emacs");
 
-    fill_pane(&mut client, &["emacs select test"]);
+    fill_pane(&tmux, &mut client, &["emacs select test"]);
 
     enter_copy_mode(&tmux);
     send_copy_cmd(&tmux, "history-top");
@@ -1113,7 +1153,7 @@ fn emacs_next_previous_word() {
     let (tmux, mut client) = setup(40, 10);
     set_mode_keys(&tmux, "emacs");
 
-    fill_pane(&mut client, &["alpha beta gamma"]);
+    fill_pane(&tmux, &mut client, &["alpha beta gamma"]);
 
     enter_copy_mode(&tmux);
     send_copy_cmd(&tmux, "history-top");
