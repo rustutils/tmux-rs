@@ -183,7 +183,14 @@ use crate::{
     message_log::*,
     mode_tree::*,
     names::*,
-    options_::{options, options_array_item},
+    options_::{
+        options, options_entry,
+        store::{
+            OPTIONS_TABLE_IS_ARRAY, OPTIONS_TABLE_IS_HOOK, OPTIONS_TABLE_IS_STYLE,
+            OPTIONS_TABLE_NONE, OPTIONS_TABLE_PANE, OPTIONS_TABLE_SERVER, OPTIONS_TABLE_SESSION,
+            OPTIONS_TABLE_WINDOW, OptionType,
+        },
+    },
     options_table::*,
     osdep::*,
     paste::*,
@@ -803,7 +810,7 @@ enum style_default_type {
 /// Style option.
 
 #[derive(Copy, Clone)]
-struct style {
+pub struct style {
     gc: GridCell,
     ignore: i32,
 
@@ -2521,105 +2528,8 @@ struct key_table {
 }
 type key_tables = BTreeMap<String, Box<key_table>>;
 
-// Option data.
-type options_array = BTreeMap<u32, options_array_item>;
-
-#[derive(Copy, Clone)]
-union options_value {
-    string: *mut u8,
-    number: c_longlong,
-    #[expect(dead_code, reason = "kept to mirror the C struct")]
-    style: style,
-    array: *mut options_array,
-    cmdlist: *mut cmd_list,
-}
-
-// Option table entries.
-#[repr(i32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum options_table_type {
-    OPTIONS_TABLE_STRING,
-    OPTIONS_TABLE_NUMBER,
-    OPTIONS_TABLE_KEY,
-    OPTIONS_TABLE_COLOUR,
-    OPTIONS_TABLE_FLAG,
-    OPTIONS_TABLE_CHOICE,
-    OPTIONS_TABLE_COMMAND,
-}
-
-const OPTIONS_TABLE_NONE: i32 = 0;
-const OPTIONS_TABLE_SERVER: i32 = 0x1;
-const OPTIONS_TABLE_SESSION: i32 = 0x2;
-const OPTIONS_TABLE_WINDOW: i32 = 0x4;
-const OPTIONS_TABLE_PANE: i32 = 0x8;
-
-const OPTIONS_TABLE_IS_ARRAY: i32 = 0x1;
-const OPTIONS_TABLE_IS_HOOK: i32 = 0x2;
-const OPTIONS_TABLE_IS_STYLE: i32 = 0x4;
-
-unsafe impl Sync for options_table_entry {}
-
-struct options_table_entry {
-    name: &'static str,
-    type_: options_table_type,
-    scope: i32,
-    flags: i32,
-    minimum: u32,
-    maximum: u32,
-
-    choices: &'static [&'static str],
-
-    default_str: Option<&'static str>,
-    default_num: c_longlong,
-    default_arr: Option<&'static [&'static str]>,
-
-    separator: Option<&'static str>,
-    pattern: Option<&'static str>,
-
-    text: Option<&'static str>,
-    unit: Option<&'static str>,
-}
-
-impl options_table_entry {
-    pub const fn const_default() -> Self {
-        Self {
-            name: "",
-            type_: options_table_type::OPTIONS_TABLE_STRING,
-            scope: 0,
-            flags: 0,
-            minimum: 0,
-            maximum: 0,
-            choices: &[],
-            default_str: None,
-            default_num: 0,
-            default_arr: None,
-            separator: None,
-            pattern: None,
-            text: None,
-            unit: None,
-        }
-    }
-}
-
-struct options_name_map_str {
-    from: &'static str,
-    to: &'static str,
-}
-impl options_name_map_str {
-    const fn new(from: &'static str, to: &'static str) -> Self {
-        Self { from, to }
-    }
-}
-
-struct options_name_map {
-    from: &'static str,
-    to: &'static str,
-}
-impl options_name_map {
-    const fn new(from: &'static str, to: &'static str) -> Self {
-        Self { from, to }
-    }
-}
+// Option table entries, defined in options/store.rs.
+type options_table_entry = options_::OptionTableEntry;
 
 bitflags::bitflags! {
     #[repr(transparent)]

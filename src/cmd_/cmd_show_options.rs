@@ -18,8 +18,8 @@ pub static CMD_SHOW_OPTIONS_ENTRY: cmd_entry = cmd_entry {
     name: "show-options",
     alias: Some("show"),
 
-    args: args_parse::new("AgHpqst:vw", 0, 1, None),
-    usage: "[-AgHpqsvw] [-t target-pane] [option]",
+    args: args_parse::new("AgF:Hpqst:vw", 0, 1, None),
+    usage: "[-AgHpqsvw] [-F format] [-t target-pane] [option]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -36,8 +36,8 @@ pub static CMD_SHOW_WINDOW_OPTIONS_ENTRY: cmd_entry = cmd_entry {
     name: "show-window-options",
     alias: Some("showw"),
 
-    args: args_parse::new("gvt:", 0, 1, None),
-    usage: "[-gv] [-t target-window] [option]",
+    args: args_parse::new("F:gvt:", 0, 1, None),
+    usage: "[-gv] [-F format] [-t target-window] [option]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -55,8 +55,8 @@ pub static CMD_SHOW_HOOKS_ENTRY: cmd_entry = cmd_entry {
     name: "show-hooks",
     alias: None,
 
-    args: args_parse::new("gpt:w", 0, 1, None),
-    usage: "[-gpw] [-t target-pane]",
+    args: args_parse::new("F:gpt:w", 0, 1, None),
+    usage: "[-gpw] [-F format] [-t target-pane] [hook]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -70,143 +70,161 @@ pub static CMD_SHOW_HOOKS_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 };
 
+/// How show-options prints an option without -F: the value only with
+/// -v, otherwise the name, `[key]`, `*` if inherited and the value,
+/// quoted for strings.
+const SHOW_OPTIONS_TEMPLATE: &CStr = c"#{?option_value_only,#{option_value},#{option_name}#{?option_has_array_key,[#{option_array_key}],}#{?option_is_parent,*,}#{?option_has_value, #{?option_is_string,#{q/a:option_value},#{option_value}},}}";
+
+/// show-options, show-window-options and show-hooks.
 unsafe fn cmd_show_options_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     unsafe {
         let args = cmd_get_args(self_);
         let target = cmdq_get_target(item);
         let mut oo: *mut options = null_mut();
-        let argument: *mut u8;
-
-        let mut idx = 0;
-        let mut ambiguous = 0;
-        let parent;
-        let mut o: *mut options_entry;
+        let quiet = args_has(args, 'q');
 
         let window = std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_WINDOW_OPTIONS_ENTRY) as i32;
 
-        'fail: {
-            'out: {
-                if args_count(args) == 0 {
-                    let scope = match options_scope_from_flags(args, window, target, &raw mut oo) {
-                        Ok(s) => s,
-                        Err(cause) => {
-                            if args_has(args, 'q') {
-                                return cmd_retval::CMD_RETURN_NORMAL;
-                            }
-                            cmdq_error!(item, "{}", cause);
-                            return cmd_retval::CMD_RETURN_ERROR;
-                        }
-                    };
-                    return cmd_show_options_all(self_, item, scope, oo);
+        if args_count(args) == 0 {
+            let scope = match options_scope_from_flags(args, window, target, &raw mut oo) {
+                Ok(s) => s,
+                Err(_) if quiet => return cmd_retval::CMD_RETURN_NORMAL,
+                Err(cause) => {
+                    cmdq_error!(item, "{}", cause);
+                    return cmd_retval::CMD_RETURN_ERROR;
                 }
-                argument = format_single_from_target(item, args_string(args, 0));
-
-                let Some(name) = options_match(cstr_to_str(argument), &raw mut idx, &raw mut ambiguous) else {
-                    if args_has(args, 'q') {
-                        break 'out;
-                    }
-                    if ambiguous != 0 {
-                        cmdq_error!(item, "ambiguous option: {}", _s(argument));
-                    } else {
-                        cmdq_error!(item, "invalid option: {}", _s(argument));
-                    }
-                    break 'fail;
-                };
-                let _scope = match options_scope_from_name(
-                    args,
-                    window,
-                    &name,
-                    target,
-                    &raw mut oo,
-                ) {
-                    Ok(s) => s,
-                    Err(cause) => {
-                        if args_has(args, 'q') {
-                            break 'out;
-                        }
-                        cmdq_error!(item, "{}", cause);
-                        break 'fail;
-                    }
-                };
-                o = options_get_only(oo, &name);
-                if args_has(args, 'A') && o.is_null() {
-                    o = options_get(&mut *oo, &name);
-                    parent = 1;
-                } else {
-                    parent = 0;
-                }
-                if !o.is_null() {
-                    cmd_show_options_print(self_, item, o, idx, parent);
-                } else if name.starts_with('@') {
-                    if args_has(args, 'q') {
-                        break 'out;
-                    }
-                    cmdq_error!(item, "invalid option: {}", _s(argument));
-                    break 'fail;
-                }
-            }
-            // out:
-            free_(argument);
-            return cmd_retval::CMD_RETURN_NORMAL;
+            };
+            return cmd_show_options_all(self_, item, scope, oo);
         }
-        // fail:
-        free_(argument);
-        cmd_retval::CMD_RETURN_ERROR
+        let expanded = format_single_from_target(item, args_string(args, 0));
+        let argument = cstr_to_string_lossy(expanded);
+        free_(expanded);
+
+        let (name, key) = match options_match(&argument) {
+            Ok(found) => found,
+            Err(_) if quiet => return cmd_retval::CMD_RETURN_NORMAL,
+            Err(e) => {
+                match e {
+                    MatchError::Ambiguous => cmdq_error!(item, "ambiguous option: {}", argument),
+                    MatchError::Invalid => cmdq_error!(item, "invalid option: {}", argument),
+                }
+                return cmd_retval::CMD_RETURN_ERROR;
+            }
+        };
+        if let Err(cause) = options_scope_from_name(args, window, &name, target, &raw mut oo) {
+            if quiet {
+                return cmd_retval::CMD_RETURN_NORMAL;
+            }
+            cmdq_error!(item, "{}", cause);
+            return cmd_retval::CMD_RETURN_ERROR;
+        }
+        let mut o = options_get_only(oo, &name);
+        let mut parent = false;
+        if args_has(args, 'A') && o.is_null() {
+            o = options_get(&mut *oo, &name);
+            parent = true;
+        }
+        if !o.is_null() {
+            // An empty array has nothing inherited to show.
+            if key.is_none() && options_is_array(o) && options_array_keys(o).is_empty() {
+                parent = false;
+            }
+            cmd_show_options_print(self_, item, o, key.as_ref(), parent);
+        } else if name.starts_with('@') {
+            if quiet {
+                return cmd_retval::CMD_RETURN_NORMAL;
+            }
+            cmdq_error!(item, "invalid option: {}", argument);
+            return cmd_retval::CMD_RETURN_ERROR;
+        }
+        cmd_retval::CMD_RETURN_NORMAL
     }
 }
 
-pub unsafe fn cmd_show_options_print(
+/// Prints one option, or each item of an array, with -F or the default
+/// template. `parent` marks an inherited option.
+unsafe fn cmd_show_options_print(
     self_: *mut cmd,
     item: *mut cmdq_item,
     o: *mut options_entry,
-    mut idx: i32,
-    parent: i32,
+    key: Option<&ArrayKey>,
+    parent: bool,
 ) {
     unsafe {
         let args = cmd_get_args(self_);
-        let tmp;
-        let mut name = options_name(o);
-        let escaped;
+        let template = args_get_(args, 'F');
+        let mut has_value = true;
 
-        if idx != -1 {
-            tmp = format!("{name}[{idx}]");
-            name = &tmp;
-        } else if options_is_array(o) {
-            let items = options_array_items(o);
-            if items.is_empty() {
-                if !args_has(args, 'v') {
-                    cmdq_print!(item, "{}", name);
+        let value = match key {
+            Some(key) => options_to_string(o, Some(key), false),
+            None if options_is_array(o) => {
+                let keys = options_array_keys(o);
+                if !keys.is_empty() {
+                    for key in &keys {
+                        cmd_show_options_print(self_, item, o, Some(key), parent);
+                    }
+                    return;
                 }
-                return;
+                if template.is_null() && args_has(args, 'v') {
+                    return;
+                }
+                has_value = false;
+                String::new()
             }
-            for a in items {
-                idx = options_array_item_index(a) as i32;
-                cmd_show_options_print(self_, item, o, idx, parent);
-            }
-            return;
-        }
-
-        let value = options_to_string(o, idx, 0);
-        if args_has(args, 'v') {
-            cmdq_print!(item, "{}", _s(value));
-        } else if options_is_string(o) {
-            escaped = args_escape(value);
-            if parent != 0 {
-                cmdq_print!(item, "{}* {}", name, _s(escaped));
-            } else {
-                cmdq_print!(item, "{} {}", name, _s(escaped));
-            }
-            free_(escaped);
-        } else if parent != 0 {
-            cmdq_print!(item, "{}* {}", name, _s(value));
+            None => options_to_string(o, None, false),
+        };
+        let template = if template.is_null() {
+            SHOW_OPTIONS_TEMPLATE.as_ptr().cast()
         } else {
-            cmdq_print!(item, "{} {}", name, _s(value));
+            template
+        };
+
+        let oe = options_table_entry(o);
+        let is_hook = !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_HOOK != 0;
+        let is_user = oe.is_null();
+
+        let ft = format_create_from_target(item);
+        format_add!(ft, "option_name", "{}", options_name(o));
+        format_add!(ft, "option_value", "{}", value);
+        format_add!(ft, "option_value_only", "{}", args_has(args, 'v') as i32);
+        format_add!(ft, "option_is_parent", "{}", parent as i32);
+        format_add!(ft, "option_is_array", "{}", options_is_array(o) as i32);
+        format_add!(ft, "option_is_string", "{}", options_is_string(o) as i32);
+        format_add!(ft, "option_is_hook", "{}", is_hook as i32);
+        format_add!(ft, "option_is_user", "{}", is_user as i32);
+        format_add!(ft, "option_has_value", "{}", has_value as i32);
+        if std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_HOOKS_ENTRY) {
+            format_add!(ft, "hook_fire_count", "{}", (*o).fire_count());
+            let fire_time = (*o).fire_time();
+            if fire_time != 0 {
+                let tv = timeval {
+                    tv_sec: fire_time,
+                    tv_usec: 0,
+                };
+                format_add_tv(ft, c!("hook_fire_time"), &tv);
+            }
         }
-        free_(value);
+        match key {
+            Some(key) => {
+                format_add!(ft, "option_array_key", "{}", key);
+                format_add!(ft, "option_has_array_key", "1");
+            }
+            None => {
+                format_add!(ft, "option_array_key", "");
+                format_add!(ft, "option_has_array_key", "0");
+            }
+        }
+        let line = format_expand(ft, template);
+        format_free(ft);
+
+        cmdq_print!(item, "{}", cstr_to_string_lossy(line));
+        free_(line);
     }
 }
 
-pub unsafe fn cmd_show_options_all(
+/// Prints every option of a tree: user options first, then the table
+/// options of the scope. Hooks only for show-hooks or with -H.
+unsafe fn cmd_show_options_all(
     self_: *mut cmd,
     item: *mut cmdq_item,
     scope: i32,
@@ -214,12 +232,10 @@ pub unsafe fn cmd_show_options_all(
 ) -> cmd_retval {
     unsafe {
         let args = cmd_get_args(self_);
-        let mut o: *mut options_entry;
-        let mut parent;
+        let show_hooks = std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_HOOKS_ENTRY);
 
         // User options. Those set with set-hook are hooks: show-hooks
         // lists them and show-options only with -H.
-        let show_hooks = std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_HOOKS_ENTRY);
         for o in options_entries(oo) {
             if !options_table_entry(o).is_null() {
                 continue;
@@ -228,10 +244,10 @@ pub unsafe fn cmd_show_options_all(
             let is_user_hook = name.starts_with('@') && hooks_is_event(name);
             if show_hooks {
                 if is_user_hook {
-                    cmd_show_options_print(self_, item, o, -1, 0);
+                    cmd_show_options_print(self_, item, o, None, false);
                 }
             } else if !is_user_hook || args_has(args, 'H') {
-                cmd_show_options_print(self_, item, o, -1, 0);
+                cmd_show_options_print(self_, item, o, None, false);
             }
         }
 
@@ -239,17 +255,12 @@ pub unsafe fn cmd_show_options_all(
             if !oe.scope & scope != 0 {
                 continue;
             }
-
-            if !std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_HOOKS_ENTRY)
-                && !args_has(args, 'H')
-                && (oe.flags & OPTIONS_TABLE_IS_HOOK != 0)
-                || (std::ptr::eq(cmd_get_entry(self_), &CMD_SHOW_HOOKS_ENTRY)
-                    && (!oe.flags & OPTIONS_TABLE_IS_HOOK != 0))
-            {
+            if (!show_hooks && !args_has(args, 'H') && oe.is_hook()) || (show_hooks && !oe.is_hook()) {
                 continue;
             }
 
-            o = options_get_only(oo, oe.name);
+            let mut o = options_get_only(oo, oe.name);
+            let mut parent = false;
             if o.is_null() {
                 if !args_has(args, 'A') {
                     continue;
@@ -258,27 +269,9 @@ pub unsafe fn cmd_show_options_all(
                 if o.is_null() {
                     continue;
                 }
-                parent = 1;
-            } else {
-                parent = 0;
+                parent = true;
             }
-
-            if !options_is_array(o) {
-                cmd_show_options_print(self_, item, o, -1, parent);
-            } else if !options_array_items(o).is_empty() {
-                for a in options_array_items(o) {
-                    let idx = options_array_item_index(a);
-                    cmd_show_options_print(self_, item, o, idx as i32, parent);
-                }
-            } else if !args_has(args, 'v') {
-                let name = options_name(o);
-                if parent != 0 {
-                    cmdq_print!(item, "{name}*");
-                } else {
-                    cmdq_print!(item, "{name}");
-                }
-            }
-
+            cmd_show_options_print(self_, item, o, None, parent);
         }
     }
     cmd_retval::CMD_RETURN_NORMAL

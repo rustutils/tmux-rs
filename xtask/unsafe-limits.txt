@@ -82,7 +82,7 @@
 4 src/cmd_/cmd_server_access.rs
 2 src/cmd_/cmd_set_buffer.rs
 2 src/cmd_/cmd_set_environment.rs
-5 src/cmd_/cmd_set_option.rs
+9 src/cmd_/cmd_set_option.rs
 4 src/cmd_/cmd_show_environment.rs
 4 src/cmd_/cmd_show_messages.rs
 6 src/cmd_/cmd_show_options.rs
@@ -117,7 +117,7 @@
 78 src/layout.rs
 16 src/layout_custom.rs
 26 src/layout_set.rs
-59 src/lib.rs
+58 src/lib.rs
 84 src/libc.rs
 11 src/main.rs
 24 src/menu_.rs
@@ -125,7 +125,8 @@
 95 src/mode_tree.rs
 6 src/monitor/mod.rs
 11 src/names.rs
-147 src/options_.rs
+4 src/options_/changes.rs
+87 src/options_/mod.rs
 13 src/osdep.rs
 16 src/paste/mod.rs
 40 src/popup.rs
@@ -138,7 +139,7 @@
 19 src/server_acl/mod.rs
 128 src/server_client.rs
 55 src/server_fn.rs
-81 src/session_.rs
+83 src/session_.rs
 24 src/sort_get.rs
 8 src/spawn.rs
 98 src/status.rs
@@ -157,7 +158,7 @@
 24 src/window_client.rs
 14 src/window_clock.rs
 390 src/window_copy.rs
-73 src/window_customize.rs
+75 src/window_customize.rs
 60 src/window_tree.rs
 23 src/xmalloc.rs
 51 utf8/src/lib.rs

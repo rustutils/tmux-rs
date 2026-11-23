@@ -2539,7 +2539,7 @@ unsafe fn input_exit_rename(ictx: &mut input_ctx) {
 
         if ictx.input_len == 0 {
             if let Some(o) = NonNull::new(options_get_only((*w).options, "automatic-rename")) {
-                _ = options_remove_or_default(o.as_ptr(), -1);
+                _ = options_remove_or_default(o.as_ptr(), None);
             }
             if options_get_number_((*w).options, "automatic-rename") == 0 {
                 window_set_name(w, c!(""));

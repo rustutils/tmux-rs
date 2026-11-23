@@ -79,7 +79,8 @@ pub struct window_customize_itemdata {
 
     oo: *mut options,
     name: *mut u8,
-    idx: i32,
+    /// The array key of an array item, null for a whole option.
+    array_key: *mut u8,
 }
 
 pub struct window_customize_modedata {
@@ -98,19 +99,40 @@ pub struct window_customize_modedata {
     change: window_customize_change,
 }
 
+/// The array key of an item, None for a whole option.
+unsafe fn window_customize_item_key(item: *mut window_customize_itemdata) -> Option<ArrayKey> {
+    unsafe {
+        if (*item).array_key.is_null() {
+            return None;
+        }
+        ArrayKey::parse(&cstr_to_string_lossy((*item).array_key)).ok()
+    }
+}
+
+/// A tag for an option or array item that stays the same when the tree
+/// is built again. Numeric keys go in the low bits, named keys are
+/// hashed (C uses the address of the array item, which moves here).
 unsafe fn window_customize_get_tag(
     o: *mut options_entry,
-    idx: i32,
+    key: Option<&ArrayKey>,
     oe: *const options_table_entry,
 ) -> u64 {
     unsafe {
-        if let Some(oe) = NonNull::new(oe.cast_mut()) {
-            let offset = oe.offset_from_unsigned(
-                NonNull::new((&raw const OPTIONS_TABLE) as *mut options_table_entry).unwrap(),
-            ) as u64;
-            (2u64 << 62) | (offset << 32) | ((idx as u64 + 1) << 1) | 1
-        } else {
-            o.addr() as u64
+        let Some(oe) = NonNull::new(oe.cast_mut()) else {
+            return o.addr() as u64;
+        };
+        let offset = oe.offset_from_unsigned(
+            NonNull::new((&raw const OPTIONS_TABLE) as *mut options_table_entry).unwrap(),
+        ) as u64;
+        match key {
+            None => (2u64 << 62) | (offset << 32) | 1,
+            Some(ArrayKey::Number(n)) => (2u64 << 62) | (offset << 32) | ((u64::from(*n) + 1) << 1) | 1,
+            Some(ArrayKey::Name(name)) => {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                name.hash(&mut hasher);
+                (3u64 << 62) | (offset << 32) | (hasher.finish() & 0xffff_ffff)
+            }
         }
     }
 }
@@ -220,6 +242,7 @@ unsafe fn window_customize_free_item(item: *mut window_customize_itemdata) {
     unsafe {
         free_((*item).table);
         free_((*item).name);
+        free_((*item).array_key);
         free_(item);
     }
 }
@@ -235,22 +258,21 @@ unsafe fn window_customize_build_array(
         let oe = options_table_entry(o);
         let oo = options_owner(o);
 
-        for ai in options_array_items(o) {
-            let idx = options_array_item_index(ai);
-            let name: String = format!("{}[{}]", options_name(o), idx);
+        for key in options_array_keys(o) {
+            let name: String = format!("{}[{}]", options_name(o), key);
 
             format_add!(ft, "option_name", "{}", name);
-            let value: *mut u8 = options_to_string(o, idx as i32, 0);
-            format_add!(ft, "option_value", "{}", _s(value));
+            let value = options_to_string(o, Some(&key), false);
+            format_add!(ft, "option_value", "{}", value);
 
             let item = window_customize_add_item(data);
             (*item).scope = scope;
             (*item).oo = oo;
             (*item).name = xstrdup__(options_name(o));
-            (*item).idx = idx as i32;
+            (*item).array_key = xstrdup__(&key.to_string());
 
             let text: *mut u8 = format_expand(ft, (*data).format);
-            let tag = window_customize_get_tag(o, idx as i32, oe);
+            let tag = window_customize_get_tag(o, Some(&key), oe);
             mode_tree_add(
                 (*data).data,
                 top,
@@ -261,8 +283,6 @@ unsafe fn window_customize_build_array(
                 None,
             );
             free_(text);
-
-            free_(value);
         }
     }
 }
@@ -316,9 +336,8 @@ unsafe fn window_customize_build_option(
         }
 
         if array == 0 {
-            let value = options_to_string(o, -1, 0);
-            format_add!(ft, "option_value", "{}", _s(value));
-            free_(value);
+            let value = options_to_string(o, None, false);
+            format_add!(ft, "option_value", "{}", value);
         }
 
         if !filter.is_null() {
@@ -333,14 +352,13 @@ unsafe fn window_customize_build_option(
         (*item).oo = oo;
         (*item).scope = scope;
         (*item).name = xstrdup__(name);
-        (*item).idx = -1;
 
         if array != 0 {
             text = null_mut();
         } else {
             text = format_expand(ft, (*data).format);
         }
-        let tag = window_customize_get_tag(o, -1, oe);
+        let tag = window_customize_get_tag(o, None, oe);
         let top = mode_tree_add(
             (*data).data,
             top,
@@ -509,7 +527,6 @@ unsafe fn window_customize_build_keys(
             (*item).table = xstrdup(c_kt_name.as_ptr().cast()).as_ptr();
             (*item).key = (*bd).key;
             (*item).name = xstrdup__(&key_string_lookup_key((*item).key, 0));
-            (*item).idx = -1;
 
             let expanded = format_expand(ft, (*data).format);
             let child = mode_tree_add(
@@ -811,7 +828,7 @@ unsafe fn window_customize_draw_option(
                 return;
             }
             let name = (*item).name;
-            let idx = (*item).idx;
+            let key = window_customize_item_key(item);
 
             let o = options_get(&mut *(*item).oo, cstr_to_str(name));
             if o.is_null() {
@@ -873,7 +890,7 @@ unsafe fn window_customize_draw_option(
                 break 'out;
             }
             if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-                if idx != -1 {
+                if let Some(key) = &key {
                     if !screen_write_text!(
                         ctx,
                         cx,
@@ -881,7 +898,7 @@ unsafe fn window_customize_draw_option(
                         sy - ((*s).cy - cy),
                         0,
                         &raw const GRID_DEFAULT_CELL,
-                        "This is an array option, index {idx}."
+                        "This is an array option, key {key}."
                     ) {
                         break 'out;
                     }
@@ -896,7 +913,7 @@ unsafe fn window_customize_draw_option(
                 ) {
                     break 'out;
                 }
-                if idx == -1 {
+                if key.is_none() {
                     break 'out;
                 }
             }
@@ -905,9 +922,9 @@ unsafe fn window_customize_draw_option(
                 break 'out;
             }
 
-            value = options_to_string(o, idx, 0);
-            if !oe.is_null() && idx == -1 {
-                default_value = options_default_to_string(oe).as_ptr();
+            value = xstrdup__(&options_to_string(o, key.as_ref(), false));
+            if !oe.is_null() && key.is_none() {
+                default_value = xstrdup__(&options_default_to_string(&*oe));
                 if libc::strcmp(default_value, value) == 0 {
                     free_(default_value);
                     default_value = null_mut();
@@ -927,7 +944,7 @@ unsafe fn window_customize_draw_option(
             ) {
                 break 'out;
             }
-            if oe.is_null() || (*oe).type_ == options_table_type::OPTIONS_TABLE_STRING {
+            if oe.is_null() || (*oe).type_ == OptionType::String {
                 expanded = format_expand(ft, value);
                 if libc::strcmp(expanded, value) != 0
                     && !screen_write_text!(
@@ -949,7 +966,7 @@ unsafe fn window_customize_draw_option(
             }
 
             let mut choices = String::with_capacity(256);
-            if !oe.is_null() && (*oe).type_ == options_table_type::OPTIONS_TABLE_CHOICE {
+            if !oe.is_null() && (*oe).type_ == OptionType::Choice {
                 for &choice in (*oe).choices {
                     choices.push_str(choice);
                     choices.push_str(", ");
@@ -968,7 +985,7 @@ unsafe fn window_customize_draw_option(
                     break 'out;
                 }
             }
-            if !oe.is_null() && (*oe).type_ == options_table_type::OPTIONS_TABLE_COLOUR {
+            if !oe.is_null() && (*oe).type_ == OptionType::Colour {
                 if !screen_write_text!(
                     ctx,
                     cx,
@@ -1051,7 +1068,7 @@ unsafe fn window_customize_draw_option(
             if !wo.is_null() && options_owner(o) != wo {
                 let parent = options_get_only(wo, cstr_to_str(name));
                 if !parent.is_null() {
-                    value = options_to_string(parent, -1, 0);
+                    value = xstrdup__(&options_to_string(parent, None, false));
                     if !screen_write_text!(
                         ctx,
                         (*s).cx,
@@ -1072,7 +1089,7 @@ unsafe fn window_customize_draw_option(
             if !go.is_null() && options_owner(o) != go {
                 let parent = options_get_only(go, cstr_to_str(name));
                 if !parent.is_null() {
-                    value = options_to_string(parent, -1, 0);
+                    value = xstrdup__(&options_to_string(parent, None, false));
                     if !screen_write_text!(
                         ctx,
                         (*s).cx,
@@ -1253,7 +1270,7 @@ pub unsafe fn window_customize_set_option_callback(
         let oo: *mut options = (*item).oo;
         let name = cstr_to_str((*item).name);
 
-        let mut idx: i32 = (*item).idx;
+        let mut key = window_customize_item_key(item);
 
         if s.is_null() || *s == b'\0' || (*data).dead != 0 {
             return 0;
@@ -1268,21 +1285,21 @@ pub unsafe fn window_customize_set_option_callback(
         let oe = options_table_entry(o);
 
         if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-            if idx == -1 {
-                for idx_ in 0..i32::MAX {
-                    idx = idx_;
-                    if options_array_get(o, idx as u32).is_null() {
-                        break;
-                    }
-                }
-            }
-            if let Err(err) = options_array_set(o, idx as u32, Some(cstr_to_str(s)), false) {
-                let mut err_msg = err.into_string().unwrap();
+            // A new item goes at the first free number.
+            let key = key.get_or_insert_with(|| {
+                let free = (0..u32::MAX).find(|&i| !options_array_has(o, &ArrayKey::Number(i)));
+                ArrayKey::Number(free.unwrap_or(u32::MAX))
+            });
+            let value = CStr::from_ptr(s.cast()).to_bytes();
+            if let Err(err) = options_array_set(o, key, Some(value), false) {
+                let mut err_msg = err.to_string();
                 err_msg[0..=0].make_ascii_uppercase();
                 status_message_set!(c, -1, 1, false, "{err_msg}");
             }
-        } else if let Err(err) = options_from_string(oo, oe, name, s, false) {
-            let mut err_msg = err.into_string().unwrap();
+        } else if let Err(err) =
+            options_from_string(oo, oe, name, Some(CStr::from_ptr(s.cast()).to_bytes()), false)
+        {
+            let mut err_msg = err.to_string();
             err_msg[0..=0].make_ascii_uppercase();
             status_message_set!(c, -1, 1, false, "{err_msg}");
         }
@@ -1304,7 +1321,7 @@ pub unsafe fn window_customize_set_option(
     mut pane: i32,
 ) {
     unsafe {
-        let idx = (*item).idx;
+        let key = window_customize_item_key(item);
 
         let name_ptr = (*item).name;
         let name = cstr_to_str((*item).name);
@@ -1380,10 +1397,10 @@ pub unsafe fn window_customize_set_option(
             }
         }
 
-        if !oe.is_null() && (*oe).type_ == options_table_type::OPTIONS_TABLE_FLAG {
+        if !oe.is_null() && (*oe).type_ == OptionType::Flag {
             let flag: i32 = options_get_number___(&*oo, name);
             options_set_number(oo, name, (flag == 0) as i64);
-        } else if !oe.is_null() && (*oe).type_ == options_table_type::OPTIONS_TABLE_CHOICE {
+        } else if !oe.is_null() && (*oe).type_ == OptionType::Choice {
             let mut choice: u32 = options_get_number___(&*oo, name);
             #[expect(clippy::needless_borrow, reason = "false positive")]
             if choice as usize + 1 >= (&(*oe).choices).len() {
@@ -1400,24 +1417,23 @@ pub unsafe fn window_customize_set_option(
                 space = c!(", global");
             }
             let prompt = if !oe.is_null() && (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-                if idx == -1 {
-                    format_nul!("({}[+]{}{}) ", name, _s(space), _s(text))
-                } else {
-                    format_nul!("({}[{}]{}{}) ", name, idx, _s(space), _s(text))
+                match &key {
+                    None => format_nul!("({}[+]{}{}) ", name, _s(space), _s(text)),
+                    Some(key) => format_nul!("({}[{}]{}{}) ", name, key, _s(space), _s(text)),
                 }
             } else {
                 format_nul!("({}{}{}) ", name, _s(space), _s(text))
             };
             free_(text);
 
-            let value = options_to_string(o, idx, 0);
+            let value = xstrdup__(&options_to_string(o, key.as_ref(), false));
 
             let new_item = Box::new(window_customize_itemdata {
                 data,
                 scope,
                 oo,
-                name: name_ptr,
-                idx,
+                name: xstrdup(name_ptr).as_ptr(),
+                array_key: key.map_or(null_mut(), |key| xstrdup__(&key.to_string())),
                 table: null_mut(),
                 key: 0,
             });
@@ -1454,10 +1470,11 @@ pub unsafe fn window_customize_unset_option(
         if o.is_null() {
             return;
         }
-        if (*item).idx != -1 && item.cast() == mode_tree_get_current((*data).data).as_ptr() {
+        let key = window_customize_item_key(item);
+        if key.is_some() && item.cast() == mode_tree_get_current((*data).data).as_ptr() {
             mode_tree_up((*data).data, 0);
         }
-        _ = options_remove_or_default(o, (*item).idx);
+        _ = options_remove_or_default(o, key.as_ref());
     }
 }
 
@@ -1469,7 +1486,7 @@ pub unsafe fn window_customize_reset_option(
         if item.is_null() || !window_customize_check_item(data, item, null_mut()) {
             return;
         }
-        if (*item).idx != -1 {
+        if !(*item).array_key.is_null() {
             return;
         }
 
@@ -1477,7 +1494,7 @@ pub unsafe fn window_customize_reset_option(
         while !oo.is_null() {
             let o = options_get_only((*item).oo, cstr_to_str((*item).name));
             if !o.is_null() {
-                _ = options_remove_or_default(o, -1);
+                _ = options_remove_or_default(o, None);
             }
             oo = options_get_parent(oo);
         }
@@ -1583,7 +1600,7 @@ pub unsafe fn window_customize_set_key(
                 key,
                 oo: null_mut(),
                 name: null_mut(),
-                idx: 0,
+                array_key: null_mut(),
             });
 
             (*data).references += 1;
@@ -1610,7 +1627,7 @@ pub unsafe fn window_customize_set_key(
                 key,
                 oo: null_mut(),
                 name: null_mut(),
-                idx: 0,
+                array_key: null_mut(),
             });
 
             (*data).references += 1;
@@ -1843,7 +1860,7 @@ pub unsafe fn window_customize_key(
                 }
             }
             b'd' => {
-                if !(item.is_null() || (*item).idx != -1) {
+                if !(item.is_null() || !(*item).array_key.is_null()) {
                     prompt = format_nul!("Reset {} to default? ", _s((*item).name));
                     (*data).references += 1;
                     (*data).change = window_customize_change::WINDOW_CUSTOMIZE_RESET;
@@ -1883,9 +1900,8 @@ pub unsafe fn window_customize_key(
             }
             b'u' => {
                 if !item.is_null() {
-                    let idx = (*item).idx;
-                    prompt = if idx != -1 {
-                        format_nul!("Unset {}[{}]? ", _s((*item).name), idx)
+                    prompt = if !(*item).array_key.is_null() {
+                        format_nul!("Unset {}[{}]? ", _s((*item).name), _s((*item).array_key))
                     } else {
                         format_nul!("Unset {}? ", _s((*item).name))
                     };

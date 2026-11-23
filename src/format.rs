@@ -3431,32 +3431,33 @@ unsafe fn format_find(
 
         const SIZEOF_S: usize = 512;
         let mut t: time_t = 0;
-        let mut idx = 0;
+        let mut idx: Option<ArrayKey> = None;
         let mut found = null_mut();
 
         'found: {
-            let mut o = options_parse_get(GLOBAL_OPTIONS, cstr_to_str(key), &raw mut idx, 0);
+            let mut o = options_parse_get(GLOBAL_OPTIONS, cstr_to_str(key), &mut idx, false);
             if o.is_null() && (*ft).wp.is_some() {
-                o = options_parse_get((*(*ft).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).options, cstr_to_str(key), &raw mut idx, 0);
+                o = options_parse_get((*(*ft).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).options, cstr_to_str(key), &mut idx, false);
             }
             let ftw = (*ft).w.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
             if o.is_null() && !ftw.is_null() {
-                o = options_parse_get((*ftw).options, cstr_to_str(key), &raw mut idx, 0);
+                o = options_parse_get((*ftw).options, cstr_to_str(key), &mut idx, false);
             }
             if o.is_null() {
-                o = options_parse_get(GLOBAL_W_OPTIONS, cstr_to_str(key), &raw mut idx, 0);
+                o = options_parse_get(GLOBAL_W_OPTIONS, cstr_to_str(key), &mut idx, false);
             }
             {
                 let fts = (*ft).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
                 if o.is_null() && !fts.is_null() {
-                    o = options_parse_get((*fts).options, cstr_to_str(key), &raw mut idx, 0);
+                    o = options_parse_get((*fts).options, cstr_to_str(key), &mut idx, false);
                 }
             }
             if o.is_null() {
-                o = options_parse_get(GLOBAL_S_OPTIONS, cstr_to_str(key), &raw mut idx, 0);
+                o = options_parse_get(GLOBAL_S_OPTIONS, cstr_to_str(key), &mut idx, false);
             }
             if !o.is_null() {
-                found = options_to_string(o, idx, 1);
+                let value = options_to_string(o, idx.as_ref(), true);
+                found = CString::new(value).unwrap_or_default().into_raw().cast();
                 break 'found;
             }
 

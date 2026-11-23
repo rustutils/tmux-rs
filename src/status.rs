@@ -439,16 +439,15 @@ pub unsafe fn status_redraw(c: *mut client) -> i32 {
             for i in 0..lines {
                 screen_write_cursormove(&raw mut ctx, 0, i as i32, 0);
 
-                let ov = options_array_get(o, i);
-                if ov.is_null() {
+                let Some(value) = options_array_string(o, &ArrayKey::Number(i)) else {
                     for _ in 0..width {
                         screen_write_putc(&raw mut ctx, &raw mut gc, b' ');
                     }
                     continue;
-                }
+                };
                 let sle = &raw mut (*sl).entries[i as usize];
 
-                let expanded = format_expand_time(ft, (*ov).string);
+                let expanded = format_expand_time(ft, value.as_ptr().cast());
                 if !force
                     && !(*sle).expanded.is_null()
                     && libc::strcmp(expanded, (*sle).expanded) == 0
@@ -1912,8 +1911,8 @@ unsafe fn status_prompt_complete_list(s: *const u8, at_start: i32) -> Vec<String
         }
         let o = options_get_only(GLOBAL_OPTIONS, "command-alias");
         if !o.is_null() {
-            for a in options_array_items(o) {
-                let value = (*options_array_item_value(a)).string;
+            for (_, value) in options_array_strings(o) {
+                let value: *const u8 = value.as_ptr().cast();
 
                 let cp = libc::strchr(value, b'=' as i32);
                 if cp.is_null() {

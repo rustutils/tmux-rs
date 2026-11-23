@@ -444,13 +444,13 @@ pub unsafe fn cmd_get_alias(name: *const u8) -> *mut u8 {
         }
         let wanted = strlen(name);
 
-        for a in options_array_items(o) {
-            let ov = options_array_item_value(a);
+        for (_, value) in options_array_strings(o) {
+            let value: *const u8 = value.as_ptr().cast();
 
-            let equals = strchr((*ov).string, b'=' as i32);
+            let equals = strchr(value, b'=' as i32);
             if !equals.is_null() {
-                let n = equals.addr() - (*ov).string.addr();
-                if n == wanted && strncmp(name, (*ov).string, n) == 0 {
+                let n = equals.addr() - value.addr();
+                if n == wanted && strncmp(name, value, n) == 0 {
                     return xstrdup(equals.add(1)).as_ptr();
                 }
             }

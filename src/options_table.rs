@@ -57,26 +57,6 @@ static OPTIONS_TABLE_EXTENDED_KEYS_LIST: [&str; 3] = ["off", "on", "always"];
 static OPTIONS_TABLE_EXTENDED_KEYS_FORMAT_LIST: [&str; 2] = ["csi-u", "xterm"];
 static OPTIONS_TABLE_ALLOW_PASSTHROUGH_LIST: [&str; 3] = ["off", "on", "all"];
 
-#[rustfmt::skip]
-/// Map of name conversions.
-pub static OPTIONS_OTHER_NAMES: [options_name_map; 5] = [
-    options_name_map::new("display-panes-color", "display-panes-colour"),
-    options_name_map::new("display-panes-active-color", "display-panes-active-colour"),
-    options_name_map::new("clock-mode-color", "clock-mode-colour"),
-    options_name_map::new("cursor-color", "cursor-colour"),
-    options_name_map::new("pane-colors", "pane-colours"),
-];
-
-#[rustfmt::skip]
-/// Map of name conversions.
-pub static OPTIONS_OTHER_NAMES_STR: [options_name_map_str; 5] = [
-    options_name_map_str::new("display-panes-color", "display-panes-colour"),
-    options_name_map_str::new("display-panes-active-color", "display-panes-active-colour"),
-    options_name_map_str::new("clock-mode-color", "clock-mode-colour"),
-    options_name_map_str::new("cursor-color", "cursor-colour"),
-    options_name_map_str::new("pane-colors", "pane-colours"),
-];
-
 /// Status line format.
 pub const OPTIONS_TABLE_STATUS_FORMAT1: &str = concat!(
     "#[align=left range=left #{E:status-left-style}]",
@@ -159,7 +139,7 @@ macro_rules! options_table_hook {
     ($hook_name:expr, $default_value:expr) => {
         options_table_entry {
             name: $hook_name,
-            type_: options_table_type::OPTIONS_TABLE_COMMAND,
+            type_: OptionType::Command,
             scope: OPTIONS_TABLE_SESSION,
             flags: OPTIONS_TABLE_IS_ARRAY | OPTIONS_TABLE_IS_HOOK,
             default_str: Some($default_value),
@@ -173,7 +153,7 @@ macro_rules! options_table_pane_hook {
     ($hook_name:expr, $default_value:expr) => {
         options_table_entry {
             name: $hook_name,
-            type_: options_table_type::OPTIONS_TABLE_COMMAND,
+            type_: OptionType::Command,
             scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
             flags: OPTIONS_TABLE_IS_ARRAY | OPTIONS_TABLE_IS_HOOK,
             default_str: Some($default_value),
@@ -187,7 +167,7 @@ macro_rules! options_table_window_hook {
     ($hook_name:expr, $default_value:expr) => {
         options_table_entry {
             name: $hook_name,
-            type_: options_table_type::OPTIONS_TABLE_COMMAND,
+            type_: OptionType::Command,
             scope: OPTIONS_TABLE_WINDOW,
             flags: OPTIONS_TABLE_IS_ARRAY | OPTIONS_TABLE_IS_HOOK,
             default_str: Some($default_value),
@@ -200,7 +180,7 @@ macro_rules! options_table_window_hook {
 pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     options_table_entry {
         name: "backspace",
-        type_: options_table_type::OPTIONS_TABLE_KEY,
+        type_: OptionType::Key,
         scope: OPTIONS_TABLE_SERVER,
         default_num: b'\x7f' as i64,
         text: Some("The key to send for backspace."),
@@ -209,7 +189,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "buffer-limit",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SERVER,
         minimum: 1,
         maximum: i32::MAX as u32,
@@ -222,7 +202,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "command-alias",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SERVER,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_str: Some(
@@ -236,7 +216,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "copy-command",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SERVER,
         default_str: Some(""),
         text: Some("Shell command run when text is copied. If empty, no command is run."),
@@ -244,7 +224,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "cursor-colour",
-        type_: options_table_type::OPTIONS_TABLE_COLOUR,
+        type_: OptionType::Colour,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: -1,
         text: Some("Colour of the cursor."),
@@ -252,7 +232,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "cursor-style",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         choices: &OPTIONS_TABLE_CURSOR_STYLE_LIST,
         default_num: 0,
@@ -261,7 +241,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "default-terminal",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SERVER,
         default_str: Some(TMUX_TERM),
         text: Some("Default for the 'TERM' environment variable."),
@@ -269,7 +249,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "editor",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SERVER,
         default_str: Some(_PATH_VI),
         text: Some("Editor run to edit files."),
@@ -277,7 +257,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "escape-time",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SERVER,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -288,7 +268,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "exit-empty",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_SERVER,
         default_num: 1,
         text: Some("Whether the server should exit if there are no sessions."),
@@ -296,7 +276,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "exit-unattached",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_SERVER,
         default_num: 0,
         text: Some("Whether the server should exit if there are no attached clients."),
@@ -304,7 +284,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "extended-keys",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SERVER,
         choices: &OPTIONS_TABLE_EXTENDED_KEYS_LIST,
         default_num: 0,
@@ -313,7 +293,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "extended-keys-format",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SERVER,
         choices: &OPTIONS_TABLE_EXTENDED_KEYS_FORMAT_LIST,
         default_num: 1,
@@ -322,7 +302,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "focus-events",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_SERVER,
         default_num: 0,
         text: Some("Whether to send focus events to applications."),
@@ -330,7 +310,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "history-file",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SERVER,
         default_str: Some(""),
         text: Some(
@@ -340,7 +320,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "menu-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         flags: OPTIONS_TABLE_IS_STYLE,
         default_str: Some("default"),
@@ -350,7 +330,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "menu-selected-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         flags: OPTIONS_TABLE_IS_STYLE,
         default_str: Some("bg=yellow,fg=black"),
@@ -360,7 +340,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "menu-border-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -370,7 +350,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "menu-border-lines",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_POPUP_BORDER_LINES_LIST,
         default_num: box_lines::BOX_LINES_SINGLE as i64,
@@ -381,7 +361,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "message-limit",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SERVER,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -391,7 +371,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "prefix-timeout",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SERVER,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -404,7 +384,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "prompt-history-limit",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SERVER,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -414,7 +394,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "set-clipboard",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SERVER,
         choices: &OPTIONS_TABLE_SET_CLIPBOARD_LIST,
         default_num: 1,
@@ -425,7 +405,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "terminal-overrides",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SERVER,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_str: Some("linux*:AX@"),
@@ -435,7 +415,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "terminal-features",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SERVER,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_str: Some(
@@ -447,7 +427,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "user-keys",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SERVER,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_str: Some(""),
@@ -460,7 +440,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     // Session options.
     options_table_entry {
         name: "activity-action",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_BELL_ACTION_LIST,
         default_num: alert_option::ALERT_OTHER as i64,
@@ -469,7 +449,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "assume-paste-time",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -480,7 +460,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "base-index",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -490,7 +470,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "bell-action",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_BELL_ACTION_LIST,
         default_num: alert_option::ALERT_ANY as i64,
@@ -499,7 +479,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "default-command",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some(""),
         text: Some("Default command to run in new panes. If empty, a shell is started."),
@@ -507,7 +487,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "default-shell",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some(_PATH_BSHELL_STR),
         text: Some("Location of default shell."),
@@ -515,7 +495,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "default-size",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         pattern: Some("[0-9]*x[0-9]*"),
         default_str: Some("80x24"),
@@ -524,7 +504,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "destroy-unattached",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_DESTROY_UNATTACHED_LIST,
         default_num: 0,
@@ -535,7 +515,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "detach-on-destroy",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_DETACH_ON_DESTROY_LIST,
         default_num: 1,
@@ -546,7 +526,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "display-panes-active-colour",
-        type_: options_table_type::OPTIONS_TABLE_COLOUR,
+        type_: OptionType::Colour,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 1,
         text: Some("Colour of the active pane for 'display-panes'."),
@@ -554,7 +534,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "display-panes-colour",
-        type_: options_table_type::OPTIONS_TABLE_COLOUR,
+        type_: OptionType::Colour,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 4,
         text: Some("Colour of not active panes for 'display-panes'."),
@@ -562,7 +542,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "display-panes-time",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 1,
         maximum: i32::MAX as u32,
@@ -573,7 +553,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "display-time",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -584,7 +564,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "history-limit",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -597,7 +577,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "key-table",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("root"),
         text: Some("Default key table. Key presses are first looked up in this table."),
@@ -605,7 +585,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "lock-after-time",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -616,7 +596,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "lock-command",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some(TMUX_LOCK_CMD),
         text: Some("Shell command to run to lock a client."),
@@ -624,7 +604,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "message-command-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("bg=black,fg=yellow"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -636,7 +616,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "message-line",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_MESSAGE_LINE_LIST,
         default_num: 0,
@@ -645,7 +625,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "message-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("bg=yellow,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -655,7 +635,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "mouse",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_SESSION,
         // On by default since tmux 3.8.
         default_num: 1,
@@ -666,7 +646,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "prefix",
-        type_: options_table_type::OPTIONS_TABLE_KEY,
+        type_: OptionType::Key,
         scope: OPTIONS_TABLE_SESSION,
         default_num: b'b' as i64 | KEYC_CTRL as i64,
         text: Some("The prefix key."),
@@ -674,7 +654,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "prefix2",
-        type_: options_table_type::OPTIONS_TABLE_KEY,
+        type_: OptionType::Key,
         scope: OPTIONS_TABLE_SESSION,
         default_num: KEYC_NONE as i64,
         text: Some("A second prefix key."),
@@ -682,7 +662,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "renumber-windows",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 0,
         text: Some("Whether windows are automatically renumbered rather than leaving gaps."),
@@ -690,7 +670,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "repeat-time",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i16::MAX as u32,
@@ -701,7 +681,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "set-titles",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 0,
         text: Some("Whether to set the terminal title, if supported."),
@@ -709,7 +689,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "set-titles-string",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("#S:#I:#W - \"#T\" #{session_alerts}"),
         text: Some("Format of the terminal title to set."),
@@ -717,7 +697,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "silence-action",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_BELL_ACTION_LIST,
         default_num: alert_option::ALERT_OTHER as i64,
@@ -726,7 +706,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_STATUS_LIST,
         default_num: 1,
@@ -735,7 +715,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-bg",
-        type_: options_table_type::OPTIONS_TABLE_COLOUR,
+        type_: OptionType::Colour,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 8,
         text: Some(
@@ -745,7 +725,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-fg",
-        type_: options_table_type::OPTIONS_TABLE_COLOUR,
+        type_: OptionType::Colour,
         scope: OPTIONS_TABLE_SESSION,
         default_num: 8,
         text: Some(
@@ -755,7 +735,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-format",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_arr: Some(OPTIONS_TABLE_STATUS_FORMAT_DEFAULT),
@@ -766,7 +746,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-interval",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -777,7 +757,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-justify",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_STATUS_JUSTIFY_LIST,
         default_num: 0,
@@ -786,7 +766,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-keys",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_STATUS_KEYS_LIST,
         default_num: modekey::MODEKEY_EMACS as i64,
@@ -795,7 +775,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-left",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("[#{session_name}] "),
         text: Some("Contents of the left side of the status line."),
@@ -803,7 +783,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-left-length",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i16::MAX as u32,
@@ -813,7 +793,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-left-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -823,7 +803,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-position",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_STATUS_POSITION_LIST,
         default_num: 1,
@@ -832,7 +812,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-right",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some(
             "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}\"#{=21:pane_title}\" %H:%M %d-%b-%y",
@@ -842,7 +822,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-right-length",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_SESSION,
         minimum: 0,
         maximum: i16::MAX as u32,
@@ -852,7 +832,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-right-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -862,7 +842,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "status-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("bg=green,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -872,7 +852,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "update-environment",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         flags: OPTIONS_TABLE_IS_ARRAY,
         default_str: Some(
@@ -887,7 +867,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "visual-activity",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_VISUAL_BELL_LIST,
         default_num: visual_option::VISUAL_OFF as i64,
@@ -898,7 +878,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "visual-bell",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_VISUAL_BELL_LIST,
         default_num: visual_option::VISUAL_OFF as i64,
@@ -909,7 +889,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "visual-silence",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_SESSION,
         choices: &OPTIONS_TABLE_VISUAL_BELL_LIST,
         default_num: visual_option::VISUAL_OFF as i64,
@@ -920,7 +900,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "word-separators",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
         default_str: Some("!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~"),
         text: Some("Characters considered to separate words."),
@@ -929,7 +909,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     // Window options
     options_table_entry {
         name: "aggressive-resize",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 0,
         text: Some(
@@ -939,7 +919,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "allow-passthrough",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         choices: &OPTIONS_TABLE_ALLOW_PASSTHROUGH_LIST,
         default_num: 0,
@@ -950,7 +930,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "allow-rename",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 0,
         text: Some("Whether applications are allowed to use the escape sequence to rename windows."),
@@ -958,7 +938,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "allow-set-title",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 1,
         text: Some(
@@ -968,7 +948,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "alternate-screen",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 1,
         text: Some("Whether applications are allowed to use the alternate screen."),
@@ -976,7 +956,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "automatic-rename",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 1,
         text: Some("Whether windows are automatically renamed."),
@@ -984,7 +964,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "automatic-rename-format",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("#{?pane_in_mode,[tmux],#{pane_current_command}}#{?pane_dead,[dead],}"),
         text: Some("Format used to automatically rename windows."),
@@ -992,7 +972,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "clock-mode-colour",
-        type_: options_table_type::OPTIONS_TABLE_COLOUR,
+        type_: OptionType::Colour,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 4,
         text: Some("Colour of the clock in clock mode."),
@@ -1000,7 +980,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "clock-mode-style",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_CLOCK_MODE_STYLE_LIST,
         default_num: 1,
@@ -1009,7 +989,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "copy-mode-match-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("bg=cyan,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1019,7 +999,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "copy-mode-current-match-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("bg=magenta,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1029,7 +1009,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "copy-mode-mark-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("bg=red,fg=black"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1039,7 +1019,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "fill-character",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some(""),
         text: Some("Character used to fill unused parts of window."),
@@ -1047,7 +1027,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "main-pane-height",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("24"),
         text: Some(
@@ -1057,7 +1037,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "main-pane-width",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("80"),
         text: Some(
@@ -1067,7 +1047,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "mode-keys",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_MODE_KEYS_LIST,
         default_num: modekey::MODEKEY_EMACS as i64,
@@ -1076,7 +1056,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "mode-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         flags: OPTIONS_TABLE_IS_STYLE,
         default_str: Some("bg=yellow,fg=black"),
@@ -1086,7 +1066,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "monitor-activity",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 0,
         text: Some("Whether an alert is triggered by activity."),
@@ -1094,7 +1074,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "monitor-bell",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 1,
         text: Some("Whether an alert is triggered by a bell."),
@@ -1102,7 +1082,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "monitor-silence",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_WINDOW,
         minimum: 0,
         maximum: i32::MAX as u32,
@@ -1112,7 +1092,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "other-pane-height",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("0"),
         text: Some(
@@ -1122,7 +1102,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "other-pane-width",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("0"),
         text: Some(
@@ -1132,7 +1112,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "pane-active-border-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("#{?pane_in_mode,fg=yellow,#{?synchronize-panes,fg=red,fg=green}}"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1142,7 +1122,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "pane-base-index",
-        type_: options_table_type::OPTIONS_TABLE_NUMBER,
+        type_: OptionType::Number,
         scope: OPTIONS_TABLE_WINDOW,
         minimum: 0,
         maximum: u16::MAX as u32,
@@ -1152,7 +1132,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "pane-border-format",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some("#{?pane_active,#[reverse],}#{pane_index}#[default] \"#{pane_title}\""),
         text: Some("Format of text in the pane status lines."),
@@ -1160,7 +1140,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "pane-border-indicators",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_PANE_BORDER_INDICATORS_LIST,
         default_num: pane_border_indicator::PANE_BORDER_COLOUR as i64,
@@ -1171,7 +1151,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "pane-border-lines",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_PANE_BORDER_LINES_LIST,
         default_num: pane_lines::PANE_LINES_SINGLE as i64,
@@ -1182,7 +1162,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "pane-border-status",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_PANE_STATUS_LIST,
         default_num: pane_status::PANE_STATUS_OFF as i64,
@@ -1191,7 +1171,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "pane-border-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1201,7 +1181,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "pane-colours",
-        type_: options_table_type::OPTIONS_TABLE_COLOUR,
+        type_: OptionType::Colour,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some(""),
         flags: OPTIONS_TABLE_IS_ARRAY,
@@ -1210,7 +1190,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "popup-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1220,7 +1200,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "popup-border-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1230,7 +1210,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "popup-border-lines",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_POPUP_BORDER_LINES_LIST,
         default_num: box_lines::BOX_LINES_SINGLE as i64,
@@ -1241,7 +1221,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "remain-on-exit",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         choices: &OPTIONS_TABLE_REMAIN_ON_EXIT_LIST,
         default_num: 0,
@@ -1252,7 +1232,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "remain-on-exit-format",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some(
             "Pane is dead (#{?#{!=:#{pane_dead_status},},status #{pane_dead_status},}#{?#{!=:#{pane_dead_signal},},signal #{pane_dead_signal},}, #{t:pane_dead_time})",
@@ -1264,7 +1244,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "scroll-on-clear",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 1,
         text: Some(
@@ -1274,7 +1254,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "synchronize-panes",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_num: 0,
         text: Some("Whether typing should be sent to all panes simultaneously."),
@@ -1282,7 +1262,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-active-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1292,7 +1272,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-size",
-        type_: options_table_type::OPTIONS_TABLE_CHOICE,
+        type_: OptionType::Choice,
         scope: OPTIONS_TABLE_WINDOW,
         choices: &OPTIONS_TABLE_WINDOW_SIZE_LIST,
         default_num: window_size_option::WINDOW_SIZE_LATEST as i64,
@@ -1303,7 +1283,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW | OPTIONS_TABLE_PANE,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1313,7 +1293,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-status-activity-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("reverse"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1323,7 +1303,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-status-bell-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("reverse"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1333,7 +1313,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-status-current-format",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("#I:#W#{?window_flags,#{window_flags}, }"),
         text: Some("Format of the current window in the status line."),
@@ -1341,7 +1321,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-status-current-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("underscore"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1351,7 +1331,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-status-format",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("#I:#W#{?window_flags,#{window_flags}, }"),
         text: Some("Format of windows in the status line, except the current window."),
@@ -1359,7 +1339,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-status-last-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1369,7 +1349,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-status-separator",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some(" "),
         text: Some("Separator between windows in the status line."),
@@ -1377,7 +1357,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "window-status-style",
-        type_: options_table_type::OPTIONS_TABLE_STRING,
+        type_: OptionType::String,
         scope: OPTIONS_TABLE_WINDOW,
         default_str: Some("default"),
         flags: OPTIONS_TABLE_IS_STYLE,
@@ -1387,7 +1367,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "wrap-search",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 1,
         text: Some("Whether searching in copy mode should wrap at the top or bottom."),
@@ -1395,7 +1375,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
     },
     options_table_entry {
         name: "xterm-keys",
-        type_: options_table_type::OPTIONS_TABLE_FLAG,
+        type_: OptionType::Flag,
         scope: OPTIONS_TABLE_WINDOW,
         default_num: 1,
         text: Some(

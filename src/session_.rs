@@ -883,3 +883,27 @@ pub unsafe fn session_renumber_windows(s: *mut session) {
         }
     }
 }
+
+/// Applies the session's history-limit to the panes of its windows,
+/// trimming histories that are over it.
+///
+/// # Safety
+/// `s` must be a valid live session.
+pub unsafe fn session_update_history(s: *mut session) {
+    unsafe {
+        let limit: u32 = options_get_number___(&*(*s).options, "history-limit");
+        let winlinks: Vec<*mut winlink> = (*s).windows.values().copied().collect();
+        for wl in winlinks {
+            let w = winlink_window(wl);
+            for &wp in &(*w).panes {
+                let gd = &mut (*wp).base.grid;
+                let osize = gd.hsize;
+                gd.hlimit = limit;
+                gd.collect_history_all();
+                if gd.hsize != osize {
+                    log_debug!("session_update_history: %{} {} -> {}", (*wp).id, osize, gd.hsize);
+                }
+            }
+        }
+    }
+}

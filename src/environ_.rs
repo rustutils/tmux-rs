@@ -155,13 +155,12 @@ pub unsafe fn environ_update(oo: *mut options, src: &Environ, dst: &mut Environ)
         if o.is_null() {
             return;
         }
-        for a in options_array_items(o) {
-            let ov = options_array_item_value(a);
+        for (_, pattern) in options_array_strings(o) {
             found = false;
             for entry in src.entries.values() {
                 let c_name =
                     CString::new(entry.name.as_str()).unwrap_or_else(|_| CString::default());
-                if libc::fnmatch((*ov).string, c_name.as_ptr().cast(), 0) == 0 {
+                if libc::fnmatch(pattern.as_ptr().cast(), c_name.as_ptr().cast(), 0) == 0 {
                     if let Some(ref value) = entry.value {
                         environ_set_(dst, entry.name.as_str(), environ_flags::empty(), value.clone());
                     }
@@ -169,7 +168,7 @@ pub unsafe fn environ_update(oo: *mut options, src: &Environ, dst: &mut Environ)
                 }
             }
             if !found {
-                environ_clear(dst, cstr_to_str((*ov).string));
+                environ_clear(dst, &pattern.to_string_lossy());
             }
         }
     }

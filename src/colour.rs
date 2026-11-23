@@ -15,7 +15,7 @@
 use std::borrow::Cow;
 
 use crate::*;
-use crate::options_::{options, options_array_item_index, options_array_item_value, options_array_items, options_get};
+use crate::options_::{ArrayKey, options, options_array_numbers, options_get};
 
 fn colour_dist_sq(r1: i32, g1: i32, b1: i32, r2: i32, g2: i32, b2: i32) -> i32 {
     (r1 - r2) * (r1 - r2) + (g1 - g2) * (g1 - g2) + (b1 - b2) * (b1 - b2)
@@ -966,7 +966,7 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
 
         let o = options_get(&mut *oo, "pane-colours");
 
-        let items = options_array_items(o);
+        let items = options_array_numbers(o);
         if items.is_empty() {
             p.default_palette.take();
             return;
@@ -977,11 +977,11 @@ pub unsafe fn colour_palette_from_option(p: Option<&mut colour_palette>, oo: *mu
             Some(palette) => palette.fill(-1),
         }
 
-        for a in items {
-            let n = options_array_item_index(a);
-            if n < 256 {
-                let c = (*options_array_item_value(a)).number as i32;
-                (p.default_palette.as_mut().unwrap())[n as usize] = c;
+        for (key, c) in items {
+            if let ArrayKey::Number(n) = key
+                && n < 256
+            {
+                (p.default_palette.as_mut().unwrap())[n as usize] = c as i32;
             }
         }
     }

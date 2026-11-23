@@ -879,10 +879,13 @@ pub unsafe fn tty_keys_build(tty: *mut tty) {
 
         let o = options_get(&mut *GLOBAL_OPTIONS, "user-keys");
         if !o.is_null() {
-            for a in options_array_items(o) {
-                let i = options_array_item_index(a) as u64;
-                let ov = options_array_item_value(a);
-                tty_keys_add_(tty, (*ov).string, KEYC_USER + i);
+            // Only numeric keys up to KEYC_NUSER map to user keys.
+            for (key, value) in options_array_strings(o) {
+                if let ArrayKey::Number(i) = key
+                    && u64::from(i) <= KEYC_NUSER
+                {
+                    tty_keys_add_(tty, value.as_ptr().cast(), KEYC_USER + u64::from(i));
+                }
             }
         }
     }

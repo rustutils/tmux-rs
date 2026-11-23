@@ -459,16 +459,14 @@ pub unsafe fn tty_term_apply(term: *mut tty_term, capabilities: &str, quiet: i32
 }
 
 pub unsafe fn tty_term_apply_overrides(term: *mut tty_term) {
-    let mut ov: *mut options_value;
     let mut s: *const u8;
     let mut offset: usize;
 
     unsafe {
         // Update capabilities from the option.
         let o = options_get_only(GLOBAL_OPTIONS, "terminal-overrides");
-        for a in options_array_items(o) {
-            ov = options_array_item_value(a);
-            s = (*ov).string;
+        for (_, value) in options_array_strings(o) {
+            s = value.as_ptr().cast();
 
             offset = 0;
             let first = tty_term_override_next(cstr_to_str(s), &mut offset);
@@ -622,9 +620,8 @@ pub unsafe fn tty_term_create(
 
             // Apply terminal features.
             let o = options_get_only(GLOBAL_OPTIONS, "terminal-features");
-            for a in options_array_items(o) {
-                let ov = options_array_item_value(a);
-                let s = (*ov).string;
+            for (_, value) in options_array_strings(o) {
+                let s: *const u8 = value.as_ptr().cast();
 
                 let mut offset = 0;
                 let first = tty_term_override_next(cstr_to_str(s), &mut offset);

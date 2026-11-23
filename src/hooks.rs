@@ -111,6 +111,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, hd: &mut HookData) {
             log_debug!("{}: hook {} not found", __func__, hd.name);
             return;
         }
+        options_hook_fired(o);
 
         let event = if item.is_null() {
             null_mut()
@@ -122,7 +123,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, hd: &mut HookData) {
 
         if hd.name.starts_with('@') {
             let value = options_get_string(oo, hd.name);
-            match cmd_parse_from_string(cstr_to_str(value), None) {
+            match cmd_parse_from_string(&cstr_to_string_lossy(value), None) {
                 Err(error) => {
                     log_debug!(
                         "{}: can't parse hook {}: {}",
@@ -136,8 +137,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, hd: &mut HookData) {
                 }
             }
         } else {
-            for a in options_array_items(o) {
-                let cmdlist = (*options_array_item_value(a)).cmdlist;
+            for (_, cmdlist) in options_array_commands(o) {
                 item = hooks_insert_one(item, hd, cmdlist, state);
             }
         }
@@ -223,9 +223,7 @@ pub fn hooks_is_event(name: &str) -> bool {
 /// `@` or the name of a hook option.
 pub fn hooks_valid_event_name(name: &str) -> bool {
     name.starts_with('@')
-        || OPTIONS_TABLE
-            .iter()
-            .any(|oe| oe.name == name && oe.flags & OPTIONS_TABLE_IS_HOOK != 0)
+        || options_search(name).is_some_and(OptionTableEntry::is_hook)
 }
 
 /// Registers the hooks sink for every hook option, at server start.

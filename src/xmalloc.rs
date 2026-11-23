@@ -124,13 +124,6 @@ pub fn xmemdup_nul(bytes: &[u8]) -> *mut u8 {
     out.leak().as_mut_ptr()
 }
 
-pub fn xstrdup___(str: Option<&str>) -> *mut u8 {
-    let Some(str) = str else {
-        return std::ptr::null_mut();
-    };
-    xstrdup__(str)
-}
-
 pub unsafe fn xstrndup(str: *const u8, maxlen: usize) -> NonNull<u8> {
     NonNull::new(unsafe { crate::libc::strndup(str, maxlen) }).unwrap()
 }

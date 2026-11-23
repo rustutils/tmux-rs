@@ -2019,7 +2019,7 @@ mod tests {
             use crate::options_::*;
             let o = options_get_only(GLOBAL_OPTIONS, "command-alias");
             if !o.is_null() {
-                let _ = options_array_set(o, 0, Some("myalias=set -g status off"), false);
+                let _ = options_array_set(o, &ArrayKey::Number(0), Some(b"myalias=set -g status off"), false);
                 let result = parse("myalias");
                 assert!(result.is_ok(), "expected Ok, got: {result:?}");
                 let s = result.unwrap();

@@ -15,6 +15,7 @@ mod layout;
 mod messages;
 mod mouse;
 mod options;
+mod options_3_8;
 mod pane;
 mod parity;
 mod pty_client;

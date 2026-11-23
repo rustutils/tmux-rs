@@ -714,6 +714,22 @@ impl Grid {
         }
     }
 
+    /// Trims the history down to the limit after the limit was lowered,
+    /// dropping the oldest lines, as 3.8's grid_collect_history with
+    /// `all`. Like C, a full history loses one line even when it is at
+    /// the limit exactly.
+    pub fn collect_history_all(&mut self) {
+        if self.hsize == 0 || self.hsize < self.hlimit {
+            return;
+        }
+        let ny = (self.hsize - self.hlimit).clamp(1, self.hsize);
+        grid_trim_history(self, ny);
+        self.hsize -= ny;
+        if self.hscrolled > self.hsize {
+            self.hscrolled = self.hsize;
+        }
+    }
+
     /// Drop `ny` lines from the *bottom* of the history (the ones immediately
     /// above the visible screen). Called when the visible screen grows
     /// downward and needs to reclaim rows that were in scrollback. No-op if
@@ -2714,6 +2730,26 @@ mod tests {
         // Should have trimmed 1 line (10% of 10, minimum 1).
         assert_eq!(gd.hsize, 9);
         drop(gd);
+    }
+
+    #[test]
+    fn grid_collect_history_all_trims_to_the_limit() {
+        let mut gd = Grid::new(80, 3, 100);
+        for _ in 0..20 {
+            let cell = make_cell(b'.', 8, 8);
+            gd.set_cell(0, gd.hsize, &cell);
+            gd.scroll_history(8, 0);
+        }
+        assert_eq!(gd.hsize, 20);
+        gd.hlimit = 5;
+        gd.collect_history_all();
+        assert_eq!(gd.hsize, 5);
+        // At the limit exactly, one more line goes, as in C.
+        gd.collect_history_all();
+        assert_eq!(gd.hsize, 4);
+        // Under the limit, nothing.
+        gd.collect_history_all();
+        assert_eq!(gd.hsize, 4);
     }
 
     #[test]
