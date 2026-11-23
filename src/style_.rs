@@ -36,7 +36,7 @@ use crate::options_::*;
 
 // #define STYLE_ATTR_MASK (~0)
 
-pub static mut STYLE_DEFAULT: style = style {
+pub static STYLE_DEFAULT: style = style {
     gc: GridCell::new(
         Utf8Data::new(*b" ", 0, 1, 1),
         GridAttr::empty(),
@@ -391,9 +391,9 @@ pub unsafe fn style_add(
             ft = ft0;
         }
 
-        let mut sy = options_string_to_style(oo, cstr_to_str(name), ft);
+        let mut sy: *const style = options_string_to_style(oo, cstr_to_str(name), ft);
         if sy.is_null() {
-            sy = &raw mut STYLE_DEFAULT;
+            sy = &raw const STYLE_DEFAULT;
         }
         if (*sy).gc.fg != 8 {
             (*gc).fg = (*sy).gc.fg;

@@ -31,16 +31,32 @@ pub static mut GLOBAL_S_OPTIONS: *mut options = null_mut();
 pub static mut GLOBAL_W_OPTIONS: *mut options = null_mut();
 pub static mut GLOBAL_ENVIRON: *mut Environ = null_mut();
 
-pub static mut START_TIME: timeval = timeval {
-    tv_sec: 0,
-    tv_usec: 0,
-};
+/// When the server started, set once by [`server_start`].
+pub static START_TIME: std::sync::OnceLock<timeval> = std::sync::OnceLock::new();
 
-pub static mut SOCKET_PATH: *const u8 = null_mut();
+/// The server socket path, set once by [`tmux_main`].
+static SOCKET_PATH: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
 
-pub static mut PTM_FD: c_int = -1;
+/// The pty master device opened at startup, set once by [`tmux_main`].
+static PTM_FD: std::sync::OnceLock<c_int> = std::sync::OnceLock::new();
 
-pub static mut SHELL_COMMAND: *mut u8 = null_mut();
+/// The command given with -c, set once by [`tmux_main`].
+static SHELL_COMMAND: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+
+/// The server socket path, empty before [`tmux_main`] has set it.
+pub fn socket_path() -> &'static CStr {
+    SOCKET_PATH.get().map_or(c"", CString::as_c_str)
+}
+
+/// The pty master device for forkpty, or -1 before [`tmux_main`] opened it.
+pub fn ptm_fd() -> c_int {
+    PTM_FD.get().copied().unwrap_or(-1)
+}
+
+/// The shell command given with -c, if any.
+pub fn shell_command() -> Option<&'static CStr> {
+    SHELL_COMMAND.get().map(CString::as_c_str)
+}
 
 pub fn usage() -> ! {
     eprintln!(
@@ -371,6 +387,7 @@ pub unsafe fn tmux_main(mut argc: i32, mut argv: *mut *mut u8, _env: *mut *mut u
         // setproctitle_init(argc, argv.cast(), env.cast());
         let mut path: *const u8 = null_mut();
         let mut label: *mut u8 = null_mut();
+        let mut shell_command: Option<CString> = None;
         let mut feat: i32 = 0;
         let mut fflag: i32 = 0;
         let mut flags: client_flag = client_flag::empty();
@@ -418,7 +435,7 @@ pub unsafe fn tmux_main(mut argc: i32, mut argv: *mut *mut u8, _env: *mut *mut u
         while let Some(opt) = getopt(argc, argv.cast(), c!("2c:CDdf:lL:NqS:T:uUvV")) {
             match opt {
                 b'2' => tty_add_features(&raw mut feat, "256", c!(":,")),
-                b'c' => SHELL_COMMAND = OPTARG.cast(),
+                b'c' => shell_command = Some(CStr::from_ptr(OPTARG.cast()).to_owned()),
                 b'D' => flags |= client_flag::NOFORK,
                 b'C' => {
                     if flags.intersects(client_flag::CONTROL) {
@@ -462,18 +479,22 @@ pub unsafe fn tmux_main(mut argc: i32, mut argv: *mut *mut u8, _env: *mut *mut u
         argc -= OPTIND;
         argv = argv.add(OPTIND as usize);
 
-        if !SHELL_COMMAND.is_null() && argc != 0 {
+        if shell_command.is_some() && argc != 0 {
             usage();
+        }
+        if let Some(command) = shell_command {
+            _ = SHELL_COMMAND.set(command);
         }
         if flags.intersects(client_flag::NOFORK) && argc != 0 {
             usage();
         }
 
-        PTM_FD = getptmfd();
-        if PTM_FD == -1 {
+        let fd = getptmfd();
+        if fd == -1 {
             eprintln!("getptmfd failed!");
             std::process::exit(1);
         }
+        _ = PTM_FD.set(fd);
 
         /*
         // TODO no pledge on linux
@@ -568,7 +589,7 @@ pub unsafe fn tmux_main(mut argc: i32, mut argv: *mut *mut u8, _env: *mut *mut u
             }
             flags |= client_flag::DEFAULTSOCKET;
         }
-        SOCKET_PATH = path;
+        _ = SOCKET_PATH.set(CStr::from_ptr(path.cast()).to_owned());
         free_(label);
 
         // Pass control to the client.

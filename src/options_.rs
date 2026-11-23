@@ -310,19 +310,12 @@ pub unsafe fn options_default(
         let ov = &raw mut (*o).value;
 
         if (*oe).flags & OPTIONS_TABLE_IS_ARRAY != 0 {
-            if (*oe).default_arr.is_null() {
+            let Some(default_arr) = (*oe).default_arr else {
                 _ = options_array_assign(o, (*oe).default_str.unwrap());
                 return o;
-            }
-            let mut i = 0usize;
-            while !(*(*oe).default_arr.add(i)).is_null() {
-                _ = options_array_set(
-                    o,
-                    i as u32,
-                    Some(cstr_to_str(*(*oe).default_arr.add(i))),
-                    false,
-                );
-                i += 1;
+            };
+            for (i, value) in default_arr.iter().enumerate() {
+                _ = options_array_set(o, i as u32, Some(value), false);
             }
             return o;
         }

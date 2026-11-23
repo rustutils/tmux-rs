@@ -127,7 +127,7 @@ pub unsafe fn job_run(
                 (*ws.as_mut_ptr()).ws_col = sx as u16;
                 (*ws.as_mut_ptr()).ws_row = sy as u16;
                 pid = fdforkpty(
-                    PTM_FD,
+                    ptm_fd(),
                     &raw mut master,
                     (&raw mut tty) as *mut u8,
                     null_mut(),

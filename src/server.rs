@@ -106,7 +106,7 @@ pub unsafe fn server_create_socket(flags: client_flag) -> Result<c_int, String> 
             sa.sun_family = AF_UNIX as _;
             let size = strlcpy(
                 sa.sun_path.as_mut_ptr().cast(),
-                SOCKET_PATH,
+                socket_path().as_ptr().cast(),
                 size_of_val(&sa.sun_path),
             );
             if size >= size_of_val(&sa.sun_path) {
@@ -149,7 +149,7 @@ pub unsafe fn server_create_socket(flags: client_flag) -> Result<c_int, String> 
         // fail:
         Err(format!(
             "error creating {} ({})",
-            _s(SOCKET_PATH),
+            socket_path().to_string_lossy(),
             strerror(errno!())
         ))
     }
@@ -263,7 +263,9 @@ pub unsafe fn server_start(
         SESSIONS = BTreeMap::new();
         key_bindings_init();
         MESSAGE_LOG = Vec::new();
-        gettimeofday(&raw mut START_TIME, null_mut());
+        let mut start_time: timeval = zeroed();
+        gettimeofday(&raw mut start_time, null_mut());
+        _ = START_TIME.set(start_time);
 
         if cfg!(feature = "systemd") {
             // TODO we could be truncating important bits
@@ -416,7 +418,7 @@ pub unsafe fn server_update_socket() {
         if n != LAST.get() {
             LAST.set(n);
 
-            if stat(SOCKET_PATH.cast(), &raw mut sb) != 0 {
+            if stat(socket_path().as_ptr().cast(), &raw mut sb) != 0 {
                 return;
             }
             let mut mode = sb.st_mode & ACCESSPERMS;
@@ -433,7 +435,7 @@ pub unsafe fn server_update_socket() {
             } else {
                 mode &= !(S_IXUSR | S_IXGRP | S_IXOTH);
             }
-            chmod(SOCKET_PATH.cast(), mode);
+            chmod(socket_path().as_ptr().cast(), mode);
         }
     }
 }

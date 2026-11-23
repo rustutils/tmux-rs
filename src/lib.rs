@@ -2577,7 +2577,7 @@ struct options_table_entry {
 
     default_str: Option<&'static str>,
     default_num: c_longlong,
-    default_arr: *const *const u8,
+    default_arr: Option<&'static [&'static str]>,
 
     separator: *const u8,
     pattern: *const u8,
@@ -2599,7 +2599,7 @@ impl options_table_entry {
             choices: &[],
             default_str: None,
             default_num: 0,
-            default_arr: null(),
+            default_arr: None,
             separator: null(),
             pattern: null(),
             text: null(),

@@ -102,13 +102,13 @@
 28 src/control_notify.rs
 26 src/environ_.rs
 60 src/file.rs
-455 src/format.rs
+453 src/format.rs
 28 src/format_draw_.rs
 14 src/hyperlinks_.rs
 12 src/image_.rs
 32 src/image_sixel.rs
 164 src/input.rs
-21 src/input_keys.rs
+17 src/input_keys.rs
 35 src/job_.rs
 32 src/key_bindings_.rs
 22 src/key_string.rs
@@ -140,7 +140,7 @@
 98 src/status.rs
 56 src/style_.rs
 24 src/tmux.rs
-240 src/tty_.rs
+238 src/tty_.rs
 16 src/tty_acs.rs
 7 src/tty_features.rs
 36 src/tty_keys.rs

@@ -77,9 +77,8 @@ pub static OPTIONS_OTHER_NAMES_STR: [options_name_map_str; 5] = [
     options_name_map_str::new("pane-colors", "pane-colours"),
 ];
 
-#[expect(clippy::disallowed_methods)]
 /// Status line format.
-pub const OPTIONS_TABLE_STATUS_FORMAT1: *const u8 = concat!(
+pub const OPTIONS_TABLE_STATUS_FORMAT1: &str = concat!(
     "#[align=left range=left #{E:status-left-style}]",
     "#[push-default]",
     "#{T;=/#{status-left-length}:status-left}",
@@ -143,24 +142,17 @@ pub const OPTIONS_TABLE_STATUS_FORMAT1: *const u8 = concat!(
     "#[push-default]",
     "#{T;=/#{status-right-length}:status-right}",
     "#[pop-default]",
-    "#[norange default]\0"
-)
-.as_ptr()
-.cast();
+    "#[norange default]"
+);
 
-#[expect(clippy::disallowed_methods)]
-pub const OPTIONS_TABLE_STATUS_FORMAT2: *const u8 = concat!(
+/// Second status line format, the pane list.
+pub const OPTIONS_TABLE_STATUS_FORMAT2: &str = concat!(
     "#[align=centre]#{P:#{?pane_active,#[reverse],}",
-    "#{pane_index}[#{pane_width}x#{pane_height}]#[default] }\0"
-)
-.as_ptr()
-.cast();
+    "#{pane_index}[#{pane_width}x#{pane_height}]#[default] }"
+);
 
-pub static mut OPTIONS_TABLE_STATUS_FORMAT_DEFAULT: [*const u8; 3] = [
-    OPTIONS_TABLE_STATUS_FORMAT1,
-    OPTIONS_TABLE_STATUS_FORMAT2,
-    null(),
-];
+/// Default of status-format.
+pub const OPTIONS_TABLE_STATUS_FORMAT_DEFAULT: &[&str] = &[OPTIONS_TABLE_STATUS_FORMAT1, OPTIONS_TABLE_STATUS_FORMAT2];
 
 // Helpers for hook options.
 macro_rules! options_table_hook {
@@ -766,7 +758,7 @@ pub static OPTIONS_TABLE: [options_table_entry; 190] = [
         type_: options_table_type::OPTIONS_TABLE_STRING,
         scope: OPTIONS_TABLE_SESSION,
         flags: OPTIONS_TABLE_IS_ARRAY,
-        default_arr: &raw const OPTIONS_TABLE_STATUS_FORMAT_DEFAULT as *const *const u8,
+        default_arr: Some(OPTIONS_TABLE_STATUS_FORMAT_DEFAULT),
         text: c!(
             "Formats for the status lines. Each array member is the format for one status line. The default status line is made up of several components which may be configured individually with other options such as 'status-left'."
         ),

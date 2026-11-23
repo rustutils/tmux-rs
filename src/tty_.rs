@@ -18,7 +18,10 @@ use crate::colour_split_rgb;
 use crate::compat::b64::b64_ntop;
 use crate::options_::*;
 
-static mut TTY_LOG_FD: i32 = -1;
+thread_local! {
+    /// The file all terminal output is copied to, with -vv.
+    static TTY_LOG: std::cell::RefCell<Option<std::fs::File>> = const { std::cell::RefCell::new(None) };
+}
 
 #[inline]
 unsafe fn tty_use_margin(tty: *const tty) -> bool {
@@ -46,27 +49,19 @@ unsafe fn TTY_BLOCK_STOP(tty: *const tty) -> u32 {
     unsafe { 1 + ((*tty).sx * (*tty).sy) / 8 }
 }
 
-pub unsafe fn tty_create_log() {
-    unsafe {
-        use std::os::fd::IntoRawFd;
-        use std::os::unix::fs::OpenOptionsExt;
+/// Open tmux-out-PID.log and copy all terminal output to it from now on.
+/// The file is closed on exec, as in C.
+pub fn tty_create_log() {
+    use std::os::unix::fs::OpenOptionsExt;
 
-        if let Ok(file) = std::fs::File::options()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o644)
-            .open(format!("tmux-out-{}.log", std::process::id()))
-        {
-            TTY_LOG_FD = file.into_raw_fd();
-        } else {
-            TTY_LOG_FD = -1;
-        }
-
-        if TTY_LOG_FD != -1 && libc::fcntl(TTY_LOG_FD, libc::F_SETFD, libc::FD_CLOEXEC) == -1 {
-            fatal("fcntl failed");
-        }
-    }
+    let file = std::fs::File::options()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o644)
+        .open(format!("tmux-out-{}.log", std::process::id()))
+        .ok();
+    TTY_LOG.set(file);
 }
 
 pub unsafe fn tty_init(tty: *mut tty, c: *mut client) -> i32 {
@@ -677,9 +672,11 @@ pub unsafe fn tty_add(tty: *mut tty, buf: *const u8, len: usize) {
         // log_debug("%s: %.*s", (*c).name, (int)len, buf);
         (*c).written += len;
 
-        if TTY_LOG_FD != -1 {
-            libc::write(TTY_LOG_FD, buf.cast(), len);
-        }
+        TTY_LOG.with_borrow_mut(|log| {
+            if let Some(log) = log {
+                _ = std::io::Write::write(log, std::slice::from_raw_parts(buf, len));
+            }
+        });
         if (*tty).flags.intersects(tty_flags::TTY_STARTED) {
             tty_arm_write(tty, (*c).id);
         }

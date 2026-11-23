@@ -177,7 +177,7 @@ pub unsafe fn proc_start(name: &CStr) -> *mut tmuxproc {
     unsafe {
         log_open(name);
         let name: *const u8 = name.as_ptr().cast();
-        setproctitle_(c"%s (%s)".as_ptr().cast(), name, SOCKET_PATH);
+        setproctitle_(c"%s (%s)".as_ptr().cast(), name, socket_path().as_ptr());
 
         let mut u = MaybeUninit::<utsname>::uninit();
         if uname(u.as_mut_ptr()) < 0 {
@@ -190,7 +190,7 @@ pub unsafe fn proc_start(name: &CStr) -> *mut tmuxproc {
             _s(name),
             std::process::id(),
             getversion(),
-            _s(SOCKET_PATH),
+            socket_path().to_string_lossy(),
             PROTOCOL_VERSION,
         );
         log_debug!(

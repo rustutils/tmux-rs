@@ -2398,7 +2398,7 @@ pub unsafe fn format_cb_session_windows(ft: &format_tree) -> format_table_type {
 
 /// Callback for `socket_path`.
 pub unsafe fn format_cb_socket_path(_ft: &format_tree) -> format_table_type {
-    unsafe { format!("{}", _s(SOCKET_PATH)).into() }
+    socket_path().to_string_lossy().into_owned().into()
 }
 
 /// Callback for version.
@@ -2823,7 +2823,7 @@ pub unsafe fn format_cb_session_last_attached(ft: &format_tree) -> format_table_
 
 /// Callback for `start_time`.
 pub unsafe fn format_cb_start_time(_ft: &format_tree) -> format_table_type {
-    format_table_type::Time(unsafe { START_TIME })
+    format_table_type::Time(START_TIME.get().copied().unwrap_or(timeval { tv_sec: 0, tv_usec: 0 }))
 }
 
 /// Callback for `window_activity`.

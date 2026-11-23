@@ -231,7 +231,7 @@ pub unsafe extern "C-unwind" fn client_main(
         let mut ncaps: u32 = 0;
         let values: Vec<args_value>;
 
-        if !SHELL_COMMAND.is_null() {
+        if shell_command().is_some() {
             msg = msgtype::MSG_SHELL;
             flags |= client_flag::STARTSERVER;
         } else if argc == 0 {
@@ -273,20 +273,20 @@ pub unsafe extern "C-unwind" fn client_main(
             if systemd_activated() != 0 {
                 fd = server_start(CLIENT_PROC, flags, base, 0, null_mut());
             } else {
-                fd = client_connect(base, SOCKET_PATH, CLIENT_FLAGS);
+                fd = client_connect(base, socket_path().as_ptr().cast(), CLIENT_FLAGS);
             }
         }
         #[cfg(not(feature = "systemd"))]
         {
-            fd = client_connect(base, SOCKET_PATH, CLIENT_FLAGS);
+            fd = client_connect(base, socket_path().as_ptr().cast(), CLIENT_FLAGS);
         }
         if fd == -1 {
             if errno!() == ECONNREFUSED {
-                eprintln!("no server running on {}", _s(SOCKET_PATH));
+                eprintln!("no server running on {}", socket_path().to_string_lossy());
             } else {
                 eprintln!(
                     "error connecting to {} ({})",
-                    _s(SOCKET_PATH),
+                    socket_path().to_string_lossy(),
                     strerror(errno!())
                 );
             }
@@ -327,8 +327,8 @@ pub unsafe extern "C-unwind" fn client_main(
             return 1;
         }
 
-        if PTM_FD != -1 {
-            close(PTM_FD);
+        if ptm_fd() != -1 {
+            close(ptm_fd());
         }
         options_free(GLOBAL_OPTIONS);
         options_free(GLOBAL_S_OPTIONS);
@@ -839,7 +839,7 @@ unsafe fn client_dispatch_wait(imsg: *mut imsg) {
                     fatalx("bad MSG_SHELL string");
                 }
 
-                client_exec(data, SHELL_COMMAND);
+                client_exec(data, shell_command().map_or(null_mut(), |c| c.as_ptr().cast_mut().cast()));
             }
             msgtype::MSG_DETACH | msgtype::MSG_DETACHKILL => {
                 proc_send(CLIENT_PEER, msgtype::MSG_EXITING, -1, null_mut(), 0);

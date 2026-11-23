@@ -448,7 +448,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
 
             // Fork the new process.
             (*new_wp).pid = fdforkpty(
-                PTM_FD,
+                ptm_fd(),
                 &raw mut (*new_wp).fd,
                 (*new_wp).tty.as_mut_ptr(),
                 null_mut(),

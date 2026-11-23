@@ -19,23 +19,22 @@ use crate::options_::options_get_number_;
 // Entry in the key tree.
 pub struct input_key_entry {
     pub key: key_code,
-    pub data: *const u8,
+    pub data: &'static CStr,
 }
 
 impl input_key_entry {
     const fn new(key: key_code, data: &'static CStr) -> Self {
-        Self {
-            key,
-            data: data.as_ptr().cast(),
-        }
+        Self { key, data }
     }
 }
 
-static mut INPUT_KEY_TREE: BTreeMap<key_code, input_key_entry> = BTreeMap::new();
+/// Output sequences by key, built once from [`INPUT_KEY_DEFAULTS`].
+static INPUT_KEY_TREE: std::sync::LazyLock<BTreeMap<key_code, CString>> =
+    std::sync::LazyLock::new(input_key_build_tree);
 
-const INPUT_KEY_DEFAULTS_LEN: usize = 83;
-
-static mut INPUT_KEY_DEFAULTS: [input_key_entry; 83] = [
+/// The keys tmux sends sequences for. Keys with `KEYC_BUILD_MODIFIERS` stand
+/// for each modifier combination, with the `_` replaced by its number.
+static INPUT_KEY_DEFAULTS: [input_key_entry; 83] = [
     // Paste keys.
     input_key_entry::new(keyc::KEYC_PASTE_START as u64, c"\x1b[200~"),
     input_key_entry::new(keyc::KEYC_PASTE_END as u64, c"\x1b[201~"),
@@ -138,13 +137,9 @@ static INPUT_KEY_MODIFIERS: [key_code; 9] = [
     KEYC_SHIFT | KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL,
 ];
 
-/// Look for key in tree.
-pub unsafe fn input_key_get(key: key_code) -> *mut input_key_entry {
-    unsafe {
-        (*(&raw mut INPUT_KEY_TREE))
-            .get_mut(&key)
-            .map_or(null_mut(), |e| e as *mut input_key_entry)
-    }
+/// The output sequence for `key`, if it has one.
+pub fn input_key_get(key: key_code) -> Option<&'static CStr> {
+    INPUT_KEY_TREE.get(&key).map(CString::as_c_str)
 }
 
 /// Append `c` to `dst` as one byte, or as two bytes UTF-8 style if it is
@@ -158,45 +153,38 @@ pub fn input_key_split2(c: u32, dst: &mut Vec<u8>) {
     }
 }
 
-#[expect(clippy::needless_range_loop)]
-/// Build input key tree.
-pub unsafe extern "C-unwind" fn input_key_build() {
-    unsafe {
-        let tree = &mut *(&raw mut INPUT_KEY_TREE);
-        for i in 0..INPUT_KEY_DEFAULTS_LEN {
-            let ike = &INPUT_KEY_DEFAULTS[i];
-            if !ike.key & KEYC_BUILD_MODIFIERS != 0 {
-                tree.insert(ike.key, input_key_entry {
-                    key: ike.key,
-                    data: ike.data,
-                });
-                continue;
-            }
-
-            for (j, input_key_modifiers_j) in
-                INPUT_KEY_MODIFIERS.iter().copied().enumerate().skip(2)
-            {
-                let key = ike.key & !KEYC_BUILD_MODIFIERS;
-                let data = xstrdup(ike.data).as_ptr();
-                *data.add(libc::strcspn(data, c!("_"))) = b'0' + j as u8;
-
-                tree.insert(key | input_key_modifiers_j, input_key_entry {
-                    key: key | input_key_modifiers_j,
-                    data,
-                });
-            }
+/// Build the key tree from the defaults.
+fn input_key_build_tree() -> BTreeMap<key_code, CString> {
+    let mut tree = BTreeMap::new();
+    for ike in &INPUT_KEY_DEFAULTS {
+        if ike.key & KEYC_BUILD_MODIFIERS == 0 {
+            tree.insert(ike.key, ike.data.to_owned());
+            continue;
         }
 
-        for ike in tree.values() {
-            log_debug!(
-                "{}:{} : 0x{:x} ({}) is {}",
-                file!(),
-                line!(),
-                ike.key,
-                key_string_lookup_key(ike.key, 1),
-                _s(ike.data)
-            );
+        let key = ike.key & !KEYC_BUILD_MODIFIERS;
+        for (j, modifiers) in INPUT_KEY_MODIFIERS.iter().copied().enumerate().skip(2) {
+            let mut data = ike.data.to_bytes().to_vec();
+            if let Some(underscore) = data.iter().position(|&c| c == b'_') {
+                data[underscore] = b'0' + j as u8;
+            }
+            tree.insert(key | modifiers, CString::new(data).expect("no NUL in a key sequence"));
         }
+    }
+    tree
+}
+
+/// Build the input key tree now and log it.
+pub fn input_key_build() {
+    for (key, data) in INPUT_KEY_TREE.iter() {
+        log_debug!(
+            "{}:{} : 0x{:x} ({}) is {}",
+            file!(),
+            line!(),
+            key,
+            key_string_lookup_key(*key, 1),
+            data.to_string_lossy()
+        );
     }
 }
 
@@ -407,7 +395,7 @@ pub unsafe fn input_key_mode1(bev: *mut evbuffer, key: key_code) -> i32 {
 pub unsafe fn input_key(s: *mut screen, bev: *mut evbuffer, mut key: key_code) -> i32 {
     let __func__ = c!("input_key");
     unsafe {
-        let mut ike: *mut input_key_entry = null_mut();
+        let mut ike: Option<&CStr> = None;
         let mut ud: Utf8Data = zeroed();
 
         // Mouse keys need a pane.
@@ -470,24 +458,24 @@ pub unsafe fn input_key(s: *mut screen, bev: *mut evbuffer, mut key: key_code) -
         if !(*s).mode.intersects(mode_flag::MODE_KCURSOR) {
             key &= !KEYC_CURSOR;
         }
-        if ike.is_null() {
+        if ike.is_none() {
             ike = input_key_get(key);
         }
-        if ike.is_null() && (key & KEYC_META != 0) && (!key & KEYC_IMPLIED_META != 0) {
+        if ike.is_none() && (key & KEYC_META != 0) && (!key & KEYC_IMPLIED_META != 0) {
             ike = input_key_get(key & !KEYC_META);
         }
-        if ike.is_null() && (key & KEYC_CURSOR != 0) {
+        if ike.is_none() && (key & KEYC_CURSOR != 0) {
             ike = input_key_get(key & !KEYC_CURSOR);
         }
-        if ike.is_null() && (key & KEYC_KEYPAD != 0) {
+        if ike.is_none() && (key & KEYC_KEYPAD != 0) {
             ike = input_key_get(key & !KEYC_KEYPAD);
         }
-        if !ike.is_null() {
+        if let Some(data) = ike {
             log_debug!(
                 "{}: found key 0x{}: \"{}\"",
                 _s(__func__),
                 key,
-                _s((*ike).data)
+                data.to_string_lossy()
             );
             if (key == keyc::KEYC_PASTE_START as u64 || key == keyc::KEYC_PASTE_END as u64)
                 && !(*s).mode.intersects(mode_flag::MODE_BRACKETPASTE)
@@ -497,7 +485,7 @@ pub unsafe fn input_key(s: *mut screen, bev: *mut evbuffer, mut key: key_code) -
             if (key & KEYC_META != 0) && (!key & KEYC_IMPLIED_META != 0) {
                 input_key_write(__func__, bev, c!("\x1b"), 1);
             }
-            input_key_write(__func__, bev, (*ike).data, strlen((*ike).data));
+            input_key_write(__func__, bev, data.as_ptr().cast(), data.count_bytes());
             return 0;
         }
 
@@ -693,5 +681,17 @@ mod tests {
         assert_eq!(mouse(m, 0, b'M', 1, 2).unwrap(), b"\x1b[<0;2;3M");
         // Without an SGR event from the terminal the legacy form is used.
         assert_eq!(mouse(m, 0, b' ', 1, 2).unwrap(), b"\x1b[M\x20\x22\x23");
+    }
+
+    #[test]
+    fn key_tree_has_defaults_and_modifier_forms() {
+        assert_eq!(input_key_get(keyc::KEYC_F1 as u64), Some(c"\x1bOP"));
+        assert_eq!(input_key_get(keyc::KEYC_IC as u64 | KEYC_SHIFT), Some(c"\x1b[2;2~"));
+        assert_eq!(
+            input_key_get(keyc::KEYC_DC as u64 | KEYC_SHIFT | KEYC_META | KEYC_IMPLIED_META | KEYC_CTRL),
+            Some(c"\x1b[3;8~")
+        );
+        // The template itself is not a key.
+        assert_eq!(input_key_get(keyc::KEYC_IC as u64 | KEYC_BUILD_MODIFIERS), None);
     }
 }

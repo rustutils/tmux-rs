@@ -262,7 +262,7 @@ pub unsafe fn environ_for_session(s: *mut session, no_term: c_int) -> *mut Envir
             c!("TMUX"),
             environ_flags::empty(),
             "{},{},{}",
-            _s(SOCKET_PATH),
+            socket_path().to_string_lossy(),
             std::process::id(),
             idx,
         );
