@@ -766,7 +766,10 @@ pub unsafe fn cmdq_fire_callback(item: *mut cmdq_item) -> cmd_retval {
 
 pub unsafe fn cmdq_next(c: *mut client) -> u32 {
     let __func__ = "cmdq_next";
-    static mut NUMBER: u32 = 0;
+    thread_local! {
+        /// Number of the last command item run, for logs.
+        static NUMBER: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    }
     let mut items = 0;
     let mut retval: cmd_retval;
 
@@ -807,8 +810,8 @@ pub unsafe fn cmdq_next(c: *mut client) -> u32 {
 
                 if !(*item).flags & CMDQ_FIRED != 0 {
                     (*item).time = libc::time(null_mut());
-                    NUMBER += 1;
-                    (*item).number = NUMBER;
+                    NUMBER.set(NUMBER.get() + 1);
+                    (*item).number = NUMBER.get();
 
                     match (*item).type_ {
                         cmdq_type::CMDQ_COMMAND => {

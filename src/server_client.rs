@@ -2819,9 +2819,18 @@ pub unsafe fn server_client_check_exit(c: *mut client, force: bool) {
     }
 }
 
-/// Redraw timer callback.
-unsafe fn server_client_redraw_timer_fire() {
+thread_local! {
+    /// The timer that wakes the loop to retry a deferred redraw, while it is
+    /// pending.
+    static REDRAW_TIMER: RefCell<Option<TimerHandle>> = const { RefCell::new(None) };
+}
+
+/// Fired once the terminal had time to drain. It does nothing itself, the
+/// loop iteration it causes retries the redraw. Dropping the handle lets the
+/// next deferred redraw start the timer again.
+fn server_client_redraw_timer_fire() {
     log_debug!("redraw timer fired");
+    REDRAW_TIMER.take();
 }
 
 // Check if modes need to be updated. Only modes in the current window are
@@ -2851,7 +2860,6 @@ pub unsafe fn server_client_check_modes(c: *mut client) {
 
 /// Check for client redraws.
 pub unsafe fn server_client_check_redraw(c: *mut client) {
-    static mut EV: Option<TimerHandle> = None;
     unsafe {
         let s = client_get_session(c);
         let tty = &raw mut (*c).tty;
@@ -2892,12 +2900,10 @@ pub unsafe fn server_client_check_redraw(c: *mut client) {
         let left = (*tty).out.len();
         if left != 0 || (*tty).flags.intersects(tty_flags::TTY_BLOCK) {
             log_debug!("redraw deferred ({} left)", left);
-            if (*(&raw const EV)).is_none() {
+            if REDRAW_TIMER.with_borrow(Option::is_none) {
                 log_debug!("redraw timer started");
-                (*(&raw mut EV)) = timer_add(
-                    Duration::from_micros(1000),
-                    Box::new(|| server_client_redraw_timer_fire()),
-                );
+                let timer = timer_add(Duration::from_micros(1000), Box::new(server_client_redraw_timer_fire));
+                REDRAW_TIMER.set(timer);
             }
             (*c).flags |= client_flags;
             return;

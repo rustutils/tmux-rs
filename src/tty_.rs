@@ -1666,43 +1666,36 @@ pub unsafe fn tty_draw_pane(tty: *mut tty, ctx: *const tty_ctx, py: u32) {
     }
 }
 
-pub unsafe fn tty_check_codeset(tty: *mut tty, gc: *const GridCell) -> *const GridCell {
-    static mut NEW: GridCell = unsafe { zeroed() };
+/// The cell to draw for `gc` on this terminal: the cell itself if the
+/// terminal can show it, otherwise an ACS character or underscores.
+///
+/// # Safety
+/// `tty` (with its client) and `gc` must be valid.
+pub unsafe fn tty_check_codeset(tty: *mut tty, gc: *const GridCell) -> GridCell {
     unsafe {
         // Characters less than 0x7f are always fine, no matter what.
         if (*gc).data.size == 1 && (*gc).data.data[0] < 0x7f {
-            return gc;
+            return *gc;
         }
 
         // UTF-8 terminal and a UTF-8 character - fine.
         if (*(*tty).client).flags.intersects(client_flag::UTF8) {
-            return gc;
+            return *gc;
         }
-        memcpy__(&raw mut NEW, gc);
+        let mut new = *gc;
 
         // See if this can be mapped to an ACS character.
-        let c = tty_acs_reverse_get(
-            tty,
-            (&raw const (*gc).data.data).cast(),
-            (*gc).data.size as usize,
-        );
+        let c = tty_acs_reverse_get(tty, (&raw const (*gc).data.data).cast(), (*gc).data.size as usize);
         if c != -1 {
-            NEW.data = Utf8Data::single(c as u8);
-            NEW.attr |= GridAttr::GRID_ATTR_CHARSET;
-            return &raw const NEW;
+            new.data = Utf8Data::single(c as u8);
+            new.attr |= GridAttr::GRID_ATTR_CHARSET;
+            return new;
         }
 
         // Replace by the right number of underscores.
-        NEW.data.size = (*gc).data.width;
-        if NEW.data.size > UTF8_SIZE as u8 {
-            NEW.data.size = UTF8_SIZE as u8;
-        }
-        libc::memset(
-            (&raw mut NEW.data.data).cast(),
-            b'_' as i32,
-            NEW.data.size as usize,
-        );
-        &raw const NEW
+        new.data.size = (*gc).data.width.min(UTF8_SIZE as u8);
+        new.data.data[..new.data.size as usize].fill(b'_');
+        new
     }
 }
 
@@ -1833,7 +1826,8 @@ pub unsafe fn tty_draw_line(
 
         for i in 0..sx {
             gc = (*gd).view_get_cell(px + i, py);
-            let gcp = tty_check_codeset(tty, &gc);
+            let cell = tty_check_codeset(tty, &gc);
+            let gcp: *const GridCell = &raw const cell;
             if len != 0
                 && (!tty_check_overlay(tty, atx + ux + width, aty)
                     || (*gcp).attr.intersects(GridAttr::GRID_ATTR_CHARSET)
@@ -2867,7 +2861,8 @@ pub unsafe fn tty_cell(
         }
 
         // Check the output codeset and apply attributes.
-        let gcp = tty_check_codeset(tty, gc);
+        let cell = tty_check_codeset(tty, gc);
+        let gcp: *const GridCell = &raw const cell;
         tty_attributes(tty, gcp, defaults, palette, hl);
 
         // If it is a single character, write with putc to handle ACS.

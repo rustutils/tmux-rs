@@ -398,7 +398,10 @@ unsafe fn server_send_exit() {
 }
 
 pub unsafe fn server_update_socket() {
-    static mut LAST: c_int = -1;
+    thread_local! {
+        /// Whether a session was attached at the last update, -1 at first.
+        static LAST: std::cell::Cell<c_int> = const { std::cell::Cell::new(-1) };
+    }
     unsafe {
         let mut sb: stat = zeroed(); // TODO remove unecessary init
 
@@ -410,8 +413,8 @@ pub unsafe fn server_update_socket() {
             }
         }
 
-        if n != LAST {
-            LAST = n;
+        if n != LAST.get() {
+            LAST.set(n);
 
             if stat(SOCKET_PATH.cast(), &raw mut sb) != 0 {
                 return;
