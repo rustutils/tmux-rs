@@ -119,6 +119,7 @@
 84 src/libc.rs
 11 src/main.rs
 24 src/menu_.rs
+2 src/message_log/mod.rs
 95 src/mode_tree.rs
 11 src/names.rs
 24 src/notify.rs
@@ -131,7 +132,7 @@
 75 src/screen_.rs
 38 src/screen_redraw.rs
 138 src/screen_write.rs
-40 src/server.rs
+38 src/server.rs
 18 src/server_acl.rs
 124 src/server_client.rs
 53 src/server_fn.rs

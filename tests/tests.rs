@@ -11,6 +11,7 @@ pub mod harness;
 mod input_keys;
 mod key_bindings;
 mod layout;
+mod messages;
 mod mouse;
 mod options;
 mod pane;

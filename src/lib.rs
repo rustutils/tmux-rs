@@ -75,6 +75,7 @@ cfg_pub_mods! {
     mod layout;
     mod layout_custom;
     mod layout_set;
+    mod message_log;
     mod menu_;
     mod mode_tree;
     mod names;
@@ -172,6 +173,7 @@ use crate::{
     layout_custom::*,
     layout_set::*,
     menu_::*,
+    message_log::*,
     mode_tree::*,
     names::*,
     notify::*,
@@ -1920,14 +1922,6 @@ struct tty_ctx {
     wsx: u32,
     wsy: u32,
 }
-
-/// Saved message entry for the server message log.
-struct MessageEntry {
-    msg: String,
-    msg_num: u32,
-    msg_time: timeval,
-}
-type MessageLog = Vec<MessageEntry>;
 
 /// Argument value (tagged union as Rust enum).
 ///

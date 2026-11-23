@@ -36,11 +36,14 @@
 
 use std::cell::RefCell;
 
+use crate::message_log::MessageLog;
 use crate::paste::PasteStore;
 
 thread_local! {
     /// All paste buffers of this server.
     static PASTE: RefCell<PasteStore> = RefCell::new(PasteStore::new());
+    /// The server message log.
+    static MESSAGE_LOG: RefCell<MessageLog> = RefCell::new(MessageLog::new());
 }
 
 /// Run `f` with the paste buffer store.
@@ -49,4 +52,12 @@ thread_local! {
 /// If `f` reaches the paste store again (see the module rules).
 pub fn with_paste<R>(f: impl FnOnce(&mut PasteStore) -> R) -> R {
     PASTE.with_borrow_mut(f)
+}
+
+/// Run `f` with the server message log.
+///
+/// # Panics
+/// If `f` reaches the message log again (see the module rules).
+pub fn with_message_log<R>(f: impl FnOnce(&mut MessageLog) -> R) -> R {
+    MESSAGE_LOG.with_borrow_mut(f)
 }

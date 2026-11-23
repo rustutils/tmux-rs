@@ -58,8 +58,6 @@ pub static mut SERVER_EV_ACCEPT_TIMER: Option<TimerHandle> = None;
 /// Hourly tidy timer.
 pub static mut SERVER_EV_TIDY: Option<TimerHandle> = None;
 pub static mut MARKED_PANE: cmd_find_state = unsafe { zeroed() };
-pub static mut MESSAGE_NEXT: c_uint = 0;
-pub static mut MESSAGE_LOG: MessageLog = Vec::new();
 pub static mut CURRENT_TIME: time_t = unsafe { zeroed() };
 
 pub unsafe fn server_set_marked(s: *mut session, wl: *mut winlink, wp: *mut window_pane) {
@@ -262,7 +260,7 @@ pub unsafe fn server_start(
         // CLIENT_REGISTRY is already initialized as BTreeMap::new() in the static.
         SESSIONS = BTreeMap::new();
         key_bindings_init();
-        MESSAGE_LOG = Vec::new();
+        message_log_reset();
         let mut start_time: timeval = zeroed();
         gettimeofday(&raw mut start_time, null_mut());
         _ = START_TIME.set(start_time);
@@ -603,34 +601,3 @@ unsafe fn server_child_stopped(pid: pid_t, status: i32) {
     }
 }
 
-macro_rules! server_add_message {
-   ($fmt:literal $(, $args:expr)* $(,)?) => {
-        crate::server::server_add_message_(format_args!($fmt $(, $args)*))
-    };
-}
-pub(crate) use server_add_message;
-pub unsafe fn server_add_message_(args: std::fmt::Arguments) {
-    unsafe {
-        let s = args.to_string();
-        log_debug!("message: {}", s);
-
-        let mut msg_entry = MessageEntry {
-            msg: s,
-            msg_num: MESSAGE_NEXT + 1,
-            msg_time: zeroed(),
-        };
-        gettimeofday(&raw mut msg_entry.msg_time, null_mut());
-        MESSAGE_NEXT += 1;
-
-        (*(&raw mut MESSAGE_LOG)).push(msg_entry);
-
-        let limit = options_get_number_(GLOBAL_OPTIONS, "message-limit") as u32;
-        // Evict old messages from the front. Drop handles String cleanup
-        while let Some(first) = (*(&raw mut MESSAGE_LOG)).first() {
-            if first.msg_num + limit >= MESSAGE_NEXT {
-                break;
-            }
-            (*(&raw mut MESSAGE_LOG)).remove(0);
-        }
-    }
-}

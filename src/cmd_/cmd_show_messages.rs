@@ -22,7 +22,9 @@ pub static CMD_SHOW_MESSAGES_ENTRY: cmd_entry = cmd_entry {
     args: args_parse::new("JTt:", 0, 0, None),
     usage: "[-JT] [-t target-client]",
 
-    flags: cmd_flag::CMD_AFTERHOOK.union(cmd_flag::CMD_CLIENT_TFLAG),
+    flags: cmd_flag::CMD_AFTERHOOK
+        .union(cmd_flag::CMD_CLIENT_TFLAG)
+        .union(cmd_flag::CMD_CLIENT_CANFAIL),
     exec: cmd_show_messages_exec,
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
@@ -40,7 +42,7 @@ unsafe fn cmd_show_messages_terminals(
         let mut n = 0u32;
         for term_box in &(*(&raw mut TTY_TERMS)) {
             let term: *mut tty_term = &raw const **term_box as *mut tty_term;
-            if args_has(args, 't') && term != (*tc).tty.term {
+            if args_has(args, 't') && !tc.is_null() && term != (*tc).tty.term {
                 continue;
             }
             if blank != 0 {
@@ -88,10 +90,11 @@ unsafe fn cmd_show_messages_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
 
         let ft = format_create_from_target(item);
 
-        for msg in (*(&raw mut crate::server::MESSAGE_LOG)).iter_mut().rev() {
-            format_add!(ft, "message_text", "{}", msg.msg);
-            format_add!(ft, "message_number", "{}", msg.msg_num,);
-            format_add_tv(ft, c!("message_time"), &raw mut msg.msg_time);
+        for msg in message_log_list() {
+            format_add!(ft, "message_text", "{}", msg.text());
+            format_add!(ft, "message_number", "{}", msg.number());
+            let tv = message_timeval(&msg);
+            format_add_tv(ft, c!("message_time"), &raw const tv);
 
             let s = format_expand(ft, SHOW_MESSAGES_TEMPLATE);
             cmdq_print!(item, "{}", _s(s));
