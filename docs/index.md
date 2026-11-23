@@ -118,7 +118,7 @@ I spent quite a lot of time manually refactoring the shitty Rust code to less sh
                                       └───────────────┘                                     
 ```
 
-The most important part of this rewrite was first developing a solid understanding of how the project was built. For tmux this is `autotools`. I figured out where to add/remove files in `autogen.sh` and how to modify the generated `Makefile` to link in a static library created by my rust crate using the `crate-type = "staticlib"` option.
+The most important part of this rewrite was first developing a solid understanding of how the project was built. For tmux this is `autotools`. I figured out where to add and remove files in `autogen.sh` and how to modify the generated `Makefile` to link in a static library created by my rust crate using the `crate-type = "staticlib"` option.
 
 This did mean my build process wasn't as simple as just running `cargo build`. I wrote a small `build.sh` script which would invoke cargo, then run `make`. This worked for a while, but any time I completed translating a file I had to reconfigure and modify the `Makefile`.
 
