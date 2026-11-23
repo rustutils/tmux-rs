@@ -613,8 +613,12 @@ impl PtyClient {
 
 impl Drop for PtyClient {
     fn drop(&mut self) {
-        // Send q to exit any mode, then detach
-        let () = self.write(b"\x02d"); // C-b d (prefix, then detach)
+        // Detach with C-b d. The client may have exited already, and then
+        // macOS fails the write with EIO where Linux buffers it, so the
+        // result is ignored.
+        if let Ok(master) = self.master.try_clone() {
+            let _ = std::fs::File::from(master).write_all(b"\x02d");
+        }
         std::thread::sleep(Duration::from_millis(100));
         let _ = self.child.kill();
         let _ = self.child.wait();
