@@ -2,14 +2,14 @@
 default:
   @just --list
 
-# run unit and integration tests; fails if any server panics occur
-test:
+# run the linters, then unit and integration tests; fails if any server panics occur
+test: check
   #!/usr/bin/env bash
   set -euo pipefail
   # Clear any stale server panic files before starting.
   rm -f server-panic-*.txt
-  # run all (unit and integration) tests
-  cargo nextest run
+  # run all (unit and integration) tests of every crate
+  cargo nextest run --workspace
   # run integration tests against system tmux
   TMUX_SERVER_BIN=/usr/bin/tmux TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests
   TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests
@@ -72,8 +72,17 @@ asan:
 sanitizer:
   ASAN_OPTIONS=detect_leaks=0 RUSTFLAGS="-Zsanitizer=address" cargo +nightly test --target x86_64-unknown-linux-gnu --no-fail-fast -- --test-threads=1
 
+# count unsafe code: totals and the 30 files with the most
 progress:
-  @echo "$(rg unsafe | wc -l) unsafe, $(rg '\*mut' | wc -l) mut pointers"
+  @cargo run -q -p tmux-metrics
+
+# list functions with a safe signature that hide unsafe code
+false-safe:
+  @cargo run -q -p tmux-metrics -- false-safe
+
+# lower the per-file unsafe limits to the current counts (--allow-raise to raise)
+unsafe-limits *args:
+  @cargo run -q -p tmux-metrics -- limits {{args}}
 
 alias fmt := format
 alias lint := check

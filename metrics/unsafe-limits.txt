@@ -21,8 +21,7 @@
 18 event/src/backend/mod.rs
 6 event/src/buf.rs
 7 event/src/lib.rs
-67 grid/src/lib.rs
-21 grid/src/reader.rs
+48 grid/src/lib.rs
 4 log/src/lib.rs
 5 protocol/src/compat.rs
 43 protocol/src/imsg.rs
