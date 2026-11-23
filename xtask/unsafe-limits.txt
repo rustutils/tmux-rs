@@ -137,9 +137,9 @@
 19 src/server_acl/mod.rs
 128 src/server_client.rs
 55 src/server_fn.rs
-79 src/session_.rs
+81 src/session_.rs
 24 src/sort_get.rs
-6 src/spawn.rs
+8 src/spawn.rs
 98 src/status.rs
 56 src/style_.rs
 24 src/tmux.rs
@@ -151,7 +151,7 @@
 5 src/utempter.rs
 21 src/utf8.rs
 10 src/utf8_combined.rs
-213 src/window_.rs
+215 src/window_.rs
 34 src/window_buffer.rs
 24 src/window_client.rs
 14 src/window_clock.rs

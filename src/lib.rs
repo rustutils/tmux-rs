@@ -1093,6 +1093,8 @@ bitflags::bitflags! {
         const PANE_EMPTY = 0x800;
         const PANE_STYLECHANGED = 0x1000;
         const PANE_UNSEENCHANGES = 0x2000;
+        /// pane-activity fired since the last redraw loop.
+        const PANE_ACTIVITY = 0x40000;
     }
 }
 

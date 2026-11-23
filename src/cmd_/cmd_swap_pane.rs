@@ -43,6 +43,8 @@ unsafe fn cmd_swap_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
         let dst_wp = (*target).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
         let mut src_w = winlink_window((*source).wl);
         let mut src_wp = (*source).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
+        let dst_idx = (*(*target).wl).idx;
+        let src_idx = (*(*source).wl).idx;
 
         if window_push_zoom(dst_w, false, args_has(args, 'Z')) {
             server_redraw_window(dst_w);
@@ -149,6 +151,10 @@ unsafe fn cmd_swap_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
             }
             server_redraw_window(src_w);
             server_redraw_window(dst_w);
+            if src_w != dst_w {
+                window_fire_pane_moved(src_wp, src_w, src_idx, dst_w, dst_idx);
+                window_fire_pane_moved(dst_wp, dst_w, dst_idx, src_w, src_idx);
+            }
             events_fire_window("window-layout-changed", src_w);
             if src_w != dst_w {
                 events_fire_window("window-layout-changed", dst_w);

@@ -239,3 +239,164 @@ fn user_hook_runs_its_command() {
     run(&tmux, &["set-hook", "-R", "@mine"]);
     assert_eq!(seen(&tmux), "ran");
 }
+
+#[test]
+fn window_created_and_closed() {
+    let tmux = server();
+    run(
+        &tmux,
+        &[
+            "set-hook",
+            "-g",
+            "window-created",
+            "set -gF @created '#{hook_window_name}'",
+        ],
+    );
+    run(
+        &tmux,
+        &[
+            "set-hook",
+            "-g",
+            "window-closed",
+            "set -gF @closed '#{hook_window_name}'",
+        ],
+    );
+    run(&tmux, &["new-window", "-d", "-n", "temp", "sleep 1000"]);
+    assert_eq!(tmux.wait_for("#{@created}", |v| !v.is_empty(), T), "temp");
+    run(&tmux, &["kill-window", "-t", "temp"]);
+    assert_eq!(tmux.wait_for("#{@closed}", |v| !v.is_empty(), T), "temp");
+}
+
+#[test]
+fn window_zoomed_and_unzoomed() {
+    let tmux = server();
+    run(&tmux, &["split-window", "-d", "sleep 1000"]);
+    run(
+        &tmux,
+        &["set-hook", "-g", "window-zoomed", "set -ga @zoom z"],
+    );
+    run(
+        &tmux,
+        &["set-hook", "-g", "window-unzoomed", "set -ga @zoom u"],
+    );
+    run(&tmux, &["resize-pane", "-Z"]);
+    tmux.wait_for("#{@zoom}", |v| v == "z", T);
+    run(&tmux, &["resize-pane", "-Z"]);
+    tmux.wait_for("#{@zoom}", |v| v == "zu", T);
+}
+
+#[test]
+fn pane_created_has_the_command() {
+    let tmux = server();
+    record(
+        &tmux,
+        "pane-created",
+        "#{hook_pane_command}|#{hook_created_empty}|#{hook_created_respawn}",
+    );
+    run(&tmux, &["split-window", "-d", "sleep 999"]);
+    assert_eq!(seen(&tmux), "\"sleep 999\"|0|0");
+}
+
+#[test]
+fn pane_moved_by_break_pane() {
+    let tmux = server();
+    run(&tmux, &["split-window", "-d", "sleep 1000"]);
+    let pane = tmux
+        .cmd()
+        .args(["display", "-p", "-t", ":.1", "#{pane_id}"])
+        .run()
+        .stdout_trimmed();
+    let old = tmux.query("#{window_id}");
+    record(
+        &tmux,
+        "pane-moved",
+        "#{hook_pane} #{hook_old_window} #{hook_old_window_index} #{hook_new_window_index}",
+    );
+    run(&tmux, &["break-pane", "-d", "-s", &pane]);
+    assert_eq!(seen(&tmux), format!("{pane} {old} 0 1"));
+}
+
+#[test]
+fn pane_resized_has_both_sizes() {
+    let tmux = server();
+    run(&tmux, &["split-window", "-h", "-d", "sleep 1000"]);
+    let pane = tmux.query("#{pane_id}");
+    let before = tmux.query("#{pane_width}");
+    // Both panes change size, collect every event.
+    run(
+        &tmux,
+        &[
+            "set-hook",
+            "-g",
+            "pane-resized",
+            "set -gaF @sizes '#{hook_pane}:#{hook_old_width}:#{hook_width},'",
+        ],
+    );
+    run(&tmux, &["resize-pane", "-x", "20"]);
+    let expected = format!("{pane}:{before}:20,");
+    let sizes = tmux.wait_for("#{@sizes}", |v| v.contains(&expected), T);
+    assert_eq!(sizes.matches(',').count(), 2, "{sizes}");
+}
+
+#[test]
+fn pane_bell_and_activity() {
+    let tmux = server();
+    run(&tmux, &["set-hook", "-g", "pane-bell", "set -ga @bell b"]);
+    run(
+        &tmux,
+        &["set-hook", "-g", "pane-activity", "set -g @activity yes"],
+    );
+    // A NUL is not a bell.
+    run(
+        &tmux,
+        &[
+            "new-window",
+            "-d",
+            "printf '\\000'; sleep 0.3; printf '\\007'; sleep 1000",
+        ],
+    );
+    tmux.wait_for("#{@activity}", |v| v == "yes", T);
+    tmux.wait_for("#{@bell}", |v| !v.is_empty(), T);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(tmux.query("#{@bell}"), "b");
+}
+
+#[test]
+fn marked_pane_changed() {
+    let tmux = server();
+    let pane = tmux.query("#{pane_id}");
+    record(
+        &tmux,
+        "marked-pane-changed",
+        "#{hook_pane} #{hook_new_pane} #{hook_marked}",
+    );
+    run(&tmux, &["select-pane", "-m"]);
+    assert_eq!(seen(&tmux), format!("{pane} {pane} 1"));
+}
+
+#[test]
+fn session_group_events() {
+    let tmux = server();
+    record(
+        &tmux,
+        "session-added-to-group",
+        "#{hook_session_name} #{hook_group} #{hook_group_size}",
+    );
+    run(&tmux, &["new-session", "-d", "-t", "main", "-s", "peer"]);
+    assert_eq!(seen(&tmux), "peer main 2");
+}
+
+#[test]
+fn client_created_and_closed() {
+    let tmux = server();
+    run(
+        &tmux,
+        &["set-hook", "-g", "client-created", "set -ga @clients c"],
+    );
+    run(
+        &tmux,
+        &["set-hook", "-g", "client-closed", "set -ga @clients x"],
+    );
+    tmux.control_mode("").assert_success();
+    tmux.wait_for("#{@clients}", |v| v == "cx", T);
+}

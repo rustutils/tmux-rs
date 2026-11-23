@@ -494,6 +494,9 @@ pub unsafe fn server_client_lost(c: *mut client) {
             server_client_attached_lost(c);
             events_fire_client("client-detached", c);
         }
+        if !(*c).name.is_null() && (*c).flags.intersects(client_flag::CONTROL | client_flag::TERMINAL) {
+            events_fire_client("client-closed", c);
+        }
 
         if (*c).flags.intersects(client_flag::CONTROL) {
             control_stop(c);
@@ -2342,7 +2345,7 @@ pub unsafe fn server_client_loop() {
                     server_client_check_pane_resize(wp);
                     server_client_check_pane_buffer(wp);
                 }
-                (*wp).flags &= !window_pane_flags::PANE_REDRAW;
+                (*wp).flags &= !(window_pane_flags::PANE_REDRAW | window_pane_flags::PANE_ACTIVITY);
             }
             check_window_name(w);
         }
@@ -3416,6 +3419,9 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) -
             }
             libc::close((*c).out_fd);
             (*c).out_fd = -1;
+        }
+        if (*c).flags.intersects(client_flag::CONTROL | client_flag::TERMINAL) {
+            events_fire_client("client-created", c);
         }
 
         // If this is the first client, load configuration files. Any later

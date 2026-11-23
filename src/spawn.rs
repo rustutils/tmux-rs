@@ -224,6 +224,47 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
     }
 }
 
+/// Fires pane-created, with the pane's command and directory and whether it
+/// was created empty or respawned.
+///
+/// # Safety
+/// `sc` must be a valid spawn context with a valid winlink, `wp` a valid
+/// pane in a valid window.
+unsafe fn spawn_fire_pane_created(sc: *mut spawn_context, wp: *mut window_pane) {
+    unsafe {
+        let wl = (*sc).wl;
+        let mut fs: cmd_find_state = zeroed();
+        cmd_find_from_winlink_pane(&raw mut fs, wl, wp, cmd_find_flags::empty());
+        let mut payload = crate::events::Payload::new();
+        payload.set_target(crate::events::payload_target(&raw const fs));
+        if let Some(s) = (*sc).s.and_then(|id| session_from_id(id)) {
+            payload.set("session", crate::events::payload_session(s));
+        }
+        if let Some(w) = (*wp).window.and_then(|id| window_from_id(id)) {
+            payload.set("window", crate::events::payload_window(w));
+        }
+        payload.set_int("window_index", (*wl).idx);
+        payload.set("pane", crate::events::payload_pane(wp));
+
+        let cmd = if (*wp).argc != 0 {
+            cmd_stringify_argv((*wp).argc, (*wp).argv)
+        } else {
+            String::new()
+        };
+        if !cmd.is_empty() {
+            payload.set_string("pane_command", cmd);
+        } else if let Some(shell) = &(*wp).shell {
+            payload.set_string("pane_command", shell.to_string_lossy());
+        }
+        if let Some(cwd) = &(*wp).cwd {
+            payload.set_string("pane_current_path", cwd.to_string_lossy());
+        }
+        payload.set_int("created_empty", (*sc).flags.intersects(SPAWN_EMPTY) as i32);
+        payload.set_int("created_respawn", (*sc).flags.intersects(SPAWN_RESPAWN) as i32);
+        crate::events::events_fire("pane-created", payload, null_mut());
+    }
+}
+
 pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>, String> {
     unsafe {
         let item = (*sc).item;
@@ -575,6 +616,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
         window_pane_set_event(new_wp);
 
         environ_free(child);
+        spawn_fire_pane_created(sc, new_wp);
 
         if (*sc).flags.intersects(SPAWN_RESPAWN) {
             return Ok(NonNull::new(new_wp).unwrap());

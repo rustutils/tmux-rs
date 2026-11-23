@@ -1130,6 +1130,10 @@ pub unsafe fn input_parse_buffer(wp: *mut window_pane, buf: *mut u8, len: usize)
         let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
 
         window_update_activity(NonNull::new(window_pane_window(wp)).unwrap());
+        if !(*wp).flags.intersects(window_pane_flags::PANE_ACTIVITY) {
+            (*wp).flags |= window_pane_flags::PANE_ACTIVITY;
+            events_fire_pane("pane-activity", wp);
+        }
         (*wp).flags |= window_pane_flags::PANE_CHANGED;
 
         // Flag new input while in a mode.
@@ -1413,8 +1417,10 @@ unsafe fn input_c0_dispatch(ictx: &mut input_ctx) -> i32 {
         let s = (*sctx).s;
 
         match ictx.ch as u8 {
-            NUL | BEL => {
+            NUL => {}
+            BEL => {
                 if !wp.is_null() {
+                    events_fire_pane("pane-bell", wp);
                     alerts_queue(NonNull::new(window_pane_window(wp)).unwrap(), window_flag::BELL);
                 }
             }

@@ -44,6 +44,8 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         let dst_s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         let wp = (*source).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
         let mut w = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
+        let old_w = w;
+        let old_idx = (*wl).idx;
 
         let name: *mut u8;
         let cp: *mut u8;
@@ -80,6 +82,10 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
                 options_set_number((*w).options, "automatic-rename", 0);
             }
             server_unlink_window(src_s, wl);
+            let Some(new_wl) = winlink_find_by_window(&raw mut (*dst_s).windows, w) else {
+                return cmd_retval::CMD_RETURN_ERROR;
+            };
+            window_fire_pane_moved(wp, old_w, old_idx, w, (*new_wl.as_ptr()).idx);
             return cmd_retval::CMD_RETURN_NORMAL;
         }
         if idx != -1 && !winlink_find_by_index(&raw mut (*dst_s).windows, idx).is_null() {
@@ -127,6 +133,8 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         };
+        events_fire_window("window-created", w);
+        window_fire_pane_moved(wp, old_w, old_idx, w, (*wl).idx);
         if !args_has(args, 'd') {
             session_select(dst_s, (*wl).idx);
             cmd_find_from_session(current, dst_s, cmd_find_flags::empty());

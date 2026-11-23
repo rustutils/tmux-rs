@@ -657,10 +657,24 @@ pub unsafe fn session_group_new(name: &str) -> *mut session_group {
 }
 
 /// Add a session to a session group.
+/// Fires a session group event, with the group's name and size.
+///
+/// # Safety
+/// `sg` and `s` must be valid.
+unsafe fn session_group_fire(name: &str, sg: *mut session_group, s: *mut session) {
+    unsafe {
+        let mut payload = crate::events::payload_for_session(s);
+        payload.set_string("group", &*(*sg).name);
+        payload.set_uint("group_size", session_group_count(&*sg));
+        crate::events::events_fire(name, payload, null_mut());
+    }
+}
+
 pub unsafe fn session_group_add(sg: *mut session_group, s: *mut session) {
     unsafe {
         if session_group_contains(s).is_null() {
             (*sg).sessions.push(s);
+            session_group_fire("session-added-to-group", sg, s);
         }
     }
 }
@@ -673,6 +687,7 @@ pub unsafe fn session_group_remove(s: *mut session) {
         if sg.is_null() {
             return;
         }
+        session_group_fire("session-removed-from-group", sg, s);
         (*sg).sessions.retain(|&p| p != s);
         if (*sg).sessions.is_empty() {
             let name = (*sg).name.to_string();

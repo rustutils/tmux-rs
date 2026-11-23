@@ -140,6 +140,25 @@ pub unsafe fn cmd_select_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
             }
             markedwp = MARKED_PANE.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
 
+            // The event is about the marked pane, or else the pane that
+            // lost the mark, or else the target.
+            let subject = if !markedwp.is_null() {
+                markedwp
+            } else if !lastwp.is_null() {
+                lastwp
+            } else {
+                wp
+            };
+            let mut payload = crate::events::payload_for_pane(subject);
+            if !markedwp.is_null() {
+                payload.set("new_pane", crate::events::payload_pane(markedwp));
+            }
+            if !lastwp.is_null() {
+                payload.set("old_pane", crate::events::payload_pane(lastwp));
+            }
+            payload.set_int("marked", (!markedwp.is_null()) as i32);
+            crate::events::events_fire("marked-pane-changed", payload, null_mut());
+
             if !lastwp.is_null() {
                 (*lastwp).flags |=
                     window_pane_flags::PANE_REDRAW | window_pane_flags::PANE_STYLECHANGED;

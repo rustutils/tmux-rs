@@ -739,6 +739,9 @@ pub unsafe fn window_add_ref(w: *mut window, from: *const u8) {
 
 pub unsafe fn window_remove_ref(w: *mut window, from: *const u8) {
     unsafe {
+        if (*w).references == 1 {
+            events_fire_window("window-closed", w);
+        }
         (*w).references -= 1;
         log_debug!(
             "{}: @{} {}, now {}",
@@ -767,6 +770,34 @@ unsafe fn window_fire_pane_changed(w: *mut window, wp: *mut window_pane, lastwp:
             payload.set("old_pane", crate::events::payload_pane(lastwp));
         }
         crate::events::events_fire("window-pane-changed", payload, null_mut());
+    }
+}
+
+/// Fires pane-moved for a pane that moved to another window, with the old
+/// and new window and their indexes (-1 when not known).
+///
+/// # Safety
+/// `wp`, `old_w` and `new_w` must be valid.
+pub unsafe fn window_fire_pane_moved(
+    wp: *mut window_pane,
+    old_w: *mut window,
+    old_idx: i32,
+    new_w: *mut window,
+    new_idx: i32,
+) {
+    unsafe {
+        let mut payload = crate::events::payload_for_pane(wp);
+        payload.set("window", crate::events::payload_window(new_w));
+        payload.set("old_window", crate::events::payload_window(old_w));
+        payload.set("new_window", crate::events::payload_window(new_w));
+        if old_idx != -1 {
+            payload.set_int("old_window_index", old_idx);
+        }
+        if new_idx != -1 {
+            payload.set_int("window_index", new_idx);
+            payload.set_int("new_window_index", new_idx);
+        }
+        crate::events::events_fire("pane-moved", payload, null_mut());
     }
 }
 
@@ -1074,6 +1105,7 @@ pub unsafe fn window_zoom(wp: *mut window_pane) -> i32 {
         window_set_saved_layout_root(w, window_layout_root(w));
         layout_init(w, wp);
         (*w).flags |= window_flag::ZOOMED;
+        events_fire_window("window-zoomed", w);
         events_fire_window("window-layout-changed", w);
 
         0
@@ -1098,6 +1130,7 @@ pub unsafe fn window_unzoom(w: *mut window, notify: i32) -> i32 {
         layout_fix_panes(&*w, null_mut());
 
         if notify != 0 {
+            events_fire_window("window-unzoomed", w);
             events_fire_window("window-layout-changed", w);
         }
 
@@ -1644,6 +1677,14 @@ pub unsafe fn window_pane_resize(wp: *mut window_pane, sx: u32, sy: u32) {
             && let Some(wme) = NonNull::new(wme) {
                 ((*(*wme.as_ptr()).mode).resize)(wme, sx, sy);
             }
+
+        let (osx, osy) = (*wp).resize_queue.last().map_or((sx, sy), |r| (r.osx, r.osy));
+        let mut payload = crate::events::payload_for_pane(wp);
+        payload.set_uint("width", sx);
+        payload.set_uint("height", sy);
+        payload.set_uint("old_width", osx);
+        payload.set_uint("old_height", osy);
+        crate::events::events_fire("pane-resized", payload, null_mut());
     }
 }
 

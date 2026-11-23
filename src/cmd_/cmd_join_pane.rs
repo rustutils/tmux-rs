@@ -167,6 +167,7 @@ unsafe fn cmd_join_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
             server_status_session(dst_s);
         }
 
+        window_fire_pane_moved(src_wp, src_w, (*src_wl).idx, dst_w, dst_idx);
         if window_count_panes(&*src_w) == 0 {
             server_kill_window(src_w, 1);
         } else {
