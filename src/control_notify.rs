@@ -83,7 +83,7 @@ unsafe fn control_clients(need_session: bool) -> Vec<*mut client> {
 unsafe fn control_notify_all(line: &str, attached: bool) {
     unsafe {
         for c in control_clients(attached) {
-            control_write!(c, "{}", line);
+            control_notify_write!(c, "{}", line);
         }
     }
 }
@@ -131,9 +131,9 @@ pub unsafe fn control_notify_event(name: &str, payload: &Payload) {
                 }
                 for c in control_clients(true) {
                     if c == cc {
-                        control_write!(c, "%session-changed ${} {}", (*s).id, (*s).name);
+                        control_notify_write!(c, "%session-changed ${} {}", (*s).id, (*s).name);
                     } else {
-                        control_write!(
+                        control_notify_write!(
                             c,
                             "%client-session-changed {} ${} {}",
                             _s((*cc).name),
@@ -201,7 +201,7 @@ unsafe fn control_notify_layout_changed(w: *mut window) {
                 continue;
             };
             let cp = format_single(null_mut(), TEMPLATE, c, s, wl.as_ptr(), null_mut());
-            control_write!(c, "{}", _s(cp));
+            control_notify_write!(c, "{}", _s(cp));
             free_(cp);
         }
     }
@@ -225,9 +225,9 @@ unsafe fn control_notify_window(event: &str, w: *mut window) {
         for c in control_clients(true) {
             let cs = client_get_session(c);
             if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
-                control_write!(c, "%unlinked-{} @{}{}", kind, (*w).id, suffix);
+                control_notify_write!(c, "%unlinked-{} @{}{}", kind, (*w).id, suffix);
             } else {
-                control_write!(c, "%{} @{}{}", kind, (*w).id, suffix);
+                control_notify_write!(c, "%{} @{}{}", kind, (*w).id, suffix);
             }
         }
     }

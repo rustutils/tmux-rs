@@ -84,6 +84,11 @@ pub struct control_state {
 
     pub subs: control_subs,
     pub subs_timer: Option<TimerHandle>,
+
+    /// How many %begin blocks are open. Notifications never go inside a
+    /// block: they wait in `deferred` until the outermost one ends.
+    pub guard_depth: u32,
+    pub deferred: Vec<String>,
 }
 
 /// Low and high watermarks.
@@ -291,7 +296,7 @@ pub unsafe fn control_continue_pane(c: *mut client, wp: *mut window_pane) {
             (*cp).flags &= !CONTROL_PANE_PAUSED;
             memcpy__(&raw mut (*cp).offset, &raw const (*wp).offset);
             memcpy__(&raw mut (*cp).queued, &raw const (*wp).offset);
-            control_write!(c, "%continue %{}", (*wp).id);
+            control_notify_write!(c, "%continue %{}", (*wp).id);
         }
     }
 }
@@ -303,7 +308,7 @@ pub unsafe fn control_pause_pane(c: *mut client, wp: *mut window_pane) {
         if !(*cp).flags & CONTROL_PANE_PAUSED != 0 {
             (*cp).flags |= CONTROL_PANE_PAUSED;
             control_discard_pane(c, cp);
-            control_write!(c, "%pause %{}", (*wp).id);
+            control_notify_write!(c, "%pause %{}", (*wp).id);
         }
     }
 }
@@ -338,6 +343,64 @@ macro_rules! control_write {
     };
 }
 pub(crate) use control_write;
+
+/// Writes a %begin, %end or %error line around a command's output. This is
+/// the only place guard lines are written, so it keeps the block depth,
+/// and when the outermost block ends the notifications held back during
+/// it are written after it.
+///
+/// # Safety
+/// `c` must be a valid client.
+pub unsafe fn control_write_guard(c: *mut client, guard: &str, t: i64, number: u32, flags: bool) {
+    unsafe {
+        let Some(cs) = (*c).control_state.as_mut() else {
+            return;
+        };
+        if guard == "begin" {
+            cs.guard_depth += 1;
+        }
+        control_write!(c, "%{} {} {} {}", guard, t, number, flags as i32);
+
+        let Some(cs) = (*c).control_state.as_mut() else {
+            return;
+        };
+        if guard != "begin" && cs.guard_depth > 0 {
+            cs.guard_depth -= 1;
+            if cs.guard_depth == 0 {
+                for line in std::mem::take(&mut cs.deferred) {
+                    control_write!(c, "{}", line);
+                }
+            }
+        }
+    }
+}
+
+macro_rules! control_notify_write {
+   ($c:expr, $fmt:literal $(, $args:expr)* $(,)?) => {
+        crate::control::control_notify_write_($c, format_args!($fmt $(, $args)*))
+    };
+}
+pub(crate) use control_notify_write;
+
+/// Writes a notification line, or holds it back while a command's %begin
+/// block is open so it comes after the %end.
+///
+/// # Safety
+/// `c` must be a valid client.
+pub unsafe fn control_notify_write_(c: *mut client, args: std::fmt::Arguments) {
+    unsafe {
+        let Some(cs) = (*c).control_state.as_mut() else {
+            return;
+        };
+        if cs.guard_depth == 0 {
+            control_write_(c, args);
+            return;
+        }
+        let line = args.to_string();
+        log_debug!("control_notify_write: {}: deferring notification: {}", _s((*c).name), line);
+        cs.deferred.push(line);
+    }
+}
 
 pub unsafe fn control_write_(c: *mut client, args: std::fmt::Arguments) {
     unsafe {
@@ -399,7 +462,7 @@ pub unsafe fn control_check_age(
             }
             (*cp).flags |= CONTROL_PANE_PAUSED;
             control_discard_pane(c, cp);
-            control_write!(c, "%pause %{}", (*wp).id);
+            control_notify_write!(c, "%pause %{}", (*wp).id);
         } else {
             if age < CONTROL_MAXIMUM_AGE {
                 return 0;
@@ -816,6 +879,8 @@ pub unsafe fn control_start(c: *mut client) {
             write_io: None,
             subs: BTreeMap::new(),
             subs_timer: None,
+            guard_depth: 0,
+            deferred: Vec::new(),
         }));
 
         // Read IoHandle is armed later in control_ready(), after the client
@@ -912,7 +977,7 @@ pub unsafe fn control_check_subs_session(c: *mut client, csub: *mut control_sub)
             free_(value);
             return;
         }
-        control_write!(
+        control_notify_write!(
             c,
             "%subscription-changed {} ${} - - - : {}",
             _s((*csub).name),
@@ -951,7 +1016,7 @@ pub unsafe fn control_check_subs_pane(c: *mut client, csub: *mut control_sub) {
                 free_(value);
                 continue;
             }
-            control_write!(
+            control_notify_write!(
                 c,
                 "%subscription-changed {} ${} @{} {} %{} : {}",
                 _s((*csub).name),
@@ -986,7 +1051,7 @@ pub unsafe fn control_check_subs_all_panes(c: *mut client, csub: *mut control_su
                     free_(value);
                     continue;
                 }
-                control_write!(
+                control_notify_write!(
                     c,
                     "%subscription-changed {} ${} @{} {} %{} : {}",
                     _s((*csub).name),
@@ -1029,7 +1094,7 @@ pub unsafe fn control_check_subs_window(c: *mut client, csub: *mut control_sub) 
                 free_(value);
                 continue;
             }
-            control_write!(
+            control_notify_write!(
                 c,
                 "%subscription-changed {} ${} @{} {} - : {}",
                 _s((*csub).name),
@@ -1063,7 +1128,7 @@ pub unsafe fn control_check_subs_all_windows(c: *mut client, csub: *mut control_
                 free_(value);
                 continue;
             }
-            control_write!(
+            control_notify_write!(
                 c,
                 "%subscription-changed {} ${} @{} {} - : {}",
                 _s((*csub).name),

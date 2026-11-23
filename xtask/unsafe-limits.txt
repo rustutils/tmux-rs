@@ -98,7 +98,7 @@
 128 src/cmd_parse.rs
 4 src/colour.rs
 2 src/compat/getopt.rs
-78 src/control.rs
+82 src/control.rs
 12 src/control_notify.rs
 26 src/environ_.rs
 36 src/events/mod.rs

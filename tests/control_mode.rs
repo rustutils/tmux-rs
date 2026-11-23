@@ -598,3 +598,95 @@ fn rename_top_buffer_notifies_old_name() {
         ]
     );
 }
+
+/// Notifications caused by a control client's own command come after the
+/// command's %end, never inside its %begin and %end block (tmux 3.8).
+/// Events are delivered when they fire, so this needs the deferral in
+/// control.rs.
+#[test]
+fn notifications_wait_for_the_end_of_the_block() {
+    let (tmux, child, mut stdin, mut reader) = setup_control();
+    read_until(&mut reader, Duration::from_secs(3), |line| {
+        line.starts_with("%end")
+    });
+    // Automatic renames would add notifications of their own.
+    send_and_collect(
+        &mut stdin,
+        &mut reader,
+        "set -g automatic-rename off",
+        Duration::from_secs(5),
+        |line| line.starts_with("%end"),
+    );
+
+    for (command, notification) in [
+        ("new-window -d", "%window-add"),
+        ("rename-window renamed", "%window-renamed"),
+        ("set-buffer -b mine data", "%paste-buffer-changed"),
+        ("rename-session other", "%session-renamed"),
+    ] {
+        let lines = send_and_collect(
+            &mut stdin,
+            &mut reader,
+            command,
+            Duration::from_secs(5),
+            |line| line.starts_with(notification),
+        );
+        let output = lines.join("\n");
+        let begin = lines.iter().position(|l| l.starts_with("%begin"));
+        let end = lines.iter().position(|l| l.starts_with("%end"));
+        let note = lines.iter().rposition(|l| l.starts_with(notification));
+        let (Some(begin), Some(end), Some(note)) = (begin, end, note) else {
+            panic!("{command}: incomplete output:\n{output}");
+        };
+        assert!(
+            lines[begin + 1..end].iter().all(|l| !l.starts_with('%')),
+            "{command}: notification inside the block:\n{output}"
+        );
+        assert!(
+            note > end,
+            "{command}: {notification} before %end:\n{output}"
+        );
+    }
+
+    cleanup(stdin, child);
+    drop(tmux);
+}
+
+/// Commands run by a hook do not fire hooks, but control clients still
+/// hear about what they do.
+#[test]
+fn hook_commands_still_notify_control_clients() {
+    let (tmux, child, mut stdin, mut reader) = setup_control();
+    read_until(&mut reader, Duration::from_secs(3), |line| {
+        line.starts_with("%end")
+    });
+    send_and_collect(
+        &mut stdin,
+        &mut reader,
+        "set -g automatic-rename off",
+        Duration::from_secs(5),
+        |line| line.starts_with("%end"),
+    );
+    send_and_collect(
+        &mut stdin,
+        &mut reader,
+        "set-hook -g after-rename-window 'new-window -d -n fromhook'",
+        Duration::from_secs(5),
+        |line| line.starts_with("%end"),
+    );
+    let lines = send_and_collect(
+        &mut stdin,
+        &mut reader,
+        "rename-window x",
+        Duration::from_secs(5),
+        |line| line.starts_with("%window-add"),
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with("%window-add")),
+        "no %window-add for the hook's window:\n{}",
+        lines.join("\n")
+    );
+
+    cleanup(stdin, child);
+    drop(tmux);
+}

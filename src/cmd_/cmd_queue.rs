@@ -828,7 +828,7 @@ pub unsafe fn cmdq_guard(item: *mut cmdq_item, guard: *const u8, flags: bool) {
         let number = (*item).number;
 
         if !c.is_null() && (*c).flags.intersects(client_flag::CONTROL) {
-            control_write!(c, "%{} {} {} {}", _s(guard), t, number, flags as i32);
+            control_write_guard(c, cstr_to_str(guard), t, number, flags);
         }
     }
 }
