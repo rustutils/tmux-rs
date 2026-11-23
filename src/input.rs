@@ -2821,7 +2821,7 @@ fn input_osc_10(ictx: &mut input_ctx, p: *const u8) {
         }
         if !ictx.palette.is_null() {
             (*ictx.palette).fg = c;
-            if wp.is_null() {
+            if !wp.is_null() {
                 (*wp).flags |= window_pane_flags::PANE_STYLECHANGED;
             }
             screen_write_fullredraw(&raw mut ictx.ctx);
@@ -4232,6 +4232,20 @@ mod tests {
             p.feed(b"hi");
             assert_eq!(p.cursor(), (2, 0));
             assert_eq!(&p.line(0)[..2], "hi");
+        }
+
+        /// OSC 10 and 11 set the default colours in the palette. Without a
+        /// pane there is no pane to mark as changed. OSC 10 used to check
+        /// for null the wrong way round and wrote through the null pane.
+        #[test]
+        fn osc_10_and_11_set_palette_without_pane() {
+            let mut p = Parser::new(20, 5);
+            p.feed(b"\x1b]10;rgb:ff/00/00\x07");
+            p.feed(b"\x1b]11;rgb:00/00/ff\x07");
+            unsafe {
+                assert_eq!((*p.palette).fg, colour_join_rgb(0xff, 0, 0));
+                assert_eq!((*p.palette).bg, colour_join_rgb(0, 0, 0xff));
+            }
         }
 
         // ---- Save / restore cursor ----
