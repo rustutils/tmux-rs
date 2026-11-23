@@ -1275,48 +1275,42 @@ pub unsafe fn window_destroy_panes(w: *mut window) {
     }
 }
 
-pub unsafe fn window_printable_flags(wl: *mut winlink, escape: i32) -> *const u8 {
-    static mut FLAGS: [u8; 32] = [0; 32];
-
+/// The window flags shown in the status line (`#!~*-MZ`). With `escape`,
+/// the activity flag is doubled so it survives format expansion.
+///
+/// # Safety
+/// `wl` must be a valid winlink.
+pub unsafe fn window_printable_flags(wl: *mut winlink, escape: i32) -> String {
     unsafe {
         let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
 
-        let mut pos = 0;
+        let mut flags = String::new();
         if (*wl).flags.intersects(winlink_flags::WINLINK_ACTIVITY) {
-            FLAGS[pos] = b'#';
-            pos += 1;
+            flags.push('#');
             if escape != 0 {
-                FLAGS[pos] = b'#';
-                pos += 1;
+                flags.push('#');
             }
         }
         if (*wl).flags.intersects(winlink_flags::WINLINK_BELL) {
-            FLAGS[pos] = b'!';
-            pos += 1;
+            flags.push('!');
         }
         if (*wl).flags.intersects(winlink_flags::WINLINK_SILENCE) {
-            FLAGS[pos] = b'~';
-            pos += 1;
+            flags.push('~');
         }
         if !s.is_null() && wl == (*s).curw {
-            FLAGS[pos] = b'*';
-            pos += 1;
+            flags.push('*');
         }
         if !s.is_null() && wl == (*s).lastw.first().copied().unwrap_or(null_mut()) {
-            FLAGS[pos] = b'-';
-            pos += 1;
+            flags.push('-');
         }
         if server_check_marked() && wl == MARKED_PANE.wl {
-            FLAGS[pos] = b'M';
-            pos += 1;
+            flags.push('M');
         }
         let w_zoom = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
         if !w_zoom.is_null() && (*w_zoom).flags.intersects(window_flag::ZOOMED) {
-            FLAGS[pos] = b'Z';
-            pos += 1;
+            flags.push('Z');
         }
-        FLAGS[pos] = b'\0';
-        &raw mut FLAGS as *mut u8
+        flags
     }
 }
 

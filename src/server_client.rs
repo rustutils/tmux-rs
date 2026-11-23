@@ -1806,7 +1806,7 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
         }
 
         if log_get_level() != 0 {
-            log_debug!("mouse key is {}", _s(key_string_lookup_key(key, 1)));
+            log_debug!("mouse key is {}", key_string_lookup_key(key, 1));
         }
 
         key
@@ -3522,56 +3522,35 @@ pub unsafe fn server_client_set_flags(c: *mut client, flags: *const u8) {
     }
 }
 
-/// Get client flags. This is only flags useful to show to users.
-pub unsafe fn server_client_get_flags(c: *mut client) -> *const u8 {
-    unsafe {
-        const SIZEOF_S: usize = 256;
-        const SIZEOF_TMP: usize = 32;
-        static mut S: [u8; SIZEOF_S] = [0; SIZEOF_S];
-        static mut TMP: [u8; SIZEOF_TMP] = [0; SIZEOF_TMP];
-
-        S[0] = b'\0';
-        if (*c).flags.intersects(client_flag::ATTACHED) {
-            strlcat((&raw mut S).cast(), c!("attached,"), SIZEOF_S);
+/// Client flags as a comma separated list, for the `client_flags` format.
+/// Only the flags useful to show to users are listed.
+pub fn server_client_get_flags(flags: client_flag, pause_age: c_uint) -> String {
+    let mut names: Vec<String> = Vec::new();
+    for (flag, name) in [
+        (client_flag::ATTACHED, "attached"),
+        (client_flag::FOCUSED, "focused"),
+        (client_flag::CONTROL, "control-mode"),
+        (client_flag::IGNORESIZE, "ignore-size"),
+        (client_flag::CONTROL_NOOUTPUT, "no-output"),
+        (client_flag::CONTROL_WAITEXIT, "wait-exit"),
+    ] {
+        if flags.intersects(flag) {
+            names.push(name.to_string());
         }
-        if (*c).flags.intersects(client_flag::FOCUSED) {
-            strlcat((&raw mut S).cast(), c!("focused,"), SIZEOF_S);
-        }
-        if (*c).flags.intersects(client_flag::CONTROL) {
-            strlcat((&raw mut S).cast(), c!("control-mode,"), SIZEOF_S);
-        }
-        if (*c).flags.intersects(client_flag::IGNORESIZE) {
-            strlcat((&raw mut S).cast(), c!("ignore-size,"), SIZEOF_S);
-        }
-        if (*c).flags.intersects(client_flag::CONTROL_NOOUTPUT) {
-            strlcat((&raw mut S).cast(), c!("no-output,"), SIZEOF_S);
-        }
-        if (*c).flags.intersects(client_flag::CONTROL_WAITEXIT) {
-            strlcat((&raw mut S).cast(), c!("wait-exit,"), SIZEOF_S);
-        }
-        if (*c).flags.intersects(client_flag::CONTROL_PAUSEAFTER) {
-            _ = xsnprintf_!(
-                (&raw mut TMP).cast(),
-                SIZEOF_TMP,
-                "pause-after={},",
-                (*c).pause_age / 1000,
-            );
-            strlcat((&raw mut S).cast(), (&raw mut TMP).cast(), SIZEOF_S);
-        }
-        if (*c).flags.intersects(client_flag::READONLY) {
-            strlcat((&raw mut S).cast(), c!("read-only,"), SIZEOF_S);
-        }
-        if (*c).flags.intersects(client_flag::SUSPENDED) {
-            strlcat((&raw mut S).cast(), c!("suspended,"), SIZEOF_S);
-        }
-        if (*c).flags.intersects(client_flag::UTF8) {
-            strlcat((&raw mut S).cast(), c!("UTF-8,"), SIZEOF_S);
-        }
-        if S[0] != b'\0' {
-            S[strlen((&raw const S).cast()) - 1] = b'\0';
-        }
-        (&raw const S) as *const u8
     }
+    if flags.intersects(client_flag::CONTROL_PAUSEAFTER) {
+        names.push(format!("pause-after={}", pause_age / 1000));
+    }
+    for (flag, name) in [
+        (client_flag::READONLY, "read-only"),
+        (client_flag::SUSPENDED, "suspended"),
+        (client_flag::UTF8, "UTF-8"),
+    ] {
+        if flags.intersects(flag) {
+            names.push(name.to_string());
+        }
+    }
+    names.join(",")
 }
 
 /// Get client window.

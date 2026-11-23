@@ -56,7 +56,8 @@ unsafe fn cmd_list_keys_get_width(tablename: *const u8, only: key_code) -> u32 {
             {
                 continue;
             }
-            let width = utf8_cstrwidth(key_string_lookup_key((*bd).key, 0));
+            let key = CString::new(key_string_lookup_key((*bd).key, 0)).unwrap_or_default();
+            let width = utf8_cstrwidth(key.as_ptr().cast());
             if width > keywidth {
                 keywidth = width;
             }
@@ -89,7 +90,7 @@ unsafe fn cmd_list_keys_print_notes(
                 continue;
             }
             found = 1;
-            let key = key_string_lookup_key((*bd).key, 0);
+            let key = CString::new(key_string_lookup_key((*bd).key, 0)).unwrap_or_default();
 
             let note = if (*bd).note.as_ref().is_none_or(std::string::String::is_empty) {
                 cmd_list_print(&*(*bd).cmdlist, 1)
@@ -97,7 +98,7 @@ unsafe fn cmd_list_keys_print_notes(
                 xstrdup__((*bd).note.as_deref().unwrap_or(""))
             };
 
-            let tmp = utf8_padcstr(key, keywidth + 1);
+            let tmp = utf8_padcstr(key.as_ptr().cast(), keywidth + 1);
             if args_has(args, '1') && !tc.is_null() {
                 status_message_set!(tc, -1, 1, false, "{}{}{}", _s(prefix), _s(tmp), _s(note));
             } else {
@@ -119,7 +120,7 @@ unsafe fn cmd_list_keys_get_prefix(args: *mut args, prefix: *mut key_code) -> No
         *prefix = options_get_number___::<i64>(&*GLOBAL_S_OPTIONS, "prefix") as _;
         if !args_has(args, 'P') {
             if *prefix != KEYC_NONE {
-                let s = format_nul!("{} ", _s(key_string_lookup_key(*prefix, 0)));
+                let s = format_nul!("{} ", key_string_lookup_key(*prefix, 0));
                 NonNull::new(s).unwrap()
             } else {
                 xstrdup_(c"")
@@ -229,7 +230,7 @@ unsafe fn cmd_list_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
                     if only != KEYC_UNKNOWN && (*bd).key != only {
                         continue;
                     }
-                    let key = args_escape(key_string_lookup_key((*bd).key, 0));
+                    let key = args_escape(CString::new(key_string_lookup_key((*bd).key, 0)).unwrap_or_default().as_ptr().cast());
 
                     if (*bd).flags & KEY_BINDING_REPEAT != 0 {
                         repeat = 1;
@@ -261,7 +262,7 @@ unsafe fn cmd_list_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
                         continue;
                     }
                     found = 1;
-                    let key = args_escape(key_string_lookup_key((*bd).key, 0));
+                    let key = args_escape(CString::new(key_string_lookup_key((*bd).key, 0)).unwrap_or_default().as_ptr().cast());
 
                     let r = if repeat == 0 {
                         ""

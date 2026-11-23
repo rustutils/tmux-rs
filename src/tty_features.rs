@@ -271,27 +271,15 @@ pub unsafe fn tty_add_features(feat: *mut i32, s: &str, separators: *const u8) {
     }
 }
 
-pub unsafe fn tty_get_features(feat: i32) -> *const u8 {
-    static mut S_BUF: [MaybeUninit<u8>; 512] = [MaybeUninit::uninit(); 512];
-    unsafe {
-        let s: *mut u8 = (&raw mut S_BUF).cast();
-        // const struct tty_feature *tf;
-
-        *s = b'\0';
-        for (i, tf) in TTY_FEATURES.iter().copied().enumerate() {
-            if (!feat & (1 << i)) != 0 {
-                continue;
-            }
-
-            strlcat_(s, tf.name, 512);
-            strlcat_(s, ",", 512);
-        }
-        if *s != b'\0' {
-            *s.add(strlen(s) - 1) = b'\0';
-        }
-
-        s
-    }
+/// The names of the features in the bit set `feat`, comma separated.
+pub fn tty_get_features(feat: i32) -> String {
+    TTY_FEATURES
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| feat & (1 << i) != 0)
+        .map(|(_, tf)| tf.name)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub unsafe fn tty_apply_features(term: *mut tty_term, feat: i32) -> bool {
@@ -300,7 +288,7 @@ pub unsafe fn tty_apply_features(term: *mut tty_term, feat: i32) -> bool {
     }
 
     unsafe {
-        log_debug!("applying terminal features: {}", _s(tty_get_features(feat)));
+        log_debug!("applying terminal features: {}", tty_get_features(feat));
 
         for (i, tf) in TTY_FEATURES.iter().copied().enumerate() {
             if ((*term).features & (1 << i) != 0) || (!feat & (1 << i)) != 0 {

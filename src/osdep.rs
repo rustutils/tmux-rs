@@ -55,35 +55,25 @@ pub unsafe fn osdep_get_name(fd: i32, _tty: *const u8) -> *mut u8 {
     }
 }
 
+/// The working directory of the foreground process group of the terminal
+/// `fd`, falling back to the session leader.
 #[cfg(target_os = "linux")]
-pub unsafe fn osdep_get_cwd(fd: i32) -> *const u8 {
-    const MAXPATHLEN: usize = libc::PATH_MAX as usize;
-    static mut TARGET_BUFFER: [u8; MAXPATHLEN + 1] = [0; MAXPATHLEN + 1];
-    unsafe {
-        let target = &raw mut TARGET_BUFFER as *mut u8;
-
-        let pgrp = libc::tcgetpgrp(fd);
-        if pgrp == -1 {
-            return null_mut();
-        }
-
-        let mut path = format_nul!("/proc/{pgrp}/cwd");
-        let mut n = libc::readlink(path.cast(), target.cast(), MAXPATHLEN);
-        free_(path);
-
-        let mut sid: pid_t = 0;
-        if n == -1 && libc::ioctl(fd, libc::TIOCGSID, &raw mut sid) != -1 {
-            path = format_nul!("/proc/{sid}/cwd");
-            n = libc::readlink(path.cast(), target.cast(), MAXPATHLEN);
-            free_(path);
-        }
-
-        if n > 0 {
-            *target.add(n as usize) = b'\0';
-            return target;
-        }
-        null_mut()
+pub fn osdep_get_cwd(fd: i32) -> Option<std::path::PathBuf> {
+    // SAFETY: tcgetpgrp only queries the descriptor.
+    let pgrp = unsafe { libc::tcgetpgrp(fd) };
+    if pgrp == -1 {
+        return None;
     }
+    if let Ok(cwd) = std::fs::read_link(format!("/proc/{pgrp}/cwd")) {
+        return Some(cwd);
+    }
+
+    let mut sid: pid_t = 0;
+    // SAFETY: TIOCGSID writes one pid_t to the pointer, which is valid.
+    if unsafe { libc::ioctl(fd, libc::TIOCGSID, &raw mut sid) } != -1 {
+        return std::fs::read_link(format!("/proc/{sid}/cwd")).ok();
+    }
+    None
 }
 
 #[cfg(target_os = "linux")]
@@ -137,17 +127,22 @@ pub unsafe fn osdep_get_name(fd: i32, _tty: *const u8) -> *mut u8 {
     }
 }
 
+/// The working directory of the foreground process group of the terminal
+/// `fd`.
 #[cfg(target_os = "macos")]
-pub unsafe fn osdep_get_cwd(fd: i32) -> *const u8 {
-    static mut WD: [u8; libc::PATH_MAX as usize] = [0; libc::PATH_MAX as usize];
-    unsafe {
+pub fn osdep_get_cwd(fd: i32) -> Option<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+
+    // SAFETY: tcgetpgrp only queries the descriptor.
+    let pgrp: pid_t = unsafe { libc::tcgetpgrp(fd) };
+    if pgrp == -1 {
+        return None;
+    }
+
+    // SAFETY: an all zero proc_vnodepathinfo is valid, and proc_pidinfo
+    // writes at most the size it is given.
+    let (ret, pathinfo) = unsafe {
         let mut pathinfo: libc::proc_vnodepathinfo = zeroed();
-
-        let pgrp: pid_t = libc::tcgetpgrp(fd);
-        if pgrp == -1 {
-            return null_mut();
-        }
-
         let ret = libc::proc_pidinfo(
             pgrp,
             libc::PROC_PIDVNODEPATHINFO as _,
@@ -155,17 +150,16 @@ pub unsafe fn osdep_get_cwd(fd: i32) -> *const u8 {
             (&raw mut pathinfo).cast(),
             size_of::<libc::proc_vnodepathinfo>() as _,
         );
-        if ret == size_of::<libc::proc_vnodepathinfo>() as i32 {
-            crate::compat::strlcpy(
-                &raw mut WD as *mut u8,
-                &raw const pathinfo.pvi_cdir.vip_path as *const u8,
-                libc::PATH_MAX as usize,
-            );
-            return &raw const WD as *const u8;
-        }
-
-        null_mut()
+        (ret, pathinfo)
+    };
+    if ret != size_of::<libc::proc_vnodepathinfo>() as i32 {
+        return None;
     }
+    let path = &pathinfo.pvi_cdir.vip_path;
+    // SAFETY: vip_path is a fixed size array of c_char, viewed as bytes.
+    let bytes: &[u8] = unsafe { std::slice::from_raw_parts(path.as_ptr().cast(), size_of_val(path)) };
+    let len = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    Some(std::ffi::OsStr::from_bytes(&bytes[..len]).into())
 }
 
 #[cfg(target_os = "macos")]

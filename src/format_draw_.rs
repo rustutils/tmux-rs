@@ -1009,7 +1009,7 @@ pub unsafe fn format_draw(
                     "{}: style '{}' -> '{}'",
                     func,
                     _s(tmp),
-                    _s(style_tostring(&raw const sy))
+                    style_tostring(&sy)
                 );
                 free_(tmp);
                 if default_colours != 0 {

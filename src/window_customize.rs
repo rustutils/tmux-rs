@@ -490,7 +490,7 @@ unsafe fn window_customize_build_keys(
         format_add!(ft, "is_key", "1");
 
         for bd in key_bindings_entries(kt) {
-            format_add!(ft, "key", "{}", _s(key_string_lookup_key((*bd).key, 0)),);
+            format_add!(ft, "key", "{}", key_string_lookup_key((*bd).key, 0),);
             if let Some(ref note) = (*bd).note {
                 format_add!(ft, "key_note", "{}", note);
             }
@@ -508,7 +508,7 @@ unsafe fn window_customize_build_keys(
             let c_kt_name = CString::new((*kt).name.as_str()).unwrap();
             (*item).table = xstrdup(c_kt_name.as_ptr().cast()).as_ptr();
             (*item).key = (*bd).key;
-            (*item).name = xstrdup(key_string_lookup_key((*item).key, 0)).as_ptr();
+            (*item).name = xstrdup__(&key_string_lookup_key((*item).key, 0));
             (*item).idx = -1;
 
             let expanded = format_expand(ft, (*data).format);
@@ -1574,7 +1574,7 @@ pub unsafe fn window_customize_set_key(
         if streq_(s, "Repeat") {
             (*bd).flags ^= KEY_BINDING_REPEAT;
         } else if streq_(s, "Command") {
-            prompt = format_nul!("({}) ", _s(key_string_lookup_key(key, 0)));
+            prompt = format_nul!("({}) ", key_string_lookup_key(key, 0));
             value = cmd_list_print(&*(*bd).cmdlist, 0);
 
             let new_item = Box::new(window_customize_itemdata {
@@ -1602,7 +1602,7 @@ pub unsafe fn window_customize_set_key(
             free_(prompt);
             free_(value);
         } else if streq_(s, "Note") {
-            prompt = format_nul!("({}) ", _s(key_string_lookup_key(key, 0)));
+            prompt = format_nul!("({}) ", key_string_lookup_key(key, 0));
 
             let new_item = Box::new(window_customize_itemdata {
                 data,

@@ -1417,8 +1417,6 @@ pub unsafe fn status_prompt_key(c: *mut client, mut key: key_code) -> i32 {
 
         let histstr: *const u8;
         let separators: *const u8;
-        let keystring: *const u8;
-
         let mut idx: usize;
 
         let tmp: Utf8Data;
@@ -1426,8 +1424,8 @@ pub unsafe fn status_prompt_key(c: *mut client, mut key: key_code) -> i32 {
         let word_is_separators: i32;
 
         if (*c).prompt_flags.intersects(prompt_flags::PROMPT_KEY) {
-            keystring = key_string_lookup_key(key, 0);
-            (*c).prompt_inputcb.unwrap()(c, NonNull::new((*c).prompt_data).unwrap(), keystring, 1);
+            let keystring = CString::new(key_string_lookup_key(key, 0)).unwrap_or_default();
+            (*c).prompt_inputcb.unwrap()(c, NonNull::new((*c).prompt_data).unwrap(), keystring.as_ptr().cast(), 1);
             status_prompt_clear(c);
             return 0;
         }

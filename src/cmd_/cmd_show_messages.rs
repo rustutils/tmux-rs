@@ -60,7 +60,7 @@ unsafe fn cmd_show_messages_terminals(
                 cmdq_print!(
                     item,
                     "{}",
-                    _s(tty_term_describe(term, tty_code_code::try_from(i).unwrap())),
+                    tty_term_describe(term, tty_code_code::try_from(i).unwrap()),
                 );
             }
         }

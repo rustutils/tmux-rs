@@ -126,7 +126,7 @@ use std::{
     ffi::{CStr, CString, c_int, c_long, c_longlong, c_uchar, c_uint, c_ulonglong, c_void},
     mem::{MaybeUninit, size_of, zeroed},
     path::PathBuf,
-    ptr::{NonNull, addr_of, addr_of_mut, null, null_mut},
+    ptr::{NonNull, null, null_mut},
     rc::Rc,
     sync::{
         Mutex,

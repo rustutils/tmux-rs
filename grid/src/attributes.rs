@@ -33,15 +33,14 @@ pub fn fuzz_attributes(input: &str) {
 }
 
 /// Converts a [`GridAttr`] bitflag set into a comma-separated string.
-/// Returns `"none"` for empty attributes. Trailing comma is included in output
-/// for non-empty sets (matches C tmux behavior).
+/// Returns `"none"` for empty attributes.
 #[rustfmt::skip]
 pub fn attributes_tostring(attr: GridAttr) -> Cow<'static, str> {
     if attr.is_empty() {
         return Cow::Borrowed("none");
     }
 
-    Cow::Owned(format!(
+    let mut s = format!(
         "{}{}{}{}{}{}{}{}{}{}{}{}{}{}",
         if attr.intersects(GridAttr::GRID_ATTR_CHARSET) { "acs," } else { "" },
         if attr.intersects(GridAttr::GRID_ATTR_BRIGHT) { "bright," } else { "" },
@@ -57,7 +56,10 @@ pub fn attributes_tostring(attr: GridAttr) -> Cow<'static, str> {
         if attr.intersects(GridAttr::GRID_ATTR_UNDERSCORE_4) { "dotted-underscore," } else { "" },
         if attr.intersects(GridAttr::GRID_ATTR_UNDERSCORE_5) { "dashed-underscore," } else { "" },
         if attr.intersects(GridAttr::GRID_ATTR_OVERLINE) { "overline," } else { "" },
-    ))
+    );
+    // Every name ends with a comma, C removes the last one.
+    s.pop();
+    Cow::Owned(s)
 }
 
 /// Parses a delimiter-separated attribute string into [`GridAttr`] bitflags.
@@ -135,22 +137,22 @@ mod tests {
 
     #[test]
     fn tostring_single_attributes() {
-        // Each single attribute should produce its name followed by a comma.
+        // Each single attribute produces its name.
         let cases = [
-            (GridAttr::GRID_ATTR_BRIGHT, "bright,"),
-            (GridAttr::GRID_ATTR_DIM, "dim,"),
-            (GridAttr::GRID_ATTR_UNDERSCORE, "underscore,"),
-            (GridAttr::GRID_ATTR_BLINK, "blink,"),
-            (GridAttr::GRID_ATTR_REVERSE, "reverse,"),
-            (GridAttr::GRID_ATTR_HIDDEN, "hidden,"),
-            (GridAttr::GRID_ATTR_ITALICS, "italics,"),
-            (GridAttr::GRID_ATTR_CHARSET, "acs,"),
-            (GridAttr::GRID_ATTR_STRIKETHROUGH, "strikethrough,"),
-            (GridAttr::GRID_ATTR_UNDERSCORE_2, "double-underscore,"),
-            (GridAttr::GRID_ATTR_UNDERSCORE_3, "curly-underscore,"),
-            (GridAttr::GRID_ATTR_UNDERSCORE_4, "dotted-underscore,"),
-            (GridAttr::GRID_ATTR_UNDERSCORE_5, "dashed-underscore,"),
-            (GridAttr::GRID_ATTR_OVERLINE, "overline,"),
+            (GridAttr::GRID_ATTR_BRIGHT, "bright"),
+            (GridAttr::GRID_ATTR_DIM, "dim"),
+            (GridAttr::GRID_ATTR_UNDERSCORE, "underscore"),
+            (GridAttr::GRID_ATTR_BLINK, "blink"),
+            (GridAttr::GRID_ATTR_REVERSE, "reverse"),
+            (GridAttr::GRID_ATTR_HIDDEN, "hidden"),
+            (GridAttr::GRID_ATTR_ITALICS, "italics"),
+            (GridAttr::GRID_ATTR_CHARSET, "acs"),
+            (GridAttr::GRID_ATTR_STRIKETHROUGH, "strikethrough"),
+            (GridAttr::GRID_ATTR_UNDERSCORE_2, "double-underscore"),
+            (GridAttr::GRID_ATTR_UNDERSCORE_3, "curly-underscore"),
+            (GridAttr::GRID_ATTR_UNDERSCORE_4, "dotted-underscore"),
+            (GridAttr::GRID_ATTR_UNDERSCORE_5, "dashed-underscore"),
+            (GridAttr::GRID_ATTR_OVERLINE, "overline"),
         ];
         for (attr, expected) in &cases {
             assert_eq!(
@@ -165,8 +167,7 @@ mod tests {
     fn tostring_multiple_attributes() {
         let attr = GridAttr::GRID_ATTR_BRIGHT | GridAttr::GRID_ATTR_ITALICS;
         let s = attributes_tostring(attr);
-        assert!(s.contains("bright,"));
-        assert!(s.contains("italics,"));
+        assert_eq!(s, "bright,italics");
     }
 
     // ---------------------------------------------------------------
@@ -311,9 +312,7 @@ mod tests {
         for name in &names {
             let attr = attributes_fromstring(name).unwrap();
             let s = attributes_tostring(attr);
-            // tostring appends a trailing comma for single attributes.
-            let trimmed = s.trim_end_matches(',');
-            assert_eq!(trimmed, *name, "round-trip failed for {name}");
+            assert_eq!(s, *name, "round-trip failed for {name}");
         }
     }
 }

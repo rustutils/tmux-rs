@@ -30,7 +30,7 @@
 //!
 //! Color value 8 means "default" (terminal default color).
 
-use crate::libc::{snprintf, strchr, strcspn, strncasecmp, strspn};
+use crate::libc::{strchr, strcspn, strncasecmp, strspn};
 use crate::*;
 use crate::options_::*;
 
@@ -304,189 +304,76 @@ pub unsafe fn style_parse(sy: *mut style, base: *const GridCell, mut in_: *const
     }
 }
 
-/// Format a [`style`] struct into a comma-separated string.
-/// Returns `"default"` if no style properties are set.
-/// Uses a static buffer, so it is not thread-safe (matches C tmux behavior).
-pub unsafe fn style_tostring(sy: *const style) -> *const u8 {
-    type s_type = [i8; 256];
-    static mut S_BUF: MaybeUninit<s_type> = MaybeUninit::<s_type>::uninit();
+/// Format a [`style`] as a comma separated string, the form [`style_parse`]
+/// reads. Returns `"default"` if no style properties are set.
+pub fn style_tostring(sy: &style) -> String {
+    let gc = &sy.gc;
+    let mut parts: Vec<String> = Vec::new();
 
-    unsafe {
-        let gc = &raw const (*sy).gc;
-        let mut off: i32 = 0;
-        let mut comma = c!("");
-        let mut tmp = c!("");
-        type b_type = [i8; 21];
-        let mut b: b_type = [0; 21];
-
-        let s = &raw mut S_BUF as *mut u8;
-        *s = b'\0';
-
-        if (*sy).list != style_list::STYLE_LIST_OFF {
-            if (*sy).list == style_list::STYLE_LIST_ON {
-                tmp = c!("on");
-            } else if (*sy).list == style_list::STYLE_LIST_FOCUS {
-                tmp = c!("focus");
-            } else if (*sy).list == style_list::STYLE_LIST_LEFT_MARKER {
-                tmp = c!("left-marker");
-            } else if (*sy).list == style_list::STYLE_LIST_RIGHT_MARKER {
-                tmp = c!("right-marker");
-            }
-            off += xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}list={}",
-                _s(comma),
-                _s(tmp),
-            )
-            .unwrap() as i32;
-            comma = c!(",");
-        }
-        if (*sy).range_type != style_range_type::STYLE_RANGE_NONE {
-            if (*sy).range_type == style_range_type::STYLE_RANGE_LEFT {
-                tmp = c!("left");
-            } else if (*sy).range_type == style_range_type::STYLE_RANGE_RIGHT {
-                tmp = c!("right");
-            } else if (*sy).range_type == style_range_type::STYLE_RANGE_PANE {
-                snprintf(
-                    &raw mut b as _,
-                    size_of::<b_type>(),
-                    c"pane|%%%u".as_ptr(),
-                    (*sy).range_argument,
-                );
-                tmp = &raw const b as _;
-            } else if (*sy).range_type == style_range_type::STYLE_RANGE_WINDOW {
-                snprintf(
-                    &raw mut b as _,
-                    size_of::<b_type>(),
-                    c"window|%u".as_ptr(),
-                    (*sy).range_argument,
-                );
-                tmp = &raw const b as _;
-            } else if (*sy).range_type == style_range_type::STYLE_RANGE_SESSION {
-                snprintf(
-                    &raw mut b as _,
-                    size_of::<b_type>(),
-                    c"session|$%u".as_ptr(),
-                    (*sy).range_argument,
-                );
-                tmp = &raw const b as _;
-            } else if (*sy).range_type == style_range_type::STYLE_RANGE_USER {
-                snprintf(
-                    &raw mut b as _,
-                    size_of::<b_type>(),
-                    c"user|%s".as_ptr(),
-                    (*sy).range_string,
-                );
-                tmp = &raw const b as _;
-            }
-            off += xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}range={}",
-                _s(comma),
-                _s(tmp),
-            )
-            .unwrap() as i32;
-            comma = c!(",");
-        }
-        if (*sy).align != style_align::STYLE_ALIGN_DEFAULT {
-            if (*sy).align == style_align::STYLE_ALIGN_LEFT {
-                tmp = c!("left");
-            } else if (*sy).align == style_align::STYLE_ALIGN_CENTRE {
-                tmp = c!("centre");
-            } else if (*sy).align == style_align::STYLE_ALIGN_RIGHT {
-                tmp = c!("right");
-            } else if (*sy).align == style_align::STYLE_ALIGN_ABSOLUTE_CENTRE {
-                tmp = c!("absolute-centre");
-            }
-            off += xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}align={}",
-                _s(comma),
-                _s(tmp),
-            )
-            .unwrap() as i32;
-            comma = c!(",");
-        }
-        if (*sy).default_type != style_default_type::STYLE_DEFAULT_BASE {
-            if (*sy).default_type == style_default_type::STYLE_DEFAULT_PUSH {
-                tmp = c!("push-default");
-            } else if (*sy).default_type == style_default_type::STYLE_DEFAULT_POP {
-                tmp = c!("pop-default");
-            }
-            off += xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}{}",
-                _s(comma),
-                _s(tmp),
-            )
-            .unwrap() as i32;
-            comma = c!(",");
-        }
-        if (*sy).fill != 8 {
-            off += xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}fill={}",
-                _s(comma),
-                colour_tostring((*sy).fill),
-            )
-            .unwrap() as i32;
-            comma = c!(",");
-        }
-        if (*gc).fg != 8 {
-            off += xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}fg={}",
-                _s(comma),
-                colour_tostring((*gc).fg),
-            )
-            .unwrap() as i32;
-            comma = c!(",");
-        }
-        if (*gc).bg != 8 {
-            off += xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}bg={}",
-                _s(comma),
-                colour_tostring((*gc).bg),
-            )
-            .unwrap() as i32;
-            comma = c!(",");
-        }
-        if (*gc).us != 8 {
-            off += xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}us={}",
-                _s(comma),
-                colour_tostring((*gc).us),
-            )
-            .unwrap() as i32;
-            comma = c!(",");
-        }
-        #[expect(unused_assignments)]
-        if !(*gc).attr.is_empty() {
-            _ = xsnprintf_!(
-                s.add(off as usize),
-                size_of::<s_type>() - off as usize,
-                "{}{}",
-                _s(comma),
-                attributes_tostring((*gc).attr),
-            );
-            comma = c!(",");
-        }
-
-        if *s == b'\0' {
-            return c!("default");
-        }
-        s
+    if sy.list != style_list::STYLE_LIST_OFF {
+        let list = match sy.list {
+            style_list::STYLE_LIST_ON => "on",
+            style_list::STYLE_LIST_FOCUS => "focus",
+            style_list::STYLE_LIST_LEFT_MARKER => "left-marker",
+            style_list::STYLE_LIST_RIGHT_MARKER => "right-marker",
+            _ => "",
+        };
+        parts.push(format!("list={list}"));
     }
+    if sy.range_type != style_range_type::STYLE_RANGE_NONE {
+        let arg = sy.range_argument;
+        let range = match sy.range_type {
+            style_range_type::STYLE_RANGE_LEFT => "left".to_string(),
+            style_range_type::STYLE_RANGE_RIGHT => "right".to_string(),
+            style_range_type::STYLE_RANGE_PANE => format!("pane|%{arg}"),
+            style_range_type::STYLE_RANGE_WINDOW => format!("window|{arg}"),
+            style_range_type::STYLE_RANGE_SESSION => format!("session|${arg}"),
+            style_range_type::STYLE_RANGE_USER => {
+                let len = sy.range_string.iter().position(|&b| b == 0).unwrap_or(sy.range_string.len());
+                format!("user|{}", String::from_utf8_lossy(&sy.range_string[..len]))
+            }
+            _ => String::new(),
+        };
+        parts.push(format!("range={range}"));
+    }
+    if sy.align != style_align::STYLE_ALIGN_DEFAULT {
+        let align = match sy.align {
+            style_align::STYLE_ALIGN_LEFT => "left",
+            style_align::STYLE_ALIGN_CENTRE => "centre",
+            style_align::STYLE_ALIGN_RIGHT => "right",
+            style_align::STYLE_ALIGN_ABSOLUTE_CENTRE => "absolute-centre",
+            _ => "",
+        };
+        parts.push(format!("align={align}"));
+    }
+    if sy.default_type != style_default_type::STYLE_DEFAULT_BASE {
+        let default = match sy.default_type {
+            style_default_type::STYLE_DEFAULT_PUSH => "push-default",
+            style_default_type::STYLE_DEFAULT_POP => "pop-default",
+            _ => "",
+        };
+        parts.push(default.to_string());
+    }
+    if sy.fill != 8 {
+        parts.push(format!("fill={}", colour_tostring(sy.fill)));
+    }
+    if gc.fg != 8 {
+        parts.push(format!("fg={}", colour_tostring(gc.fg)));
+    }
+    if gc.bg != 8 {
+        parts.push(format!("bg={}", colour_tostring(gc.bg)));
+    }
+    if gc.us != 8 {
+        parts.push(format!("us={}", colour_tostring(gc.us)));
+    }
+    if !gc.attr.is_empty() {
+        parts.push(attributes_tostring(gc.attr).into_owned());
+    }
+
+    if parts.is_empty() {
+        return "default".to_string();
+    }
+    parts.join(",")
 }
 
 /// Merge a named style option into a Grid cell (additive, ORs the attributes).
@@ -559,9 +446,6 @@ mod tests {
     use super::*;
     use crate::GRID_DEFAULT_CELL;
 
-    /// Mutex to serialize tests that use `style_tostring`'s static buffer.
-    static STYLE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     /// Parse a style string starting from `STYLE_DEFAULT` with `GRID_DEFAULT_CELL` as base.
     /// Returns the parsed style on success, or None on error.
     unsafe fn parse(input: &str) -> Option<style> {
@@ -573,12 +457,9 @@ mod tests {
         }
     }
 
-    /// Format a style to string. Caller must hold `STYLE_LOCK`.
-    unsafe fn tostring(sy: &style) -> String {
-        unsafe {
-            let ptr = style_tostring(sy as *const style);
-            CStr::from_ptr(ptr.cast()).to_str().unwrap().to_string()
-        }
+    /// Format a style to string.
+    fn tostring(sy: &style) -> String {
+        style_tostring(sy)
     }
 
     // ---------------------------------------------------------------
@@ -619,17 +500,16 @@ mod tests {
     #[test]
     fn parse_fg_color() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let sy = parse("fg=red").unwrap();
             assert_eq!(sy.gc.fg, 1); // red = colour index 1
-            assert_eq!(tostring(&sy), "fg=red");
+            // STYLE_DEFAULT has us=0, so us=black follows, as in C.
+            assert_eq!(tostring(&sy), "fg=red,us=black");
         }
     }
 
     #[test]
     fn parse_bg_color() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let sy = parse("bg=blue").unwrap();
             assert_eq!(sy.gc.bg, 4); // blue = colour index 4
             assert!(tostring(&sy).contains("bg=blue"));
@@ -648,7 +528,6 @@ mod tests {
     #[test]
     fn parse_us_color() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let sy = parse("us=green").unwrap();
             assert_eq!(sy.gc.us, 2); // green = 2
             assert!(tostring(&sy).contains("us=green"));
@@ -658,7 +537,6 @@ mod tests {
     #[test]
     fn parse_fill_color() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             let sy = parse("fill=yellow").unwrap();
             assert_eq!(sy.fill, 3); // yellow = 3
             assert!(tostring(&sy).contains("fill=yellow"));
@@ -934,7 +812,6 @@ mod tests {
     #[test]
     fn tostring_default_has_us_black() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap();
             // STYLE_DEFAULT has us=0 (black), so tostring shows "us=black".
             let s = tostring(&*(&raw const STYLE_DEFAULT));
             assert_eq!(s, "us=black");
@@ -944,7 +821,6 @@ mod tests {
     #[test]
     fn tostring_round_trip_colors() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap();
             let sy = parse("fg=red").unwrap();
             let s = tostring(&sy);
             assert!(s.contains("fg=red"), "got: {s}");
@@ -954,7 +830,6 @@ mod tests {
     #[test]
     fn tostring_round_trip_align() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap();
             let sy = parse("align=centre").unwrap();
             let s = tostring(&sy);
             assert!(s.contains("align=centre"), "got: {s}");
@@ -964,7 +839,6 @@ mod tests {
     #[test]
     fn tostring_round_trip_list() {
         unsafe {
-            let _lock = STYLE_LOCK.lock().unwrap();
             let sy = parse("list=on").unwrap();
             let s = tostring(&sy);
             assert!(s.contains("list=on"), "got: {s}");
@@ -1022,6 +896,17 @@ mod tests {
             let input = b"fg=\xc3\x28\0";
             let ret = style_parse(&raw mut sy, &raw const STYLE_DEFAULT.gc, input.as_ptr());
             assert_eq!(ret, -1);
+        }
+    }
+
+    #[test]
+    fn tostring_lists_every_property() {
+        unsafe {
+            let sy = parse("fg=red,bg=blue,bold,align=right,list=on,fill=green").unwrap();
+            assert_eq!(
+                tostring(&sy),
+                "list=on,align=right,fill=green,fg=red,bg=blue,us=black,bright"
+            );
         }
     }
 }

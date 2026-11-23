@@ -777,7 +777,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: &[u8], key: key_code) {
                 "new key {}: 0x{:x} ({})",
                 String::from_utf8_lossy(s),
                 key,
-                _s(keystr)
+                keystr
             );
             tty_keys_add1(&raw mut (*tty).key_tree, s, key);
         } else {
@@ -785,7 +785,7 @@ unsafe fn tty_keys_add(tty: *mut tty, s: &[u8], key: key_code) {
                 "replacing key {}: 0x{:x} ({})",
                 String::from_utf8_lossy(s),
                 key,
-                _s(keystr)
+                keystr
             );
             (*tk).key = key;
         }
@@ -1490,7 +1490,7 @@ unsafe fn tty_keys_extended_key(
                 *size,
                 _s(buf),
                 nkey,
-                _s(key_string_lookup_key(nkey, 1))
+                key_string_lookup_key(nkey, 1)
             );
         }
 

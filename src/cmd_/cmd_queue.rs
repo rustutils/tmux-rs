@@ -85,23 +85,21 @@ pub struct cmdq_list {
     pub list: Vec<*mut cmdq_item>,
 }
 
-pub unsafe fn cmdq_name(c: Option<&client>) -> *const u8 {
-    static mut BUF: [u8; 256] = [0; 256];
-    let s = &raw mut BUF as *mut u8;
-
+/// Name of a command queue for logs: the client name in angle brackets,
+/// or `<global>`.
+///
+/// # Safety
+/// The client's name must be null or a valid string.
+pub unsafe fn cmdq_name(c: Option<&client>) -> String {
     let Some(c) = c else {
-        return c!("<global>");
+        return "<global>".to_string();
     };
-
-    unsafe {
-        if !c.name.is_null() {
-            _ = xsnprintf_!(s, 256, "<{}>", _s(c.name));
-        } else {
-            _ = xsnprintf_!(s, 256, "<{:p}>", c as *const client);
-        }
+    if c.name.is_null() {
+        format!("<{:p}>", c as *const client)
+    } else {
+        // SAFETY: the caller guarantees the name is valid.
+        format!("<{}>", unsafe { _s(c.name) })
     }
-
-    s
 }
 
 pub unsafe fn cmdq_get(c: *mut client) -> *mut cmdq_list {
@@ -306,7 +304,7 @@ pub unsafe fn cmdq_append(c: *mut client, mut item: *mut cmdq_item) -> *mut cmdq
 
             (*item).queue = queue;
             (*queue).list.push(item);
-            log_debug!("{} {}: {}", __func__, _s(cmdq_name(c.as_ref())), _s((*item).name));
+            log_debug!("{} {}: {}", __func__, cmdq_name(c.as_ref()), _s((*item).name));
 
             item = next;
             if item.is_null() {
@@ -344,7 +342,7 @@ pub unsafe fn cmdq_insert_after(
             log_debug!(
                 "{} {}: {} after {}",
                 "cmdq_insert_after",
-                _s(cmdq_name(c.as_ref())),
+                cmdq_name(c.as_ref()),
                 _s((*item).name),
                 _s((*after).name),
             );
@@ -591,7 +589,7 @@ pub unsafe fn cmdq_add_message(item: *mut cmdq_item) {
             }
             if !client_get_session(c).is_null() && (*state).event.key != KEYC_NONE {
                 let key = key_string_lookup_key((*state).event.key, 0);
-                server_add_message!("{}{} key {}: {}", _s((*c).name), _s(user), _s(key), _s(tmp));
+                server_add_message!("{}{} key {}: {}", _s((*c).name), _s(user), key, _s(tmp));
             } else {
                 server_add_message!("{}{} command: {}", _s((*c).name), _s(user), _s(tmp));
             }
@@ -633,7 +631,7 @@ pub unsafe fn cmdq_fire_command(item: *mut cmdq_item) -> cmd_retval {
             }
             if log_get_level() > 1 {
                 let tmp = cmd_print(cmd);
-                log_debug!("{} {}: ({}) {}", __func__, _s(name), (*item).group, _s(tmp));
+                log_debug!("{} {}: ({}) {}", __func__, name, (*item).group, _s(tmp));
                 free_(tmp);
             }
 
@@ -778,16 +776,16 @@ pub unsafe fn cmdq_next(c: *mut client) -> u32 {
 
         'waiting: {
             if (*queue).list.is_empty() {
-                // log_debug!("{} {}: empty", __func__, _s(name));
+                // log_debug!("{} {}: empty", __func__, name);
                 return 0;
             }
             if (*(&(*queue).list)[0]).flags & CMDQ_WAITING != 0 {
                 // Too noisy:
-                // log_debug!("{} {}: waiting", __func__, _s(name));
+                // log_debug!("{} {}: waiting", __func__, name);
                 return 0;
             }
 
-            log_debug!("{} {}: enter", __func__, _s(name));
+            log_debug!("{} {}: enter", __func__, name);
             while let Some(&first) = (*queue).list.first() {
                 (*queue).item = first;
                 let item = (*queue).item;
@@ -797,7 +795,7 @@ pub unsafe fn cmdq_next(c: *mut client) -> u32 {
                 log_debug!(
                     "{} {}: {} ({}), flags {}",
                     __func__,
-                    _s(name),
+                    name,
                     _s((*item).name),
                     (*item).type_ as i32,
                     (*item).flags
@@ -834,11 +832,11 @@ pub unsafe fn cmdq_next(c: *mut client) -> u32 {
             }
             (*queue).item = null_mut();
 
-            log_debug!("{} {}: exit (empty)", __func__, _s(name));
+            log_debug!("{} {}: exit (empty)", __func__, name);
             return items;
         } // 'waiting
         // waiting:
-        log_debug!("{} {}: exit (wait)", __func__, _s(name));
+        log_debug!("{} {}: exit (wait)", __func__, name);
         items
     }
 }

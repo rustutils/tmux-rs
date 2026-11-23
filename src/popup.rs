@@ -571,8 +571,6 @@ pub unsafe fn popup_key_cb(c: *mut client, data: *mut c_void, event: *mut key_ev
     unsafe {
         let pd = data as *mut popup_data;
         let m = &raw mut (*event).m;
-        let mut buf = null();
-        let mut len = 0;
 
         'menu: {
             'out: {
@@ -664,18 +662,10 @@ pub unsafe fn popup_key_cb(c: *mut client, data: *mut c_void, event: *mut key_ev
                         } else {
                             ((*m).x - (*pd).px - 1, (*m).y - (*pd).py - 1)
                         };
-                        if input_key_get_mouse(
-                            &raw mut (*pd).s,
-                            m,
-                            px,
-                            py,
-                            &raw mut buf,
-                            &raw mut len,
-                        ) == 0
-                        {
+                        let Some(buf) = input_key_get_mouse(&raw mut (*pd).s, m, px, py) else {
                             return 0;
-                        }
-                        job_write((*pd).job, buf.cast(), len);
+                        };
+                        job_write((*pd).job, buf.as_ptr().cast(), buf.len());
                         return 0;
                     }
                     input_key(&raw mut (*pd).s, job_get_output((*pd).job), (*event).key);

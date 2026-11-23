@@ -212,7 +212,7 @@ pub unsafe fn key_bindings_add(
             "{}: {:#x} {} = {}",
             "key_bindings_add",
             bd.key,
-            _s(key_string_lookup_key(bd.key, 1)),
+            key_string_lookup_key(bd.key, 1),
             _s(s),
         );
         free_(s);
@@ -234,7 +234,7 @@ pub unsafe fn key_bindings_remove(name: *const u8, key: key_code) {
                 "{}: {:#x} {}",
                 "key_bindings_remove",
                 old.key,
-                _s(key_string_lookup_key(old.key, 1)),
+                key_string_lookup_key(old.key, 1),
             );
             key_binding_free_fields(&mut old);
         }

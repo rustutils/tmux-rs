@@ -964,12 +964,12 @@ pub unsafe fn tty_update_mode(tty: *mut tty, mut mode: mode_flag, s: *mut screen
             log_debug!(
                 "{}: current mode {}",
                 _s((*c).name),
-                _s(screen_mode_to_string((*tty).mode)),
+                screen_mode_to_string((*tty).mode),
             );
             log_debug!(
                 "{}: setting mode {}",
                 _s((*c).name),
-                _s(screen_mode_to_string(mode)),
+                screen_mode_to_string(mode),
             );
         }
 
@@ -1013,21 +1013,21 @@ pub unsafe fn tty_emulate_repeat(
     }
 }
 
+/// Write `n` spaces.
+///
+/// # Safety
+/// `tty` must be a valid tty.
 pub unsafe fn tty_repeat_space(tty: *mut tty, mut n: u32) {
     const SIZEOF_S: usize = 500;
-    static mut S: [u8; SIZEOF_S] = [0; SIZEOF_S];
+    static S: [u8; SIZEOF_S] = [b' '; SIZEOF_S];
 
     unsafe {
-        if S[0] != b' ' {
-            libc::memset((&raw mut S).cast(), ' ' as i32, SIZEOF_S);
-        }
-
         while n > SIZEOF_S as u32 {
-            tty_putn(tty, (&raw mut S).cast(), SIZEOF_S, SIZEOF_S as u32);
+            tty_putn(tty, S.as_ptr().cast(), SIZEOF_S, SIZEOF_S as u32);
             n -= SIZEOF_S as u32;
         }
         if n != 0 {
-            tty_putn(tty, (&raw mut S).cast(), n as usize, n);
+            tty_putn(tty, S.as_ptr().cast(), n as usize, n);
         }
     }
 }

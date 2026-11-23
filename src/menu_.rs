@@ -104,9 +104,11 @@ pub unsafe fn menu_add_item(
         let mut max_width = (*c).tty.sx - 4;
 
         let mut key = null();
+        let keystring;
         let slen: usize = strlen(s0);
         if *s0 != b'-' && item.as_ref().unwrap().key != KEYC_UNKNOWN && item.as_ref().unwrap().key != KEYC_NONE {
-            key = key_string_lookup_key(item.as_ref().unwrap().key, 0);
+            keystring = CString::new(key_string_lookup_key(item.as_ref().unwrap().key, 0)).unwrap_or_default();
+            key = keystring.as_ptr().cast();
             let keylen: usize = strlen(key) + 3;
 
             if keylen <= max_width as usize / 4 {

@@ -11,7 +11,7 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use crate::libc::{memcpy, snprintf, sscanf};
+use crate::libc::sscanf;
 use crate::*;
 
 unsafe impl Sync for key_string_table_entry {}
@@ -369,219 +369,114 @@ pub unsafe fn key_string_lookup_string(mut string: *const u8) -> key_code {
     }
 }
 
-/// Convert a key code into string format, with prefix if necessary.
-pub unsafe fn key_string_lookup_key(mut key: key_code, with_flags: i32) -> *const u8 {
-    let sizeof_out: usize = 64;
-    static mut OUT: [u8; 64] = [0; 64];
-    unsafe {
-        let saved = key;
-        let sizeof_tmp: usize = 8;
-        let mut tmp: [u8; 8] = [0; 8];
-        let s: *const u8;
+/// Convert a key code into its name, with modifier prefixes. With
+/// `with_flags`, the key flags are appended in brackets (for logs).
+///
+/// A literal key (from send-keys -H) is its byte. C prints a byte above
+/// 0x7f as it is, here it becomes U+FFFD so the name is valid UTF-8.
+pub fn key_string_lookup_key(mut key: key_code, with_flags: i32) -> String {
+    let saved = key;
+    let mut out = String::new();
 
-        OUT[0] = b'\0';
-
-        'out: {
-            'append: {
-                // Literal keys are themselves.
-                if key & KEYC_LITERAL != 0 {
-                    snprintf(
-                        (&raw mut OUT).cast(),
-                        sizeof_out,
-                        c"%c".as_ptr(),
-                        (key & 0xff) as i32,
-                    );
-                    break 'out;
-                }
-
-                // Fill in the modifiers.
-                if key & KEYC_CTRL != 0 {
-                    strlcat(&raw mut OUT as *mut u8, c!("C-"), sizeof_out);
-                }
-                if key & KEYC_META != 0 {
-                    strlcat(&raw mut OUT as *mut u8, c!("M-"), sizeof_out);
-                }
-                if key & KEYC_SHIFT != 0 {
-                    strlcat(&raw mut OUT as *mut u8, c!("S-"), sizeof_out);
-                }
-                key &= KEYC_MASK_KEY;
-
-                // Handle no key.
-                if key == KEYC_NONE {
-                    s = c!("None");
-                    break 'append;
-                }
-
-                // Handle special keys.
-                if key == KEYC_UNKNOWN {
-                    s = c!("Unknown");
-                    break 'append;
-                }
-                if key == keyc::KEYC_ANY as u64 {
-                    s = c!("Any");
-                    break 'append;
-                }
-                if key == keyc::KEYC_FOCUS_IN as u64 {
-                    s = c!("FocusIn");
-                    break 'append;
-                }
-                if key == keyc::KEYC_FOCUS_OUT as u64 {
-                    s = c!("FocusOut");
-                    break 'append;
-                }
-                if key == keyc::KEYC_PASTE_START as u64 {
-                    s = c!("PasteStart");
-                    break 'append;
-                }
-                if key == keyc::KEYC_PASTE_END as u64 {
-                    s = c!("PasteEnd");
-                    break 'append;
-                }
-                if key == keyc::KEYC_MOUSE as u64 {
-                    s = c!("Mouse");
-                    break 'append;
-                }
-                if key == keyc::KEYC_DRAGGING as u64 {
-                    s = c!("Dragging");
-                    break 'append;
-                }
-                if key == keyc::KEYC_MOUSEMOVE_PANE as u64 {
-                    s = c!("MouseMovePane");
-                    break 'append;
-                }
-                if key == keyc::KEYC_MOUSEMOVE_STATUS as u64 {
-                    s = c!("MouseMoveStatus");
-                    break 'append;
-                }
-                if key == keyc::KEYC_MOUSEMOVE_STATUS_LEFT as u64 {
-                    s = c!("MouseMoveStatusLeft");
-                    break 'append;
-                }
-                if key == keyc::KEYC_MOUSEMOVE_STATUS_RIGHT as u64 {
-                    s = c!("MouseMoveStatusRight");
-                    break 'append;
-                }
-                if key == keyc::KEYC_MOUSEMOVE_BORDER as u64 {
-                    s = c!("MouseMoveBorder");
-                    break 'append;
-                }
-                if (KEYC_USER..KEYC_USER_END).contains(&key) {
-                    snprintf(
-                        (&raw mut tmp).cast(),
-                        sizeof_tmp,
-                        c"User%u".as_ptr(),
-                        (key - KEYC_USER) as u8 as u32,
-                    );
-                    strlcat(
-                        &raw mut OUT as *mut u8,
-                        &raw const tmp as *const u8,
-                        sizeof_out,
-                    );
-                    break 'out;
-                }
-
-                // Try the key against the string table.
-                if let Some(i) = KEY_STRING_TABLE
-                    .iter()
-                    .position(|e| key == e.key & KEYC_MASK_KEY)
-                {
-                    strlcat_(
-                        &raw mut OUT as *mut u8,
-                        KEY_STRING_TABLE[i].string,
-                        sizeof_out,
-                    );
-                    break 'out;
-                }
-
-                // Is this a Unicode key?
-                if KEYC_IS_UNICODE(key) {
-                    let ud = Utf8Data::from_char(key as u32);
-                    let off = strlen(&raw const OUT as *const u8);
-                    memcpy(
-                        &raw mut OUT[off] as *mut c_void,
-                        &raw const ud.data as *const c_void,
-                        ud.size as usize,
-                    );
-                    OUT[off + ud.size as usize] = b'\0';
-                    break 'out;
-                }
-
-                // Invalid keys are errors.
-                if key > 255 {
-                    snprintf(
-                        (&raw mut OUT).cast(),
-                        sizeof_out,
-                        c"Invalid#%llx".as_ptr(),
-                        saved,
-                    );
-                    break 'out;
-                }
-
-                // Printable ASCII keys.
-                if key > 32 && key <= 126 {
-                    tmp[0] = key as u8;
-                    tmp[1] = b'\0';
-                } else if key == 127 {
-                    _ = xsnprintf_!(&raw mut tmp as _, sizeof_tmp, "C-?");
-                } else if key >= 128 {
-                    _ = xsnprintf_!(&raw mut tmp as _, sizeof_tmp, "\\{:o}", key,);
-                }
-
-                strlcat(
-                    &raw mut OUT as *mut u8,
-                    &raw const tmp as *const u8,
-                    sizeof_out,
-                );
-                break 'out;
+    'out: {
+        // Literal keys are themselves.
+        if key & KEYC_LITERAL != 0 {
+            let byte = (key & 0xff) as u8;
+            if byte != 0 {
+                out.push_str(&String::from_utf8_lossy(&[byte]));
             }
-            // append:
-            strlcat(&raw mut OUT as *mut u8, s, sizeof_out);
+            break 'out;
         }
-        // out:
-        if with_flags != 0 && (saved & KEYC_MASK_FLAGS) != 0 {
-            strlcat(&raw mut OUT as *mut u8, c!("["), sizeof_out);
-            if saved & KEYC_LITERAL != 0 {
-                strlcat(&raw mut OUT as *mut u8, c!("L"), sizeof_out);
-            }
-            if saved & KEYC_KEYPAD != 0 {
-                strlcat(&raw mut OUT as *mut u8, c!("K"), sizeof_out);
-            }
-            if saved & KEYC_CURSOR != 0 {
-                strlcat(&raw mut OUT as *mut u8, c!("C"), sizeof_out);
-            }
-            if saved & KEYC_IMPLIED_META != 0 {
-                strlcat(&raw mut OUT as *mut u8, c!("I"), sizeof_out);
-            }
-            if saved & KEYC_BUILD_MODIFIERS != 0 {
-                strlcat(&raw mut OUT as *mut u8, c!("B"), sizeof_out);
-            }
-            if saved & KEYC_SENT != 0 {
-                strlcat(&raw mut OUT as *mut u8, c!("S"), sizeof_out);
-            }
-            strlcat(&raw mut OUT as *mut u8, c!("]"), sizeof_out);
+
+        // Fill in the modifiers.
+        if key & KEYC_CTRL != 0 {
+            out.push_str("C-");
         }
-        &raw const OUT as *const u8
+        if key & KEYC_META != 0 {
+            out.push_str("M-");
+        }
+        if key & KEYC_SHIFT != 0 {
+            out.push_str("S-");
+        }
+        key &= KEYC_MASK_KEY;
+
+        // Special keys.
+        let special = match key {
+            KEYC_NONE => Some("None"),
+            KEYC_UNKNOWN => Some("Unknown"),
+            _ if key == keyc::KEYC_ANY as u64 => Some("Any"),
+            _ if key == keyc::KEYC_FOCUS_IN as u64 => Some("FocusIn"),
+            _ if key == keyc::KEYC_FOCUS_OUT as u64 => Some("FocusOut"),
+            _ if key == keyc::KEYC_PASTE_START as u64 => Some("PasteStart"),
+            _ if key == keyc::KEYC_PASTE_END as u64 => Some("PasteEnd"),
+            _ if key == keyc::KEYC_MOUSE as u64 => Some("Mouse"),
+            _ if key == keyc::KEYC_DRAGGING as u64 => Some("Dragging"),
+            _ if key == keyc::KEYC_MOUSEMOVE_PANE as u64 => Some("MouseMovePane"),
+            _ if key == keyc::KEYC_MOUSEMOVE_STATUS as u64 => Some("MouseMoveStatus"),
+            _ if key == keyc::KEYC_MOUSEMOVE_STATUS_LEFT as u64 => Some("MouseMoveStatusLeft"),
+            _ if key == keyc::KEYC_MOUSEMOVE_STATUS_RIGHT as u64 => Some("MouseMoveStatusRight"),
+            _ if key == keyc::KEYC_MOUSEMOVE_BORDER as u64 => Some("MouseMoveBorder"),
+            _ => None,
+        };
+        if let Some(special) = special {
+            out.push_str(special);
+            break 'out;
+        }
+        if (KEYC_USER..KEYC_USER_END).contains(&key) {
+            out.push_str(&format!("User{}", (key - KEYC_USER) as u8));
+            break 'out;
+        }
+
+        // Try the key against the string table.
+        if let Some(e) = KEY_STRING_TABLE.iter().find(|e| key == e.key & KEYC_MASK_KEY) {
+            out.push_str(e.string);
+            break 'out;
+        }
+
+        // Is this a Unicode key?
+        if KEYC_IS_UNICODE(key) {
+            out.push(char::from_u32(key as u32).unwrap_or(char::REPLACEMENT_CHARACTER));
+            break 'out;
+        }
+
+        // Invalid keys are errors.
+        if key > 255 {
+            out = format!("Invalid#{saved:x}");
+            break 'out;
+        }
+
+        // Printable ASCII keys.
+        if key > 32 && key <= 126 {
+            out.push(key as u8 as char);
+        } else if key == 127 {
+            out.push_str("C-?");
+        } else if key >= 128 {
+            out.push_str(&format!("\\{key:o}"));
+        }
     }
+
+    if with_flags != 0 && (saved & KEYC_MASK_FLAGS) != 0 {
+        out.push('[');
+        for (flag, letter) in [
+            (KEYC_LITERAL, 'L'),
+            (KEYC_KEYPAD, 'K'),
+            (KEYC_CURSOR, 'C'),
+            (KEYC_IMPLIED_META, 'I'),
+            (KEYC_BUILD_MODIFIERS, 'B'),
+            (KEYC_SENT, 'S'),
+        ] {
+            if saved & flag != 0 {
+                out.push(letter);
+            }
+        }
+        out.push(']');
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `key_string_lookup_key` writes into a process-global `static mut OUT`
-    /// and returns a pointer into it. Production tmux is single-threaded so
-    /// the race is invisible. Under `cargo test` parallel runs the tests
-    /// stomp on each other's results. Serialize tests that read from `OUT`.
-    static LOOKUP_KEY_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn lookup_lock() -> std::sync::MutexGuard<'static, ()> {
-        LOOKUP_KEY_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    /// Helper to convert a `*const u8` C string to a Rust `&str`.
-    unsafe fn cptr_to_str<'a>(p: *const u8) -> &'a str {
-        unsafe { core::ffi::CStr::from_ptr(p.cast()).to_str().unwrap() }
-    }
 
     // ---------------------------------------------------------------
     // key_string_lookup_string: parse key name to key code
@@ -702,50 +597,38 @@ mod tests {
 
     #[test]
     fn lookup_key_single_char() {
-        let _g = lookup_lock();
-        unsafe {
-            let s = cptr_to_str(key_string_lookup_key(b'a' as key_code, 0));
-            assert_eq!(s, "a");
-        }
+        let s = key_string_lookup_key(b'a' as key_code, 0);
+        assert_eq!(s, "a");
     }
 
     #[test]
     fn lookup_key_special() {
-        let _g = lookup_lock();
-        unsafe {
-            let s = cptr_to_str(key_string_lookup_key(c0::C0_CR as key_code, 0));
-            assert_eq!(s, "Enter");
+        let s = key_string_lookup_key(c0::C0_CR as key_code, 0);
+        assert_eq!(s, "Enter");
 
-            let s = cptr_to_str(key_string_lookup_key(c0::C0_HT as key_code, 0));
-            assert_eq!(s, "Tab");
+        let s = key_string_lookup_key(c0::C0_HT as key_code, 0);
+        assert_eq!(s, "Tab");
 
-            let s = cptr_to_str(key_string_lookup_key(c0::C0_ESC as key_code, 0));
-            assert_eq!(s, "Escape");
-        }
+        let s = key_string_lookup_key(c0::C0_ESC as key_code, 0);
+        assert_eq!(s, "Escape");
     }
 
     #[test]
     fn lookup_key_with_modifiers() {
-        let _g = lookup_lock();
-        unsafe {
-            let s = cptr_to_str(key_string_lookup_key(b'a' as key_code | KEYC_CTRL, 0));
-            assert_eq!(s, "C-a");
+        let s = key_string_lookup_key(b'a' as key_code | KEYC_CTRL, 0);
+        assert_eq!(s, "C-a");
 
-            let s = cptr_to_str(key_string_lookup_key(b'a' as key_code | KEYC_META, 0));
-            assert_eq!(s, "M-a");
+        let s = key_string_lookup_key(b'a' as key_code | KEYC_META, 0);
+        assert_eq!(s, "M-a");
 
-            let s = cptr_to_str(key_string_lookup_key(b'a' as key_code | KEYC_CTRL | KEYC_META, 0));
-            assert_eq!(s, "C-M-a");
-        }
+        let s = key_string_lookup_key(b'a' as key_code | KEYC_CTRL | KEYC_META, 0);
+        assert_eq!(s, "C-M-a");
     }
 
     #[test]
     fn lookup_key_none() {
-        let _g = lookup_lock();
-        unsafe {
-            let s = cptr_to_str(key_string_lookup_key(KEYC_NONE, 0));
-            assert_eq!(s, "None");
-        }
+        let s = key_string_lookup_key(KEYC_NONE, 0);
+        assert_eq!(s, "None");
     }
 
     // ---------------------------------------------------------------
@@ -754,11 +637,10 @@ mod tests {
 
     #[test]
     fn round_trip_simple_keys() {
-        let _g = lookup_lock();
         unsafe {
             for name in &[c"a", c"z", c"Enter", c"Tab", c"Escape", c"Space", c"BSpace"] {
                 let key = key_string_lookup_string(name.as_ptr().cast());
-                let result = cptr_to_str(key_string_lookup_key(key, 0));
+                let result = key_string_lookup_key(key, 0);
                 let expected = core::ffi::CStr::from_ptr(name.as_ptr()).to_str().unwrap();
                 assert_eq!(result, expected, "round-trip failed for {expected}");
             }
@@ -767,12 +649,11 @@ mod tests {
 
     #[test]
     fn round_trip_with_modifiers() {
-        let _g = lookup_lock();
         unsafe {
             for name in &[c"C-a", c"M-a", c"M-C-a"] {
                 let key = key_string_lookup_string(name.as_ptr().cast());
                 assert_ne!(key, KEYC_UNKNOWN, "parse failed");
-                let result = cptr_to_str(key_string_lookup_key(key, 0));
+                let result = key_string_lookup_key(key, 0);
                 let expected = core::ffi::CStr::from_ptr(name.as_ptr()).to_str().unwrap();
                 // Note: the formatter outputs modifiers in C-M-S- order,
                 // so M-C-a round-trips as C-M-a.
@@ -842,5 +723,24 @@ mod tests {
             assert_eq!(mods, 0);
             assert_eq!(*ptr, b'x');
         }
+    }
+
+    #[test]
+    fn lookup_key_other_forms() {
+        assert_eq!(key_string_lookup_key(KEYC_USER + 3, 0), "User3");
+        assert_eq!(key_string_lookup_key(127, 0), "C-?");
+        // Keys above 0x7f are Unicode code points, as in C.
+        assert_eq!(key_string_lookup_key(200, 0), "\u{c8}");
+        assert_eq!(key_string_lookup_key(KEYC_LITERAL | b'x' as key_code, 0), "x");
+        assert_eq!(key_string_lookup_key(KEYC_UNKNOWN, 0), "Unknown");
+        assert_eq!(key_string_lookup_key(0x1f600, 0), "\u{1f600}");
+    }
+
+    #[test]
+    fn lookup_key_with_flags() {
+        let key = b'a' as key_code | KEYC_META | KEYC_IMPLIED_META | KEYC_SENT;
+        assert_eq!(key_string_lookup_key(key, 0), "M-a");
+        assert_eq!(key_string_lookup_key(key, 1), "M-a[IS]");
+        assert_eq!(key_string_lookup_key(KEYC_LITERAL | b'x' as key_code, 1), "x[L]");
     }
 }

@@ -771,86 +771,39 @@ pub unsafe fn screen_alternate_off(s: *mut screen, gc: *mut GridCell, cursor: i3
     }
 }
 
-/// Get mode as a string.
-pub unsafe fn screen_mode_to_string(mode: mode_flag) -> *const u8 {
-    const TMP_LEN: usize = 1024;
-    static mut TMP: [MaybeUninit<u8>; 1024] = [MaybeUninit::uninit(); 1024];
-
-    unsafe {
-        if mode == mode_flag::empty() {
-            return c!("NONE");
-        }
-        if mode.is_all() {
-            return c!("ALL");
-        }
-
-        *TMP[0].as_mut_ptr().cast() = 0i8;
-
-        if mode.intersects(mode_flag::MODE_CURSOR) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("CURSOR,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_INSERT) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("INSERT,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_KCURSOR) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("KCURSOR,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_KKEYPAD) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("KKEYPAD,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_WRAP) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("WRAP,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_MOUSE_STANDARD) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("MOUSE_STANDARD,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_MOUSE_BUTTON) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("MOUSE_BUTTON,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_CURSOR_BLINKING) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("CURSOR_BLINKING,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_CURSOR_VERY_VISIBLE) {
-            strlcat(
-                addr_of_mut!(TMP).cast(),
-                c!("CURSOR_VERY_VISIBLE,"),
-                TMP_LEN,
-            );
-        }
-        if mode.intersects(mode_flag::MODE_MOUSE_UTF8) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("MOUSE_UTF8,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_MOUSE_SGR) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("MOUSE_SGR,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_BRACKETPASTE) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("BRACKETPASTE,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_FOCUSON) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("FOCUSON,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_MOUSE_ALL) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("MOUSE_ALL,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_ORIGIN) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("ORIGIN,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_CRLF) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("CRLF,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_KEYS_EXTENDED) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("KEYS_EXTENDED,"), TMP_LEN);
-        }
-        if mode.intersects(mode_flag::MODE_KEYS_EXTENDED_2) {
-            strlcat(addr_of_mut!(TMP).cast(), c!("KEYS_EXTENDED_2,"), TMP_LEN);
-        }
-
-        let len = strlen(addr_of!(TMP).cast());
-        if len > 0 {
-            *TMP[len - 1].as_mut_ptr().cast() = 0i8;
-        }
-        &raw mut TMP as *mut u8
+/// Screen mode flags as a comma separated list, for logs.
+pub fn screen_mode_to_string(mode: mode_flag) -> String {
+    if mode == mode_flag::empty() {
+        return "NONE".to_string();
     }
+    if mode.is_all() {
+        return "ALL".to_string();
+    }
+    [
+        (mode_flag::MODE_CURSOR, "CURSOR"),
+        (mode_flag::MODE_INSERT, "INSERT"),
+        (mode_flag::MODE_KCURSOR, "KCURSOR"),
+        (mode_flag::MODE_KKEYPAD, "KKEYPAD"),
+        (mode_flag::MODE_WRAP, "WRAP"),
+        (mode_flag::MODE_MOUSE_STANDARD, "MOUSE_STANDARD"),
+        (mode_flag::MODE_MOUSE_BUTTON, "MOUSE_BUTTON"),
+        (mode_flag::MODE_CURSOR_BLINKING, "CURSOR_BLINKING"),
+        (mode_flag::MODE_CURSOR_VERY_VISIBLE, "CURSOR_VERY_VISIBLE"),
+        (mode_flag::MODE_MOUSE_UTF8, "MOUSE_UTF8"),
+        (mode_flag::MODE_MOUSE_SGR, "MOUSE_SGR"),
+        (mode_flag::MODE_BRACKETPASTE, "BRACKETPASTE"),
+        (mode_flag::MODE_FOCUSON, "FOCUSON"),
+        (mode_flag::MODE_MOUSE_ALL, "MOUSE_ALL"),
+        (mode_flag::MODE_ORIGIN, "ORIGIN"),
+        (mode_flag::MODE_CRLF, "CRLF"),
+        (mode_flag::MODE_KEYS_EXTENDED, "KEYS_EXTENDED"),
+        (mode_flag::MODE_KEYS_EXTENDED_2, "KEYS_EXTENDED_2"),
+    ]
+    .into_iter()
+    .filter(|(flag, _)| mode.intersects(*flag))
+    .map(|(_, name)| name)
+    .collect::<Vec<_>>()
+    .join(",")
 }
 
 #[cfg(test)]

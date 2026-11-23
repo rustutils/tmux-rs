@@ -147,18 +147,14 @@ pub unsafe fn input_key_get(key: key_code) -> *mut input_key_entry {
     }
 }
 
-pub unsafe fn input_key_split2(c: u32, dst: *mut u8) -> usize {
-    unsafe {
-        if c > 0x7f {
-            *dst = (c >> 6) as u8 | 0xc0;
-            *dst.add(1) = (c as u8 & 0x3f) | 0x80;
-
-            2
-        } else {
-            *dst = c as u8;
-
-            1
-        }
+/// Append `c` to `dst` as one byte, or as two bytes UTF-8 style if it is
+/// above 0x7f (the 1005 mouse protocol).
+pub fn input_key_split2(c: u32, dst: &mut Vec<u8>) {
+    if c > 0x7f {
+        dst.push((c >> 6) as u8 | 0xc0);
+        dst.push((c as u8 & 0x3f) | 0x80);
+    } else {
+        dst.push(c as u8);
     }
 }
 
@@ -197,7 +193,7 @@ pub unsafe extern "C-unwind" fn input_key_build() {
                 file!(),
                 line!(),
                 ike.key,
-                _s(key_string_lookup_key(ike.key, 1)),
+                key_string_lookup_key(ike.key, 1),
                 _s(ike.data)
             );
         }
@@ -211,7 +207,7 @@ pub unsafe fn input_key_pane(wp: *mut window_pane, key: key_code, m: *mut mouse_
             log_debug!(
                 "writing key 0x{:x} ({}) to %{}",
                 key,
-                _s(key_string_lookup_key(key, 1)),
+                key_string_lookup_key(key, 1),
                 (*wp).id
             );
         }
@@ -548,30 +544,20 @@ pub unsafe fn input_key(s: *mut screen, bev: *mut evbuffer, mut key: key_code) -
     }
 }
 
-#[expect(static_mut_refs, reason = "FIXME")]
-/// Get mouse event string.
-pub unsafe fn input_key_get_mouse(
-    s: *mut screen,
-    m: *mut mouse_event,
-    x: u32,
-    y: u32,
-    rbuf: *mut *const u8,
-    rlen: *mut usize,
-) -> i32 {
-    use std::io::Write;
-    static mut BUF: [u8; 40] = [0; 40];
-
+/// The bytes to send to an application for mouse event `m` at `x`, `y`,
+/// in the mouse protocol screen `s` asked for. `None` if the application
+/// does not want this event.
+///
+/// # Safety
+/// `s` and `m` must be valid.
+pub unsafe fn input_key_get_mouse(s: *mut screen, m: *mut mouse_event, x: u32, y: u32) -> Option<Vec<u8>> {
     unsafe {
-        let sizeof_buf = 40;
-        *rbuf = null_mut();
-        *rlen = 0;
-
         // If this pane is not in button or all mode, discard motion events.
         if MOUSE_DRAG((*m).b) && !(*s).mode.intersects(MOTION_MOUSE_MODES) {
-            return 0;
+            return None;
         }
         if !(*s).mode.intersects(ALL_MOUSE_MODES) {
-            return 0;
+            return None;
         }
 
         // If this event is a release event and not in all mode, discard it.
@@ -583,14 +569,14 @@ pub unsafe fn input_key_get_mouse(
                 && MOUSE_RELEASE((*m).sgr_b)
                 && !(*s).mode.intersects(mode_flag::MODE_MOUSE_ALL)
             {
-                return 0;
+                return None;
             }
         } else if MOUSE_DRAG((*m).b)
             && MOUSE_RELEASE((*m).b)
             && MOUSE_RELEASE((*m).lb)
             && !(*s).mode.intersects(mode_flag::MODE_MOUSE_ALL)
         {
-            return 0;
+            return None;
         }
 
         // Use the SGR (1006) extension only if the application requested it
@@ -600,62 +586,43 @@ pub unsafe fn input_key_get_mouse(
         // pretend that tmux doesn't speak this extension, and fall back to the
         // UTF-8 (1005) extension if the application requested, or to the
         // legacy format.
-        let mut len: usize;
+        let mut buf: Vec<u8> = Vec::with_capacity(40);
         if (*m).sgr_type != ' ' as u32 && (*s).mode.intersects(mode_flag::MODE_MOUSE_SGR) {
-            len = xsnprintf_!(
-                &raw mut BUF as *mut u8,
-                sizeof_buf,
-                "\x1b[<{};{};{}{}",
-                (*m).sgr_b,
-                x + 1,
-                y + 1,
-                (*m).sgr_type as u8 as char,
-            )
-            .unwrap() as usize
-                - 1;
+            buf.extend_from_slice(
+                format!("\x1b[<{};{};{}{}", (*m).sgr_b, x + 1, y + 1, (*m).sgr_type as u8 as char).as_bytes(),
+            );
         } else if (*s).mode.intersects(mode_flag::MODE_MOUSE_UTF8) {
             if (*m).b > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_BTN_OFF)
                 || x > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF)
                 || y > (MOUSE_PARAM_UTF8_MAX - MOUSE_PARAM_POS_OFF)
             {
-                return 0;
+                return None;
             }
-            len = BUF.as_mut_slice().write(b"\x1b[M").unwrap();
-            len += input_key_split2((*m).b + MOUSE_PARAM_BTN_OFF, &raw mut BUF[len] as _);
-            len += input_key_split2(x + MOUSE_PARAM_POS_OFF, &raw mut BUF[len] as _);
-            len += input_key_split2(y + MOUSE_PARAM_POS_OFF, &raw mut BUF[len] as _);
+            buf.extend_from_slice(b"\x1b[M");
+            input_key_split2((*m).b + MOUSE_PARAM_BTN_OFF, &mut buf);
+            input_key_split2(x + MOUSE_PARAM_POS_OFF, &mut buf);
+            input_key_split2(y + MOUSE_PARAM_POS_OFF, &mut buf);
         } else {
             if (*m).b + MOUSE_PARAM_BTN_OFF > MOUSE_PARAM_MAX {
-                return 0;
+                return None;
             }
 
-            len = BUF.as_mut_slice().write(b"\x1b[M").unwrap();
-            BUF[len] = ((*m).b + MOUSE_PARAM_BTN_OFF) as u8;
-            len += 1;
+            buf.extend_from_slice(b"\x1b[M");
+            buf.push(((*m).b + MOUSE_PARAM_BTN_OFF) as u8);
 
             // The incoming x and y may be out of the range which can be
             // supported by the "normal" mouse protocol. Clamp the
             // coordinates to the supported range.
-            if x + MOUSE_PARAM_POS_OFF > MOUSE_PARAM_MAX {
-                BUF[len] = MOUSE_PARAM_MAX as u8;
-                len += 1;
-            } else {
-                BUF[len] = x as u8 + MOUSE_PARAM_POS_OFF as u8;
-                len += 1;
-            }
-            if y + MOUSE_PARAM_POS_OFF > MOUSE_PARAM_MAX {
-                BUF[len] = MOUSE_PARAM_MAX as u8;
-                len += 1;
-            } else {
-                BUF[len] = y as u8 + MOUSE_PARAM_POS_OFF as u8;
-                len += 1;
+            for pos in [x, y] {
+                if pos + MOUSE_PARAM_POS_OFF > MOUSE_PARAM_MAX {
+                    buf.push(MOUSE_PARAM_MAX as u8);
+                } else {
+                    buf.push(pos as u8 + MOUSE_PARAM_POS_OFF as u8);
+                }
             }
         }
-
-        *rbuf = &raw const BUF as *const u8;
-        *rlen = len;
+        Some(buf)
     }
-    1
 }
 
 /// Translate mouse and output.
@@ -665,9 +632,6 @@ pub unsafe fn input_key_mouse(wp: *mut window_pane, m: *mut mouse_event) {
         let s = (*wp).screen;
         let mut x = 0;
         let mut y = 0;
-        let mut buf = null();
-        let mut len: usize = 0;
-
         // Ignore events if no mouse mode or the pane is not visible.
         if (*m).ignore != 0 || !(*s).mode.intersects(ALL_MOUSE_MODES) {
             return;
@@ -678,10 +642,56 @@ pub unsafe fn input_key_mouse(wp: *mut window_pane, m: *mut mouse_event) {
         if !window_pane_visible(wp) {
             return;
         }
-        if input_key_get_mouse(s, m, x, y, &raw mut buf, &raw mut len) == 0 {
+        let Some(buf) = input_key_get_mouse(s, m, x, y) else {
             return;
+        };
+        log_debug!("writing mouse {} to %{}", String::from_utf8_lossy(&buf), (*wp).id);
+        input_key_write(__func__, &raw mut (*wp).event_output, buf.as_ptr(), buf.len());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mouse(mode: mode_flag, b: u32, sgr_type: u8, x: u32, y: u32) -> Option<Vec<u8>> {
+        let mut s = screen_placeholder();
+        s.mode = mode;
+        // SAFETY: mouse_event is plain integers, so all zeroes is valid,
+        // and both pointers are to locals.
+        unsafe {
+            let mut m: mouse_event = std::mem::zeroed();
+            m.b = b;
+            m.sgr_b = b;
+            m.sgr_type = sgr_type as u32;
+            input_key_get_mouse(&raw mut s, &raw mut m, x, y)
         }
-        log_debug!("writing mouse {1:0$} to %{2}", len, _s(buf), (*wp).id);
-        input_key_write(__func__, &raw mut (*wp).event_output, buf, len);
+    }
+
+    #[test]
+    fn mouse_needs_a_mouse_mode() {
+        assert_eq!(mouse(mode_flag::empty(), 0, b' ', 1, 2), None);
+    }
+
+    #[test]
+    fn mouse_standard_encoding_clamps() {
+        let m = mode_flag::MODE_MOUSE_STANDARD;
+        assert_eq!(mouse(m, 0, b' ', 1, 2).unwrap(), b"\x1b[M\x20\x22\x23");
+        assert_eq!(mouse(m, 0, b' ', 300, 2).unwrap(), b"\x1b[M\x20\xff\x23");
+    }
+
+    #[test]
+    fn mouse_utf8_encoding() {
+        let m = mode_flag::MODE_MOUSE_STANDARD | mode_flag::MODE_MOUSE_UTF8;
+        // 200 + 0x21 = 233 is sent as two bytes.
+        assert_eq!(mouse(m, 0, b' ', 200, 2).unwrap(), b"\x1b[M\x20\xc3\xa9\x23");
+    }
+
+    #[test]
+    fn mouse_sgr_encoding() {
+        let m = mode_flag::MODE_MOUSE_STANDARD | mode_flag::MODE_MOUSE_SGR;
+        assert_eq!(mouse(m, 0, b'M', 1, 2).unwrap(), b"\x1b[<0;2;3M");
+        // Without an SGR event from the terminal the legacy form is used.
+        assert_eq!(mouse(m, 0, b' ', 1, 2).unwrap(), b"\x1b[M\x20\x22\x23");
     }
 }

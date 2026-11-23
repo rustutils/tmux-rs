@@ -23,7 +23,7 @@ pub use tmux_compat::{
     closefrom::closefrom,
     getpeereid::getpeereid,
     setproctitle::setproctitle_,
-    strlcat::{strlcat, strlcat_},
+    strlcat::strlcat,
     strlcpy::strlcpy,
     strtonum::{strtonum, strtonum_},
     unvis::strunvis,

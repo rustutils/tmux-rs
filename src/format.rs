@@ -874,11 +874,7 @@ pub unsafe fn format_cb_current_path(ft: &format_tree) -> format_table_type {
             return format_table_type::None;
         }
 
-        let cwd = osdep_get_cwd((*wp).fd);
-        if cwd.is_null() {
-            return format_table_type::None;
-        }
-        format!("{}", _s(cwd)).into()
+        osdep_get_cwd((*wp).fd).map_or(format_table_type::None, |cwd| cwd.to_string_lossy().into_owned().into())
     }
 }
 
@@ -1380,7 +1376,7 @@ pub unsafe fn format_cb_client_discarded(ft: &format_tree) -> format_table_type 
 pub unsafe fn format_cb_client_flags(ft: &format_tree) -> format_table_type {
     unsafe {
         if !ft.c.is_null() {
-            return format!("{}", _s(server_client_get_flags(ft.c))).into();
+            return server_client_get_flags((*ft.c).flags, (*ft.c).pause_age).into();
         }
         format_table_type::None
     }
@@ -1475,7 +1471,7 @@ pub unsafe fn format_cb_client_session(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_client_termfeatures(ft: &format_tree) -> format_table_type {
     unsafe {
         if !ft.c.is_null() {
-            return format!("{}", _s(tty_get_features((*ft.c).term_features))).into();
+            return tty_get_features((*ft.c).term_features).into();
         }
         format_table_type::None
     }
@@ -2533,7 +2529,7 @@ pub unsafe fn format_cb_window_end_flag(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_window_flags(ft: &format_tree) -> format_table_type {
     unsafe {
         if !ft.wl.is_null() {
-            return format!("{}", _s(window_printable_flags(ft.wl, 1))).into();
+            return window_printable_flags(ft.wl, 1).into();
         }
         format_table_type::None
     }
@@ -2691,7 +2687,7 @@ pub unsafe fn format_cb_window_panes(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_window_raw_flags(ft: &format_tree) -> format_table_type {
     unsafe {
         if !ft.wl.is_null() {
-            return format!("{}", _s(window_printable_flags(ft.wl, 0))).into();
+            return window_printable_flags(ft.wl, 0).into();
         }
         format_table_type::None
     }

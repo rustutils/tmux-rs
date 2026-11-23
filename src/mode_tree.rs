@@ -270,7 +270,7 @@ unsafe fn mode_tree_build_lines(mtd: *mut mode_tree_data, mtl: &Vec<*mut mode_tr
                 (*mti).key = KEYC_NONE;
             }
             if (*mti).key != KEYC_NONE {
-                (*mti).keystr = xstrdup(key_string_lookup_key((*mti).key, 0)).as_ptr();
+                (*mti).keystr = xstrdup__(&key_string_lookup_key((*mti).key, 0));
                 (*mti).keylen = strlen((*mti).keystr);
             } else {
                 (*mti).keystr = null_mut();

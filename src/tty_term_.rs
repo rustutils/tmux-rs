@@ -302,85 +302,80 @@ pub const unsafe fn tty_term_ncodes() -> u32 {
     TTY_TERM_CODES.len() as u32
 }
 
+/// Copy a terminfo string without its padding (`$<...>`). Up to 8191
+/// bytes are kept, as in C. The caller frees the result.
+///
+/// # Safety
+/// `s` must be a valid NUL-terminated string.
 pub unsafe fn tty_term_strip(s: *const u8) -> *mut u8 {
-    let sizeof_buf: usize = 8192;
-    static mut BUF: [u8; 8192] = [0; 8192];
+    const SIZEOF_BUF: usize = 8192;
 
     unsafe {
-        // const char *ptr;
-        // static char buf[8192];
-        // size_t len;
-
         // Ignore strings with no padding.
         if strchr(s, b'$' as i32).is_null() {
             return xstrdup(s).as_ptr();
         }
 
-        let mut len = 0;
-        let mut ptr = s;
-        while *ptr != b'\0' {
-            if *ptr == b'$' && *(ptr.add(1)) == b'<' {
-                while *ptr != b'\0' && *ptr != b'>' {
-                    ptr = ptr.add(1);
+        let src = std::ffi::CStr::from_ptr(s.cast()).to_bytes();
+        let mut buf: Vec<u8> = Vec::with_capacity(src.len());
+        let mut i = 0;
+        while i < src.len() {
+            if src[i] == b'$' && src.get(i + 1) == Some(&b'<') {
+                while i < src.len() && src[i] != b'>' {
+                    i += 1;
                 }
-                if *ptr == b'>' {
-                    ptr = ptr.add(1);
+                if i < src.len() {
+                    i += 1;
                 }
-                if *ptr == b'\0' {
+                if i == src.len() {
                     break;
                 }
             }
 
-            BUF[len] = *ptr;
-            len += 1;
-            if len == (sizeof_buf) - 1 {
+            buf.push(src[i]);
+            if buf.len() == SIZEOF_BUF - 1 {
                 break;
             }
-            ptr = ptr.add(1);
+            i += 1;
         }
-        BUF[len] = b'\0';
-
-        xstrdup(&raw mut BUF as *mut u8).as_ptr()
+        buf.push(0);
+        xstrdup(buf.as_ptr()).as_ptr()
     }
 }
 
-pub unsafe fn tty_term_override_next(s: &str, offset: *mut usize) -> *mut u8 {
+/// The next entry of a colon separated override list, starting at byte
+/// `offset` of `s` and moving `offset` past it. `::` stands for a colon.
+/// Returns the entry with a NUL at the end, or `None` at the end of the
+/// list or for an entry of 8191 bytes or more.
+pub fn tty_term_override_next(s: &str, offset: &mut usize) -> Option<Vec<u8>> {
     const SIZEOF_VALUE: usize = 8192;
-    static mut VALUE: [u8; 8192] = [0; 8192];
 
-    unsafe {
-        let remaining = s.as_bytes().get(*offset..).unwrap_or(&[]);
-
-        if remaining.is_empty() {
-            return null_mut();
-        }
-
-        let mut n = 0;
-        let mut i = 0;
-
-        while i < remaining.len() && n < SIZEOF_VALUE - 1 {
-            if remaining[i] == b':' && remaining.get(i + 1) == Some(&b':') {
-                VALUE[n] = b':';
-                n += 1;
-                i += 2;
-            } else if remaining[i] == b':' {
-                break;
-            } else {
-                VALUE[n] = remaining[i];
-                n += 1;
-                i += 1;
-            }
-        }
-
-        if n >= SIZEOF_VALUE - 1 {
-            return null_mut();
-        }
-
-        *offset += if i < remaining.len() { i + 1 } else { i };
-        VALUE[n] = b'\0';
-
-        &raw mut VALUE as *mut u8
+    let remaining = s.as_bytes().get(*offset..).unwrap_or(&[]);
+    if remaining.is_empty() {
+        return None;
     }
+
+    let mut value = Vec::new();
+    let mut i = 0;
+    while i < remaining.len() && value.len() < SIZEOF_VALUE - 1 {
+        if remaining[i] == b':' && remaining.get(i + 1) == Some(&b':') {
+            value.push(b':');
+            i += 2;
+        } else if remaining[i] == b':' {
+            break;
+        } else {
+            value.push(remaining[i]);
+            i += 1;
+        }
+    }
+
+    if value.len() >= SIZEOF_VALUE - 1 {
+        return None;
+    }
+
+    *offset += if i < remaining.len() { i + 1 } else { i };
+    value.push(0);
+    Some(value)
 }
 
 pub unsafe fn tty_term_apply(term: *mut tty_term, capabilities: &str, quiet: i32) {
@@ -388,14 +383,11 @@ pub unsafe fn tty_term_apply(term: *mut tty_term, capabilities: &str, quiet: i32
         let mut offset = 0usize;
         let mut cp;
         let mut value;
-        let mut s;
 
         let name = (*term).name.as_ptr().cast::<u8>();
 
-        while {
-            s = tty_term_override_next(capabilities, &raw mut offset);
-            !s.is_null()
-        } {
+        while let Some(mut entry) = tty_term_override_next(capabilities, &mut offset) {
+            let s = entry.as_mut_ptr();
             if *s == b'\0' {
                 continue;
             }
@@ -470,7 +462,6 @@ pub unsafe fn tty_term_apply_overrides(term: *mut tty_term) {
     let mut ov: *mut options_value;
     let mut s: *const u8;
     let mut offset: usize;
-    let mut first: *mut u8;
 
     unsafe {
         // Update capabilities from the option.
@@ -480,8 +471,10 @@ pub unsafe fn tty_term_apply_overrides(term: *mut tty_term) {
             s = (*ov).string;
 
             offset = 0;
-            first = tty_term_override_next(cstr_to_str(s), &raw mut offset);
-            if !first.is_null() && fnmatch(first, (*term).name.as_ptr().cast(), 0) == 0 {
+            let first = tty_term_override_next(cstr_to_str(s), &mut offset);
+            if let Some(first) = first
+                && fnmatch(first.as_ptr(), (*term).name.as_ptr().cast(), 0) == 0
+            {
                 tty_term_apply(term, cstr_to_str(s.add(offset)), 0);
             }
         }
@@ -634,8 +627,10 @@ pub unsafe fn tty_term_create(
                 let s = (*ov).string;
 
                 let mut offset = 0;
-                let first = tty_term_override_next(cstr_to_str(s), &raw mut offset);
-                if !first.is_null() && fnmatch(first, (*term).name.as_ptr().cast(), 0) == 0 {
+                let first = tty_term_override_next(cstr_to_str(s), &mut offset);
+                if let Some(first) = first
+                    && fnmatch(first.as_ptr(), (*term).name.as_ptr().cast(), 0) == 0
+                {
                     tty_add_features(feat, cstr_to_str(s.add(offset)), c!(":"));
                 }
             }
@@ -688,7 +683,7 @@ pub unsafe fn tty_term_create(
                 log_debug!(
                     "{}{}",
                     _s(name),
-                    _s(tty_term_describe(term, tty_code_code::try_from(i).unwrap()))
+                    tty_term_describe(term, tty_code_code::try_from(i).unwrap())
                 );
             }
 
@@ -938,65 +933,30 @@ pub unsafe fn tty_term_flag(term: *mut tty_term, code: tty_code_code) -> i32 {
     }
 }
 
-pub unsafe fn tty_term_describe(term: *mut tty_term, code: tty_code_code) -> *const u8 {
-    let sizeof_s = 256;
-    static mut S: [u8; 256] = [0; 256];
-
+/// One line describing capability `code` of `term`, for logs and
+/// show-messages -T.
+///
+/// # Safety
+/// `term` must be a valid terminal.
+pub unsafe fn tty_term_describe(term: *mut tty_term, code: tty_code_code) -> String {
     unsafe {
-        let sizeof_out = 128;
-        let mut out: [u8; 128] = [0; 128];
-
+        let name = _s(TTY_TERM_CODES[code as usize].name);
+        let code_n = code as u32;
         match &(&(*term).codes)[code as usize] {
-            tty_code::None => {
-                _ = xsnprintf_!(
-                    &raw mut S as _,
-                    sizeof_s,
-                    "{:4}: {}: [missing]",
-                    code as u32,
-                    _s(TTY_TERM_CODES[code as usize].name),
-                );
-            }
+            tty_code::None => format!("{code_n:4}: {name}: [missing]"),
             tty_code::String(s) => {
+                let sizeof_out = 128;
+                let mut out: [u8; 128] = [0; 128];
                 strnvis(
                     &raw mut out as *mut u8,
                     *s,
                     sizeof_out,
-                    vis_flags::VIS_OCTAL
-                        | vis_flags::VIS_CSTYLE
-                        | vis_flags::VIS_TAB
-                        | vis_flags::VIS_NL,
+                    vis_flags::VIS_OCTAL | vis_flags::VIS_CSTYLE | vis_flags::VIS_TAB | vis_flags::VIS_NL,
                 );
-                _ = xsnprintf_!(
-                    &raw mut S as _,
-                    sizeof_s,
-                    "{:4}: {}: (string) {}",
-                    code as u32,
-                    _s(TTY_TERM_CODES[code as usize].name),
-                    _s(out.as_ptr()),
-                );
+                format!("{code_n:4}: {name}: (string) {}", _s(out.as_ptr()))
             }
-            tty_code::Number(n) => {
-                _ = xsnprintf_!(
-                    &raw mut S as _,
-                    sizeof_s,
-                    "{:4}: {}: (number) {}",
-                    code as u32,
-                    _s(TTY_TERM_CODES[code as usize].name),
-                    n,
-                );
-            }
-            tty_code::Flag(f) => {
-                _ = xsnprintf_!(
-                    &raw mut S as _,
-                    sizeof_s,
-                    "{:4}: {}: (flag) {}",
-                    code as u32,
-                    _s(TTY_TERM_CODES[code as usize].name),
-                    f,
-                );
-            }
+            tty_code::Number(n) => format!("{code_n:4}: {name}: (number) {n}"),
+            tty_code::Flag(f) => format!("{code_n:4}: {name}: (flag) {f}"),
         }
-
-        &raw const S as *const u8
     }
 }
