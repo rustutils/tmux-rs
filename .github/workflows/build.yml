@@ -1,5 +1,11 @@
 # Lints and tests for every push to main or tmux-3.8 and every pull request.
 # https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions
+#
+# The Linux jobs run in a Fedora container, the distribution tmux-rs is
+# developed on. Fedora 45 packages tmux 3.8, the version the tests compare
+# against. Containers run as root, but tmux is not normally run as root
+# and the server access tests need a normal user, so the jobs install as
+# root and then run cargo as the user "tester".
 name: build
 
 on:
@@ -26,7 +32,22 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    container: fedora:45
+    env: &fedora-env
+      CARGO_HOME: /opt/cargo
+      RUSTUP_HOME: /opt/rustup
+    defaults:
+      run: &as-tester
+        shell: runuser -u tester -- bash --noprofile --norc -eo pipefail {0}
     steps:
+      - &fedora-setup
+        name: Install packages and add the test user
+        shell: bash
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            gcc git make tar gzip xz curl which procps-ng hostname \
+            util-linux ncurses-term tmux
+          useradd -m tester
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@nightly
         with:
@@ -39,34 +60,39 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      - &hand-over
+        name: Hand the workspace and toolchain to the test user
+        shell: bash
+        run: chown -R tester "$GITHUB_WORKSPACE" "$CARGO_HOME" "$RUSTUP_HOME"
       - run: just check
 
   # Unit and integration tests of every crate, with the Rust binaries on
-  # both sides.
+  # both sides. The parity tests compare with the packaged tmux 3.8.
   test:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    container: fedora:45
+    env: *fedora-env
+    defaults:
+      run: *as-tester
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
+      - *fedora-setup
       - uses: actions/checkout@v5
-      # tmux-rs reads terminfo files itself and links no curses library,
-      # but the tests need the terminfo entries.
-      - name: Install terminfo entries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ncurses-term
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      - *hand-over
       - run: cargo nextest run --workspace --profile ci
       - &no-panics
         name: Fail on server panics
         if: ${{ !cancelled() }}
+        shell: bash
         run: |
           if ls server-panic-*.txt 2>/dev/null; then
             head -20 server-panic-*.txt
@@ -84,58 +110,44 @@ jobs:
           if-no-files-found: ignore
 
   # The integration tests against C tmux 3.8 in the three mixed
-  # combinations, which is what checks protocol compatibility. Ubuntu
-  # ships an older tmux, so 3.8 is built from source and cached.
+  # combinations, which is what checks protocol compatibility. The same
+  # as the last three steps of `just test`.
   cross:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    container: fedora:45
+    env:
+      CARGO_HOME: /opt/cargo
+      RUSTUP_HOME: /opt/rustup
+      TMUX_REFERENCE_BIN: /usr/bin/tmux
+    defaults:
+      run: *as-tester
     steps:
+      - *fedora-setup
+      - name: Check the packaged tmux is 3.8
+        shell: bash
+        run: /usr/bin/tmux -V | grep -qx 'tmux 3.8'
       - uses: actions/checkout@v5
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ncurses-term libncurses-dev libevent-dev \
-            bison autoconf automake pkg-config
-      - uses: actions/cache@v4
-        id: tmux-cache
-        with:
-          path: ~/tmux-3.8
-          key: tmux-3.8-${{ runner.os }}-${{ runner.arch }}-v1
-      - name: Build tmux 3.8
-        if: steps.tmux-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --depth 1 --branch 3.8 https://github.com/tmux/tmux.git /tmp/tmux-src
-          cd /tmp/tmux-src
-          sh autogen.sh
-          ./configure --prefix="$HOME/tmux-3.8"
-          make -j"$(nproc)"
-          make install
-      - name: Check tmux 3.8
-        run: |
-          echo "TMUX_38=$HOME/tmux-3.8/bin/tmux" >> "$GITHUB_ENV"
-          "$HOME/tmux-3.8/bin/tmux" -V | grep -qx 'tmux 3.8'
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      - *hand-over
       - name: C server, C client
         env:
-          TMUX_SERVER_BIN: ${{ env.TMUX_38 }}
-          TMUX_CLIENT_BIN: ${{ env.TMUX_38 }}
-          TMUX_REFERENCE_BIN: ${{ env.TMUX_38 }}
+          TMUX_SERVER_BIN: /usr/bin/tmux
+          TMUX_CLIENT_BIN: /usr/bin/tmux
         run: cargo nextest run --tests --profile ci
       - name: Rust server, C client
         if: ${{ !cancelled() }}
         env:
-          TMUX_CLIENT_BIN: ${{ env.TMUX_38 }}
-          TMUX_REFERENCE_BIN: ${{ env.TMUX_38 }}
+          TMUX_CLIENT_BIN: /usr/bin/tmux
         run: cargo nextest run --tests --profile ci
       - name: C server, Rust client
         if: ${{ !cancelled() }}
         env:
-          TMUX_SERVER_BIN: ${{ env.TMUX_38 }}
-          TMUX_REFERENCE_BIN: ${{ env.TMUX_38 }}
+          TMUX_SERVER_BIN: /usr/bin/tmux
         run: cargo nextest run --tests --profile ci
       - *no-panics
       - *upload-results
@@ -146,28 +158,31 @@ jobs:
   asan:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    container: fedora:45
     env:
+      CARGO_HOME: /opt/cargo
+      RUSTUP_HOME: /opt/rustup
       ASAN_OPTIONS: detect_leaks=0
       RUSTFLAGS: -Zsanitizer=address
+    defaults:
+      run: *as-tester
     steps:
+      - *fedora-setup
       - uses: actions/checkout@v5
-      - name: Install terminfo entries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ncurses-term
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      - *hand-over
       # An explicit target keeps the sanitizer out of build scripts and
       # proc macros.
       - run: cargo nextest run --workspace --profile ci --target x86_64-unknown-linux-gnu
       - *no-panics
 
-  # macOS catches code that differs by platform (timeval field types,
-  # getpeereid, osdep). Runners are slower to get, so one job does both
-  # clippy and the tests.
+  # macOS catches code that differs by platform (c_char, timeval field
+  # types, getpeereid, osdep). Runners are slower to get, so one job does
+  # both clippy and the tests.
   macos:
     runs-on: macos-latest
     timeout-minutes: 40
@@ -186,5 +201,11 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -Dwarnings
       - run: cargo nextest run --workspace --profile ci
         if: ${{ !cancelled() }}
-      - *no-panics
+      - name: Fail on server panics
+        if: ${{ !cancelled() }}
+        run: |
+          if ls server-panic-*.txt 2>/dev/null; then
+            head -20 server-panic-*.txt
+            exit 1
+          fi
       - *upload-results

@@ -1,6 +1,7 @@
 ---
 # Coverage of the unit and integration tests and the upstream regress
-# scripts, uploaded to Codecov.
+# scripts, uploaded to Codecov. Runs in a Fedora container as the user
+# "tester", like the build workflow (see there for why).
 name: Coverage
 
 on:
@@ -22,26 +23,42 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    container: fedora:45
+    env:
+      CARGO_HOME: /opt/cargo
+      RUSTUP_HOME: /opt/rustup
+    defaults:
+      run:
+        shell: runuser -u tester -- bash --noprofile --norc -eo pipefail {0}
 
     steps:
+      - name: Install packages and add the test user
+        shell: bash
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            gcc git make tar gzip xz curl which procps-ng hostname \
+            util-linux ncurses-term tmux gnupg2
+          useradd -m tester
+
       - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: llvm-tools
 
-      - name: Install terminfo entries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ncurses-term
-
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov,cargo-nextest
 
-      - name: Tests
+      - name: Hand the workspace and toolchain to the test user
+        shell: bash
         run: |
-          cargo llvm-cov --no-report nextest --workspace --profile ci
+          chown -R tester "$GITHUB_WORKSPACE" "$CARGO_HOME" "$RUSTUP_HOME"
+          # The Codecov uploader runs as root and reads the repository.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Tests
+        run: cargo llvm-cov --no-report nextest --workspace --profile ci
 
       # Most regress scripts do not pass yet and the Makefile ignores
       # their exit codes. They only add coverage, so a hanging script
