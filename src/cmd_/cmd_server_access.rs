@@ -12,15 +12,17 @@
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use crate::libc::{getpwnam, getuid};
+use std::ffi::CStr;
+
+use crate::libc::{getgrnam, getpwnam, getuid};
 use crate::*;
 
 pub static CMD_SERVER_ACCESS_ENTRY: cmd_entry = cmd_entry {
     name: "server-access",
     alias: None,
 
-    args: args_parse::new("adlrw", 0, 1, None),
-    usage: "[-adlrw] [-t target-pane] [user]",
+    args: args_parse::new("adglrw", 0, 1, None),
+    usage: "[-adglrw] [-t target-pane] [user|group]",
 
     flags: cmd_flag::CMD_CLIENT_CANFAIL,
     exec: cmd_server_access_exec,
@@ -28,26 +30,34 @@ pub static CMD_SERVER_ACCESS_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::zeroed(),
 };
 
-unsafe fn cmd_server_access_deny(item: *mut cmdq_item, pw: *mut libc::passwd) -> cmd_retval {
+/// Looks up a user, or with `group` a group, by name. Returns its ACL ID
+/// and its name as the system spells it.
+///
+/// # Safety
+/// Calls getpwnam and getgrnam, whose results are copied before the
+/// next call.
+unsafe fn cmd_server_access_lookup(name: &CStr, group: bool) -> Option<(AclId, String)> {
     unsafe {
-        let user = server_acl_user_find((*pw).pw_uid);
-        if user.is_null() {
-            cmdq_error!(item, "user {} not found", _s((*pw).pw_name));
-            return cmd_retval::CMD_RETURN_ERROR;
-        }
-        for loop_ in clients_iter() {
-            let uid = proc_get_peer_uid((*loop_).peer);
-            if uid == server_acl_get_uid(user) {
-                (*loop_).exit_message = Some("access not allowed".to_string());
-                (*loop_).flags |= client_flag::EXIT;
+        if group {
+            let gr = getgrnam(name.as_ptr());
+            if gr.is_null() {
+                return None;
             }
+            let found = CStr::from_ptr((*gr).gr_name).to_string_lossy().into_owned();
+            Some((AclId::Group((*gr).gr_gid), found))
+        } else {
+            let pw = getpwnam(name.as_ptr());
+            if pw.is_null() {
+                return None;
+            }
+            let found = CStr::from_ptr((*pw).pw_name).to_string_lossy().into_owned();
+            Some((AclId::User((*pw).pw_uid), found))
         }
-        server_acl_user_deny((*pw).pw_uid);
-
-        cmd_retval::CMD_RETURN_NORMAL
     }
 }
 
+/// Adds, removes or changes the access of a user or group (-g), or lists
+/// the access control list (-l).
 unsafe fn cmd_server_access_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     unsafe {
         let args = cmd_get_args(self_);
@@ -58,11 +68,11 @@ unsafe fn cmd_server_access_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             return cmd_retval::CMD_RETURN_NORMAL;
         }
         if args_count(args) == 0 {
-            cmdq_error!(item, "missing user argument");
+            cmdq_error!(item, "missing user or group argument");
             return cmd_retval::CMD_RETURN_ERROR;
         }
 
-        let name = format_single(
+        let arg = format_single(
             item,
             cstr_to_str(args_string(args, 0)),
             c,
@@ -70,24 +80,25 @@ unsafe fn cmd_server_access_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             null_mut(),
             null_mut(),
         );
-        let mut pw = null_mut();
-        if *name != b'\0' {
-            pw = getpwnam(name.cast());
-        }
-        if pw.is_null() {
-            cmdq_error!(item, "unknown user: {}", _s(name));
-            // Free the name on this error path too (upstream a76e6eca).
-            free_(name);
-            return cmd_retval::CMD_RETURN_ERROR;
-        }
-        free_(name);
+        let arg_name = CStr::from_ptr(arg.cast()).to_owned();
+        free_(arg);
 
-        if (*pw).pw_uid == 0 || (*pw).pw_uid == getuid() {
-            cmdq_error!(
-                item,
-                "{} owns the server, can't change access",
-                _s((*pw).pw_name),
-            );
+        let group = args_has(args, 'g');
+        let type_ = if group { "group" } else { "user" };
+        let found = if arg_name.is_empty() {
+            None
+        } else {
+            cmd_server_access_lookup(&arg_name, group)
+        };
+        let Some((id, name)) = found else {
+            cmdq_error!(item, "unknown {type_}: {}", arg_name.to_string_lossy());
+            return cmd_retval::CMD_RETURN_ERROR;
+        };
+
+        if let AclId::User(uid) = id
+            && (uid == 0 || uid == getuid())
+        {
+            cmdq_error!(item, "{name} owns the server, can't change access");
             return cmd_retval::CMD_RETURN_ERROR;
         }
 
@@ -101,37 +112,29 @@ unsafe fn cmd_server_access_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         }
 
         if args_has(args, 'd') {
-            return cmd_server_access_deny(item, pw);
+            if !server_acl_find(id) {
+                cmdq_error!(item, "{type_} {name} not found");
+                return cmd_retval::CMD_RETURN_ERROR;
+            }
+            server_acl_deny(id);
+            return cmd_retval::CMD_RETURN_NORMAL;
         }
         if args_has(args, 'a') {
-            if !server_acl_user_find((*pw).pw_uid).is_null() {
-                cmdq_error!(item, "user {} is already added", _s((*pw).pw_name));
+            if server_acl_find(id) {
+                cmdq_error!(item, "{type_} {name} is already added");
                 return cmd_retval::CMD_RETURN_ERROR;
             }
-            server_acl_user_allow((*pw).pw_uid);
-            // Do not return - allow -r or -w with -a.
-        } else if (args_has(args, 'r') || args_has(args, 'w'))
-            && server_acl_user_find((*pw).pw_uid).is_null()
-        {
-            server_acl_user_allow((*pw).pw_uid);
-        } /* -r or -w implies -a if user does not exist. */
-
-        if args_has(args, 'w') {
-            if server_acl_user_find((*pw).pw_uid).is_null() {
-                cmdq_error!(item, "user {} not found", _s((*pw).pw_name));
-                return cmd_retval::CMD_RETURN_ERROR;
-            }
-            server_acl_user_allow_write((*pw).pw_uid);
-            return cmd_retval::CMD_RETURN_NORMAL;
+            server_acl_allow(id);
+            // Do not return, -r or -w may come with -a.
+        } else if args_has(args, 'r') || args_has(args, 'w') {
+            // -r or -w adds the entry if there is none.
+            server_acl_allow(id);
         }
 
-        if args_has(args, 'r') {
-            if server_acl_user_find((*pw).pw_uid).is_null() {
-                cmdq_error!(item, "user {} not found", _s((*pw).pw_name));
-                return cmd_retval::CMD_RETURN_ERROR;
-            }
-            server_acl_user_deny_write((*pw).pw_uid);
-            return cmd_retval::CMD_RETURN_NORMAL;
+        if args_has(args, 'w') {
+            server_acl_allow_write(id);
+        } else if args_has(args, 'r') {
+            server_acl_deny_write(id);
         }
 
         cmd_retval::CMD_RETURN_NORMAL

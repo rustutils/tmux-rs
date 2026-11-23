@@ -127,13 +127,13 @@
 13 src/osdep.rs
 16 src/paste/mod.rs
 40 src/popup.rs
-39 src/proc.rs
+41 src/proc.rs
 21 src/resize.rs
 75 src/screen_.rs
 38 src/screen_redraw.rs
 138 src/screen_write.rs
 38 src/server.rs
-18 src/server_acl.rs
+19 src/server_acl/mod.rs
 124 src/server_client.rs
 53 src/server_fn.rs
 77 src/session_.rs

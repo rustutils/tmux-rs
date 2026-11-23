@@ -17,6 +17,7 @@ mod options;
 mod pane;
 mod parity;
 mod pty_client;
+mod server_access;
 mod session;
 mod sort;
 mod source_and_misc;

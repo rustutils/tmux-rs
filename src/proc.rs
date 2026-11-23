@@ -53,6 +53,7 @@ pub struct tmuxpeer {
     pub ibuf: imsgbuf,
     pub event: Option<IoHandle>,
     pub uid: uid_t,
+    pub gid: gid_t,
 
     pub flags: i32,
 
@@ -384,7 +385,6 @@ pub unsafe fn proc_add_peer(
     arg: *mut c_void,
 ) -> *mut tmuxpeer {
     unsafe {
-        let mut gid: gid_t = 0;
         let peer = xcalloc1::<tmuxpeer>() as *mut tmuxpeer;
         (*peer).parent = tp;
 
@@ -394,8 +394,9 @@ pub unsafe fn proc_add_peer(
         imsg_init(&raw mut (*peer).ibuf, fd);
         std::ptr::write(&raw mut (*peer).event, None);
 
-        if getpeereid(fd, &raw mut (*peer).uid, &raw mut gid) != 0 {
-            (*peer).uid = -1i32 as uid_t;
+        if getpeereid(fd, &raw mut (*peer).uid, &raw mut (*peer).gid) != 0 {
+            (*peer).uid = uid_t::MAX;
+            (*peer).gid = gid_t::MAX;
         }
 
         log_debug!("add peer {:p}: {} ({:p})", peer, fd, arg);
@@ -475,6 +476,12 @@ pub unsafe fn proc_fork_and_daemon(fd: *mut i32) -> pid_t {
     }
 }
 
+/// The user ID of the peer's process, `uid_t::MAX` if unknown.
 pub unsafe fn proc_get_peer_uid(peer: *const tmuxpeer) -> uid_t {
     unsafe { (*peer).uid }
+}
+
+/// The group ID of the peer's process, `gid_t::MAX` if unknown.
+pub unsafe fn proc_get_peer_gid(peer: *const tmuxpeer) -> gid_t {
+    unsafe { (*peer).gid }
 }

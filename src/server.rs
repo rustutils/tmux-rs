@@ -469,7 +469,7 @@ unsafe fn server_accept_fire(readable: bool) {
             return;
         }
         let c = server_client_create(newfd);
-        if server_acl_join(c) == 0 {
+        if !server_acl_join(c) {
             (*c).exit_message = Some("access not allowed".to_string());
             (*c).flags |= client_flag::EXIT;
         }

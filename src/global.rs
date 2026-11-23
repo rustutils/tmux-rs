@@ -38,12 +38,15 @@ use std::cell::RefCell;
 
 use crate::message_log::MessageLog;
 use crate::paste::PasteStore;
+use crate::server_acl::ServerAcl;
 
 thread_local! {
     /// All paste buffers of this server.
     static PASTE: RefCell<PasteStore> = RefCell::new(PasteStore::new());
     /// The server message log.
     static MESSAGE_LOG: RefCell<MessageLog> = RefCell::new(MessageLog::new());
+    /// Who may connect to this server, set up by `server_acl_init`.
+    static ACL: RefCell<ServerAcl> = RefCell::new(ServerAcl::default());
 }
 
 /// Run `f` with the paste buffer store.
@@ -60,4 +63,12 @@ pub fn with_paste<R>(f: impl FnOnce(&mut PasteStore) -> R) -> R {
 /// If `f` reaches the message log again (see the module rules).
 pub fn with_message_log<R>(f: impl FnOnce(&mut MessageLog) -> R) -> R {
     MESSAGE_LOG.with_borrow_mut(f)
+}
+
+/// Run `f` with the server access control list.
+///
+/// # Panics
+/// If `f` reaches the access control list again (see the module rules).
+pub fn with_acl<R>(f: impl FnOnce(&mut ServerAcl) -> R) -> R {
+    ACL.with_borrow_mut(f)
 }
