@@ -155,5 +155,5 @@
 390 src/window_copy.rs
 73 src/window_customize.rs
 60 src/window_tree.rs
-22 src/xmalloc.rs
+23 src/xmalloc.rs
 51 utf8/src/lib.rs

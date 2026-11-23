@@ -143,6 +143,12 @@ macro_rules! xsnprintf_ {
     };
 }
 pub(crate) use xsnprintf_;
+/// Format into the C buffer `out` of `len` bytes and NUL-terminate it.
+/// Returns the length of the string without the NUL, as snprintf does, or
+/// an error if it does not fit (C's xsnprintf calls fatalx then).
+///
+/// # Safety
+/// `out` must be valid for writes of `len` bytes.
 pub(crate) unsafe fn xsnprintf__(
     out: *mut u8,
     len: usize,
@@ -195,5 +201,23 @@ pub(crate) unsafe fn xsnprintf__(
         return Err(std::io::ErrorKind::WriteZero.into());
     }
 
-    Ok(adapter.written)
+    Ok(adapter.written - 1)
+}
+
+#[cfg(test)]
+mod xsnprintf_tests {
+    fn fmt(buf: &mut [u8], s: &str) -> std::io::Result<usize> {
+        // SAFETY: buf is valid for its whole length.
+        unsafe { super::xsnprintf__(buf.as_mut_ptr(), buf.len(), format_args!("{s}")) }
+    }
+
+    #[test]
+    fn xsnprintf_counts_like_c() {
+        let mut buf = [0xffu8; 8];
+        assert_eq!(fmt(&mut buf, "12x3").unwrap(), 4);
+        assert_eq!(&buf[..5], b"12x3\0");
+        // Seven characters and the NUL fill the buffer exactly.
+        assert_eq!(fmt(&mut buf, "1234567").unwrap(), 7);
+        assert!(fmt(&mut buf, "12345678").is_err());
+    }
 }
