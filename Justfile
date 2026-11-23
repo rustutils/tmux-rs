@@ -10,10 +10,16 @@ test: check
   rm -f server-panic-*.txt
   # run all (unit and integration) tests of every crate
   cargo nextest run --workspace
-  # run integration tests against system tmux
-  TMUX_SERVER_BIN=/usr/bin/tmux TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests
-  TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests
-  TMUX_SERVER_BIN=/usr/bin/tmux cargo nextest run --tests
+  # run integration tests against system tmux, found on PATH unless
+  # SYSTEM_TMUX names it (it is not in /usr/bin on macOS)
+  tmux="${SYSTEM_TMUX:-$(command -v tmux || true)}"
+  if [ -n "$tmux" ]; then
+    TMUX_SERVER_BIN="$tmux" TMUX_CLIENT_BIN="$tmux" cargo nextest run --tests
+    TMUX_CLIENT_BIN="$tmux" cargo nextest run --tests
+    TMUX_SERVER_BIN="$tmux" cargo nextest run --tests
+  else
+    echo "no system tmux found, skipping the tests against it"
+  fi
   # Fail if any server panics occurred during the test run.
   shopt -s nullglob
   panics=(server-panic-*.txt)
