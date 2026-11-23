@@ -1,9 +1,9 @@
 [package]
-name        = "tmux-metrics"
+name        = "xtask"
 version     = "0.0.1"
 edition     = "2024"
 license     = "ISC"
-description = "Counts unsafe code in tmux-rs and checks the per-file limits"
+description = "Project tooling for tmux-rs, run with cargo xtask"
 publish     = false
 
 [dependencies]

@@ -794,14 +794,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tmux-metrics"
-version = "0.0.1"
-dependencies = [
- "proc-macro2",
- "syn",
-]
-
-[[package]]
 name = "tmux-protocol"
 version = "0.0.1"
 dependencies = [
@@ -1172,6 +1164,14 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
+]
+
+[[package]]
+name = "xtask"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "syn",
 ]
 
 [[package]]

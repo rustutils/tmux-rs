@@ -9,7 +9,7 @@
 //! not.
 //!
 //! Each Rust file also has an unsafe limit, recorded in
-//! `metrics/unsafe-limits.txt`. A test fails when a file goes above its
+//! `xtask/unsafe-limits.txt`. A test fails when a file goes above its
 //! limit, so the count can only go down.
 
 use std::collections::BTreeMap;
@@ -26,11 +26,11 @@ use syn::visit::{self, Visit};
 const SKIP_DIRS: &[&str] = &["target", ".git", "fuzz", "tests", "regress", "docs"];
 
 /// The limit file, relative to the workspace root.
-pub const LIMITS_FILE: &str = "metrics/unsafe-limits.txt";
+pub const LIMITS_FILE: &str = "xtask/unsafe-limits.txt";
 
 /// Known false safe functions that cannot be marked unsafe, relative to the
 /// workspace root.
-pub const EXCEPTIONS_FILE: &str = "metrics/false-safe-exceptions.txt";
+pub const EXCEPTIONS_FILE: &str = "xtask/false-safe-exceptions.txt";
 
 /// Counts for one Rust file.
 #[derive(Debug, Default, Clone)]
@@ -86,7 +86,7 @@ pub struct Totals {
 pub fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("metrics crate has a parent directory")
+        .expect("xtask crate has a parent directory")
         .to_path_buf()
 }
 
@@ -572,8 +572,8 @@ pub fn render_limits(stats: &[FileStats]) -> String {
     let mut out = String::from(
         "# Unsafe limit per Rust file: the number of `unsafe` keywords it may\n\
          # contain. A test fails when a file goes above its limit. Lower the\n\
-         # limits with `just unsafe-limits`. Raising one needs a reason in the\n\
-         # commit message and `just unsafe-limits --allow-raise`.\n\
+         # limits with `cargo xtask limits`. Raising one needs a reason in the\n\
+         # commit message and `cargo xtask limits --allow-raise`.\n\
          # Files not listed have a limit of 0.\n",
     );
     for s in stats.iter().filter(|s| s.unsafe_tokens > 0) {
@@ -699,18 +699,18 @@ unsafe fn outer() {
         );
     }
 
-    /// The per-file unsafe limits in metrics/unsafe-limits.txt hold.
+    /// The per-file unsafe limits in xtask/unsafe-limits.txt hold.
     #[test]
     fn unsafe_limits_hold() {
         let root = workspace_root();
         let stats = scan(&root).unwrap();
-        let limits = read_limits(&root).expect("metrics/unsafe-limits.txt exists");
+        let limits = read_limits(&root).expect("xtask/unsafe-limits.txt exists");
         let over = over_limit(&stats, &limits);
         assert!(
             over.is_empty(),
             "files above their unsafe limit (path, count, limit): {over:?}\n\
              Remove the new unsafe code, or raise the limit with a reason \
-             (just unsafe-limits --allow-raise)."
+             (cargo xtask limits --allow-raise)."
         );
     }
 }

@@ -74,15 +74,15 @@ sanitizer:
 
 # count unsafe code: totals and the 30 files with the most
 progress:
-  @cargo run -q -p tmux-metrics
+  @cargo xtask metrics
 
 # list functions with a safe signature that hide unsafe code
 false-safe:
-  @cargo run -q -p tmux-metrics -- false-safe
+  @cargo xtask false-safe
 
 # lower the per-file unsafe limits to the current counts (--allow-raise to raise)
 unsafe-limits *args:
-  @cargo run -q -p tmux-metrics -- limits {{args}}
+  @cargo xtask limits {{args}}
 
 alias fmt := format
 alias lint := check

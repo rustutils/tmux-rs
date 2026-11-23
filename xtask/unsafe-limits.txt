@@ -1,7 +1,7 @@
 # Unsafe limit per Rust file: the number of `unsafe` keywords it may
 # contain. A test fails when a file goes above its limit. Lower the
-# limits with `just unsafe-limits`. Raising one needs a reason in the
-# commit message and `just unsafe-limits --allow-raise`.
+# limits with `cargo xtask limits`. Raising one needs a reason in the
+# commit message and `cargo xtask limits --allow-raise`.
 # Files not listed have a limit of 0.
 11 compat/src/b64.rs
 3 compat/src/closefrom.rs

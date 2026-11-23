@@ -1,20 +1,40 @@
-//! Prints unsafe code metrics for the tmux-rs workspace and maintains the
-//! per-file unsafe limits.
+//! Project tooling for tmux-rs, run as `cargo xtask <command>`.
 //!
-//! Usage:
+//! Commands:
 //!
-//! - `tmux-metrics`: totals and the 30 files with the most unsafe code.
-//! - `tmux-metrics false-safe`: lists the false safe functions.
-//! - `tmux-metrics limits [--allow-raise]`: rewrites the limit file from
-//!   the current counts. Refuses to raise a limit unless told to.
+//! - `metrics`: unsafe code totals and the 30 files with the most.
+//! - `false-safe`: lists functions with a safe signature that hide unsafe
+//!   code.
+//! - `limits [--allow-raise]`: rewrites xtask/unsafe-limits.txt from the
+//!   current counts. Refuses to raise a limit unless told to.
 
 use std::fs;
 use std::process::ExitCode;
 
-use tmux_metrics::*;
+use xtask::metrics::*;
+
+const USAGE: &str = "usage: cargo xtask <command>
+
+commands:
+  metrics                  unsafe code totals and the 30 worst files
+  false-safe               functions with a safe signature that hide unsafe code
+  limits [--allow-raise]   rewrite xtask/unsafe-limits.txt from the current counts";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let Some(command) = args.first().map(String::as_str) else {
+        eprintln!("{USAGE}");
+        return ExitCode::FAILURE;
+    };
+    if matches!(command, "help" | "-h" | "--help") {
+        println!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
+    if !matches!(command, "metrics" | "false-safe" | "limits") {
+        eprintln!("unknown command {command}\n\n{USAGE}");
+        return ExitCode::FAILURE;
+    }
+
     let root = workspace_root();
     let stats = match scan(&root) {
         Ok(s) => s,
@@ -25,22 +45,18 @@ fn main() -> ExitCode {
     };
     let exceptions = read_exceptions(&root);
 
-    match args.first().map(String::as_str) {
-        None => {
+    match command {
+        "metrics" => {
             print_summary(&root, &stats, &exceptions);
             ExitCode::SUCCESS
         }
-        Some("false-safe") => {
+        "false-safe" => {
             for (path, f) in false_safe(&stats, &exceptions) {
                 println!("{path}:{} {}", f.line, f.key);
             }
             ExitCode::SUCCESS
         }
-        Some("limits") => update_limits(&root, &stats, args.iter().any(|a| a == "--allow-raise")),
-        Some(other) => {
-            eprintln!("unknown command {other}, expected false-safe or limits");
-            ExitCode::FAILURE
-        }
+        _ => update_limits(&root, &stats, args.iter().any(|a| a == "--allow-raise")),
     }
 }
 

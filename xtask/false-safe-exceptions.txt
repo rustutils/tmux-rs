@@ -1,6 +1,6 @@
 # Functions that the false safe scan reports but that cannot be marked
 # unsafe, such as trait methods. One key per line, as printed by
-# tmux-metrics false-safe, with the reason in a comment.
+# cargo xtask false-safe, with the reason in a comment.
 
 # Fuzz entry points. Like tests, they are called by a harness, single
 # threaded, and set up the global state they need themselves.
