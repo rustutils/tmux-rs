@@ -986,3 +986,57 @@ fn buffer_sample_is_cut_after_escaping() {
         format!("{}...", "\\001".repeat(50))
     );
 }
+
+#[test]
+fn buffer_names_that_are_not_utf8() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd()
+        .args(["set-buffer", "-b", "ok", "z"])
+        .run()
+        .assert_success();
+
+    let bad = || OsString::from_vec(b"bad\xff".to_vec());
+    let cases: [(Vec<OsString>, &str); 5] = [
+        (
+            vec!["set-buffer".into(), "-b".into(), bad(), "z".into()],
+            "invalid buffer name: bad",
+        ),
+        (
+            vec![
+                "set-buffer".into(),
+                "-b".into(),
+                "ok".into(),
+                "-n".into(),
+                bad(),
+            ],
+            "invalid buffer name: bad",
+        ),
+        (
+            vec!["paste-buffer".into(), "-b".into(), bad()],
+            "no buffer bad",
+        ),
+        (
+            vec!["show-buffer".into(), "-b".into(), bad()],
+            "no buffer bad",
+        ),
+        (
+            vec!["delete-buffer".into(), "-b".into(), bad()],
+            "unknown buffer: bad",
+        ),
+    ];
+    for (args, error) in cases {
+        let result = tmux.cmd().args(args.clone()).run();
+        result.assert_failure();
+        assert!(
+            result.stderr_str().starts_with(error),
+            "{args:?}: stderr: {}",
+            result.stderr_str()
+        );
+    }
+    assert_eq!(buffer_names(&tmux), vec!["ok"]);
+}

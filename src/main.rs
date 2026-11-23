@@ -1,7 +1,6 @@
 use ::std::{
     alloc::{GlobalAlloc, Layout},
     ffi::CString,
-    str::FromStr as _,
 };
 
 struct MyAlloc;
@@ -35,10 +34,13 @@ unsafe impl GlobalAlloc for MyAlloc {
 // It could also be interesting to add in a histogram for viewing memory allocations
 
 fn main() {
-    let args = std::env::args().collect::<Vec<String>>();
-    let args = args
-        .into_iter()
-        .map(|s| CString::from_str(&s).unwrap())
+    // Arguments are bytes, as in C. They need not be UTF-8 (a buffer or
+    // session name can be anything), and cannot contain a NUL.
+    let args = std::env::args_os()
+        .map(|s| {
+            CString::new(std::os::unix::ffi::OsStringExt::into_vec(s))
+                .expect("argument contains NUL")
+        })
         .collect::<Vec<CString>>();
     let mut args: Vec<*mut u8> = args.into_iter().map(|s| s.into_raw().cast()).collect();
 

@@ -262,7 +262,7 @@ impl Drop for TmuxTestHarness {
 pub struct TmuxCommandBuilder<'a> {
     harness: &'a TmuxTestHarness,
     bin: PathBuf,
-    extra_args: Vec<String>,
+    extra_args: Vec<std::ffi::OsString>,
     env_vars: Vec<(String, String)>,
     stdin_data: Option<String>,
 }
@@ -271,7 +271,7 @@ impl<'a> TmuxCommandBuilder<'a> {
     pub fn args<I, S>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = S>,
-        S: Into<String>,
+        S: Into<std::ffi::OsString>,
     {
         self.extra_args.extend(args.into_iter().map(Into::into));
         self
