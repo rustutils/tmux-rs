@@ -24,7 +24,7 @@ fn config_syntax_error_handling() {
         ])
         .run();
     // Should still work (bad config lines are skipped with errors)
-    // Note: behavior may vary — some configs cause startup failure
+    // Note: behavior may vary, since some configs cause startup failure
     let _ = result;
 }
 
@@ -79,7 +79,7 @@ fn if_shell_unknown_command_in_config() {
     tmpfile.flush().unwrap();
     let tmp_path = tmpfile.path().display().to_string();
 
-    // Use -C control mode + new-session, which prints %config-error lines
+    // Use -C control mode with new-session, which prints %config-error lines
     // for any errors encountered while loading -f.
     let result = tmux
         .cmd()
@@ -206,7 +206,7 @@ fn run_shell_captures_output() {
 
     // Note: run-shell executes the command via the shell, and we reference
     // the tmux within the shell, which uses the client binary path
-    // This may not work with different server/client binaries
+    // This may not work with different server and client binaries
 }
 
 // Ported from regress/if-shell-nested.sh

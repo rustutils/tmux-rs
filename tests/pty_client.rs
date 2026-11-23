@@ -72,7 +72,7 @@ fn pty_client_prefix_key_works() {
     std::thread::sleep(Duration::from_millis(500));
     client.read_raw(); // drain initial output
 
-    // Send prefix + c to create a new window
+    // Send prefix followed by c to create a new window
     client.send_key("C-b");
     std::thread::sleep(Duration::from_millis(50));
     client.send_key("c");

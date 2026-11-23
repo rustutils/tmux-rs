@@ -91,7 +91,7 @@ fn input_keys_control() {
         ("C-g", "^G"),
         ("C-h", "^H"),
         ("C-i", "^I"),
-        // C-j produces newline — cat -tv shows empty first line
+        // C-j produces newline, and cat -tv shows empty first line
         ("C-k", "^K"),
         ("C-l", "^L"),
         ("C-m", "^M"),
@@ -149,7 +149,7 @@ fn input_keys_function() {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Meta/Alt keys
+// 4. Meta (Alt) keys
 // ---------------------------------------------------------------------------
 #[test]
 fn input_keys_meta() {
@@ -211,7 +211,7 @@ fn input_keys_tab_bspace() {
 }
 
 // ---------------------------------------------------------------------------
-// 8. Printable / literal keys
+// 8. Printable and literal keys
 // ---------------------------------------------------------------------------
 #[test]
 fn input_keys_printable() {
@@ -259,13 +259,13 @@ fn input_keys_control_punct() {
 }
 
 // ---------------------------------------------------------------------------
-// 11. Extended keys (CSI u / xterm modifyOtherKeys)
+// 11. Extended keys (CSI u and xterm modifyOtherKeys)
 // ---------------------------------------------------------------------------
 //
 // Ported from the second half of regress/input-keys.sh (the
 // `assert_extended_key` block after `set -g extended-keys always`). With
 // extended-keys enabled, modifier combinations on F-keys, arrows, and the
-// Home/End/PageUp/Down/Insert/Delete cluster encode as `^[[<base>;<mods>~`
+// Home, End, PageUp, PageDown, Insert and Delete cluster encode as `^[[<base>;<mods>~`
 // or `^[[1;<mods><letter>` where the modifier digit is:
 //   2 = S-, 3 = M-, 4 = S-M-, 5 = C-, 6 = S-C-, 7 = C-M-, 8 = S-C-M-.
 fn enable_extended_keys(tmux: &TmuxTestHarness) {
@@ -339,7 +339,7 @@ fn input_keys_extended_function() {
 fn input_keys_ctrl_tab() {
     // With extended-keys enabled, C-Tab and C-S-Tab encode via the
     // modifyOtherKeys CSI 27 form. Without extended-keys both produce a
-    // bare ^I — both C tmux 3.5a and tmux-rs agree on that fallback.
+    // bare ^I. Both C tmux 3.5a and tmux-rs agree on that fallback.
     let (tmux, window) = new_harness_with_cat();
     enable_extended_keys(&tmux);
 

@@ -105,7 +105,7 @@ fn set_buffer_empty_string() {
     // Setting an empty buffer: tmux accepts it but show-buffer may report "no buffers"
     // since empty content effectively means no buffer was stored
     let result = tmux.cmd().args(["set-buffer", ""]).run();
-    // Just verify it doesn't crash — behavior varies by version
+    // Just verify it doesn't crash, since behavior varies by version
     let _ = result;
 }
 

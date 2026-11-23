@@ -7,7 +7,7 @@ use harness::TmuxTestHarness;
 use super::harness;
 
 /// Spawn a control-mode client attached to the given harness.
-/// Returns the child process with piped stdin/stdout/stderr.
+/// Returns the child process with piped stdin, stdout and stderr.
 fn spawn_control_client(tmux: &TmuxTestHarness) -> std::process::Child {
     let bin = harness::client_bin();
     Command::new(&bin)
@@ -147,7 +147,7 @@ fn control_mode_list_sessions() {
 fn control_mode_new_window_notification() {
     let (tmux, child, mut stdin, mut reader) = setup_control();
 
-    // Drain initial output (attach response + session-changed notification)
+    // Drain initial output (attach response and session-changed notification)
     let _initial = read_until(&mut reader, Duration::from_secs(3), |line| {
         line.starts_with("%end")
     });
@@ -176,7 +176,7 @@ fn control_mode_new_window_notification() {
 fn control_mode_split_window_layout_change() {
     let (tmux, child, mut stdin, mut reader) = setup_control();
 
-    // Drain initial output (attach response + session-changed notification)
+    // Drain initial output (attach response and session-changed notification)
     let _initial = read_until(&mut reader, Duration::from_secs(3), |line| {
         line.starts_with("%end")
     });
@@ -205,7 +205,7 @@ fn control_mode_split_window_layout_change() {
 fn control_mode_rename_session() {
     let (tmux, child, mut stdin, mut reader) = setup_control();
 
-    // Drain initial output (attach response + session-changed notification)
+    // Drain initial output (attach response and session-changed notification)
     let _initial = read_until(&mut reader, Duration::from_secs(3), |line| {
         line.starts_with("%end")
     });

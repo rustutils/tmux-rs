@@ -257,7 +257,7 @@ fn unbind_nonexistent_key_does_not_error() {
     // (tmux silently ignores this)
     let result = tmux.cmd().args(["unbind-key", "F11"]).run();
     // tmux typically succeeds silently here
-    // Some implementations may error; just verify it doesn't crash
+    // Some implementations may error, so just verify it doesn't crash
     let _ = result.success();
 }
 

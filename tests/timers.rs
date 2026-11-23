@@ -18,7 +18,7 @@ fn automatic_rename_updates_window_name() {
         .run()
         .assert_success();
 
-    // Run `cat` — window name should change from the shell to "cat".
+    // Run `cat`. The window name should change from the shell to "cat".
     tmux.cmd()
         .args(["send-keys", "cat", "Enter"])
         .run()
@@ -143,7 +143,7 @@ fn status_interval_refreshes_status() {
         .run()
         .assert_success();
 
-    // Rename the session — the status line should pick up the new name
+    // Rename the session. The status line should pick up the new name
     // after the next status-interval tick.
     tmux.cmd()
         .args(["rename-session", "timer-test"])
@@ -185,7 +185,7 @@ fn session_lock_timer_fires() {
         .run()
         .assert_success();
 
-    // Attach a PTY client — needed for lock to take effect.
+    // Attach a PTY client, needed for lock to take effect.
     let mut client = PtyClient::attach(&tmux, 80, 24);
 
     // Wait for initial output.
@@ -211,13 +211,13 @@ fn run_shell_delay_timer() {
     tmux.wait_ready(Duration::from_secs(5));
 
     // Queue a delayed run-shell followed by a set-option.  The set-option
-    // will only execute after the delay + command completes.
+    // will only execute after the delay and the command complete.
     let start = std::time::Instant::now();
     tmux.cmd()
         .args(["run-shell", "-b", "-d", "2", "true"])
         .run()
         .assert_success();
-    // Immediately set a marker — this runs right away since -b was used.
+    // Immediately set a marker. This runs right away since -b was used.
     tmux.cmd()
         .args(["set", "-g", "@delay-start", "yes"])
         .run()

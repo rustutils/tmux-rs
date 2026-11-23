@@ -70,7 +70,7 @@ fn layout_even_horizontal() {
     let panes = list_panes(&tmux);
     assert_eq!(panes.len(), 4);
 
-    // All panes should have equal width (within 1 cell due to rounding + separators).
+    // All panes should have equal width (within 1 cell due to rounding and separators).
     let widths: Vec<u32> = panes.iter().map(|p| p.width).collect();
     let min = *widths.iter().min().unwrap();
     let max = *widths.iter().max().unwrap();

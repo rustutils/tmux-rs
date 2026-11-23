@@ -66,7 +66,7 @@ impl TmuxTestHarness {
     }
 
     /// Start a detached session with the given arguments.
-    /// This is typically the first call — it starts the server implicitly.
+    /// This is typically the first call. It starts the server implicitly.
     ///
     /// Extra args are appended to `new-session -d`.
     pub fn new_session(&mut self) -> TmuxCommandBuilder<'_> {
@@ -150,7 +150,7 @@ impl TmuxTestHarness {
         let _ = stdin.write_all(input.as_bytes());
         drop(stdin);
 
-        let output = Command::new("true") // dummy — we just need the Output struct
+        let output = Command::new("true") // dummy because we just need the Output struct
             .output()
             .unwrap();
 
@@ -380,8 +380,8 @@ impl TmuxResult {
 /// An attached tmux client backed by a real PTY.
 ///
 /// Spawns `tmux attach` (or `new-session`) with its stdio connected to a
-/// pseudo-terminal we control. The test harness reads/writes the master side
-/// to interact with the full terminal output — status bar, pane contents, etc.
+/// pseudo-terminal we control. The test harness reads and writes the master side
+/// to interact with the full terminal output (status bar, pane contents, etc.).
 ///
 /// ```text
 /// ┌─────────────┐     ┌──────────┐     ┌──────────────┐
@@ -436,7 +436,7 @@ impl PtyClient {
             libc::fcntl(master_raw, libc::F_SETFL, flags | libc::O_NONBLOCK);
         }
 
-        // Dup the slave fd for each stdio stream — from_raw_fd takes ownership
+        // Dup the slave fd for each stdio stream because from_raw_fd takes ownership
         let slave_stdin = slave_fd.try_clone().expect("dup slave for stdin");
         let slave_stdout = slave_fd.try_clone().expect("dup slave for stdout");
         let slave_stderr = slave_fd.try_clone().expect("dup slave for stderr");
@@ -614,7 +614,7 @@ impl PtyClient {
 impl Drop for PtyClient {
     fn drop(&mut self) {
         // Send q to exit any mode, then detach
-        let () = self.write(b"\x02d"); // C-b d (prefix + detach)
+        let () = self.write(b"\x02d"); // C-b d (prefix, then detach)
         std::thread::sleep(Duration::from_millis(100));
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -664,7 +664,7 @@ fn strip_ansi_escapes(input: &[u8]) -> String {
                     }
                 }
                 _ => {
-                    // Other ESC sequences: ESC + one byte
+                    // Other ESC sequences: ESC followed by one byte
                     i += 1;
                 }
             }

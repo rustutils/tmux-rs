@@ -160,7 +160,7 @@ fn new_session_environment_propagation() {
     let tmux = TmuxTestHarness::new();
     let bin = harness::server_bin();
 
-    // Make a script that dumps a few env vars + cwd
+    // Make a script that dumps a few env vars and cwd
     let outfile = tempfile::NamedTempFile::new().unwrap();
     let outpath = outfile.path().to_path_buf();
 
@@ -207,7 +207,7 @@ fn new_session_environment_propagation() {
 
     let contents = std::fs::read_to_string(&outpath).unwrap_or_default();
     // Note: TERM ends up being the default-terminal value tmux picks, not the
-    // input "ansi" — tmux normalises it. We only assert on values we control.
+    // input "ansi" because tmux normalises it. We only assert on values we control.
     assert!(contents.contains("PWD=/"), "got: {contents}");
     assert!(contents.contains("PATH=1"), "got: {contents}");
     assert!(contents.contains("SHELL=/bin/sh"), "got: {contents}");

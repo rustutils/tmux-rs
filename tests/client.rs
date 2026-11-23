@@ -202,7 +202,7 @@ fn server_access_show() {
     tmux.wait_ready(Duration::from_secs(5));
 
     // server-access without arguments or with invalid args should produce an error
-    // (it requires subcommands like allow/deny)
+    // (it requires subcommands like allow and deny)
     let result = tmux.cmd().args(["server-access"]).run();
     // Just verify it doesn't crash - it may error due to missing arguments
     let _ = result.success();

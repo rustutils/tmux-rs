@@ -129,7 +129,7 @@ fn status_style_bg_fg() {
         .run()
         .stdout_trimmed();
 
-    // tmux may normalize the order; just check both attributes are present
+    // tmux may normalize the order, so just check both attributes are present
     assert!(val.contains("bg=red"), "expected bg=red in '{val}'");
     assert!(val.contains("fg=white"), "expected fg=white in '{val}'");
 }

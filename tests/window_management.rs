@@ -231,7 +231,7 @@ fn select_window_by_index() {
         .run()
         .assert_success();
 
-    // Currently on window 2; select window 0
+    // Currently on window 2, select window 0
     tmux.cmd()
         .args(["select-window", "-t", ":0"])
         .run()
@@ -268,7 +268,7 @@ fn select_window_by_name() {
         .run()
         .assert_success();
 
-    // Currently on "terminal"; select by name "editor"
+    // Currently on "terminal", select by name "editor"
     tmux.cmd()
         .args(["select-window", "-t", "editor"])
         .run()

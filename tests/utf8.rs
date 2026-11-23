@@ -53,7 +53,7 @@ fn utf8_capture_matches_reference() {
 }
 
 // Ported from regress/combine-test.sh
-// Tests rendering of combining characters; compares capture-pane -pe output.
+// Tests rendering of combining characters and compares capture-pane -pe output.
 #[test]
 fn combining_characters_capture() {
     let dir = regress_dir();

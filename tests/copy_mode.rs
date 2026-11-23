@@ -4,7 +4,7 @@ use harness::{PtyClient, TmuxTestHarness};
 
 use super::harness;
 
-/// Helper: create a harness + session + attached client, drain initial output.
+/// Helper: create a harness, session and attached client, drain initial output.
 fn setup(cols: u16, rows: u16) -> (TmuxTestHarness, PtyClient) {
     let mut tmux = TmuxTestHarness::new();
     tmux.new_session()
@@ -177,7 +177,7 @@ fn cursor_movement_vi() {
 #[test]
 fn copy_selection_vi() {
     // Originally written using `send-keys -X search-backward` (no arg)
-    // followed by typing the search term as keys — same broken pattern as
+    // followed by typing the search term as keys, the same broken pattern as
     // the original search_vi_forward (search-backward with no arg is a
     // no-op, the prompt is opened by the `?` vi binding via command-prompt).
     // Rewritten to pass the search term as an argument.
@@ -239,12 +239,12 @@ fn search_vi_forward() {
     // vi binding via `command-prompt`, not by the X command itself). The test
     // would hang because the follow-up FINDME_MARKER keys got interpreted as
     // random vi-copy commands. Rewritten to use search-forward with the term
-    // as an argument — same path that `search_backward_vi` exercises.
+    // as an argument, the same path that `search_backward_vi` exercises.
     let (tmux, mut client) = setup(80, 24);
     set_mode_keys(&tmux, "vi");
 
     // Put some known text. "echo 'FINDME...'" appears once on the input line
-    // and once on the output line; cursor starts on the prompt below both.
+    // and once on the output line. The cursor starts on the prompt below both.
     fill_pane(&mut client, &["FINDME_MARKER somewhere in output"]);
 
     enter_copy_mode(&tmux);
@@ -256,8 +256,8 @@ fn search_vi_forward() {
     std::thread::sleep(Duration::from_millis(200));
 
     // After a successful search-forward, the cursor sits on the match.
-    // Select the next 13 chars (length of "FINDME_MARKER") and copy them —
-    // the buffer should contain the marker.
+    // Select the next 13 chars (length of "FINDME_MARKER") and copy them.
+    // The buffer should contain the marker.
     send_copy_cmd(&tmux, "begin-selection");
     for _ in 0..12 {
         send_copy_cmd(&tmux, "cursor-right");
@@ -367,7 +367,7 @@ fn enter_copy_mode_via_prefix_key() {
     let (tmux, mut client) = setup(80, 24);
     set_mode_keys(&tmux, "vi");
 
-    // Enter copy mode using the actual prefix + [ key sequence
+    // Enter copy mode using the actual key sequence, prefix followed by [
     client.send_key("C-b");
     std::thread::sleep(Duration::from_millis(50));
     client.send_key("[");
@@ -453,9 +453,9 @@ fn half_page_up_down() {
 }
 
 // Ported from regress/copy-mode-test-emacs.sh.
-// Exercises word/space navigation and selection in emacs copy mode against
+// Exercises word and space navigation and selection in emacs copy mode against
 // a fixed input file. The shape mirrors the upstream regress script:
-// each block sends a sequence of motion / select / copy commands and
+// each block sends a sequence of motion, select and copy commands and
 // asserts the resulting paste-buffer contents.
 #[test]
 fn copy_mode_emacs_word_navigation() {
@@ -497,7 +497,7 @@ fn copy_mode_emacs_word_navigation() {
     };
     let buf = || tmux.cmd().args(["show-buffer"]).run().stdout_str();
 
-    // previous-word / previous-space at start-of-text yield empty selection.
+    // previous-word and previous-space at start-of-text yield empty selection.
     x("begin-selection");
     x("previous-word");
     x("previous-space");
@@ -651,7 +651,7 @@ fn rectangle_selection_vi() {
     );
 }
 
-// 1b. Rectangle toggle enters/exits rectangle mode (no buffer needed)
+// 1b. Rectangle toggle enters and exits rectangle mode (no buffer needed)
 #[test]
 fn rectangle_toggle_vi() {
     let (tmux, mut client) = setup(40, 10);
@@ -882,7 +882,7 @@ fn word_movement_vi() {
     send_copy_cmd(&tmux, "cancel");
 }
 
-// 6. Top/middle/bottom of visible screen
+// 6. Top, middle and bottom of visible screen
 #[test]
 fn top_middle_bottom_line_vi() {
     let (tmux, mut client) = setup(40, 10);
@@ -923,7 +923,7 @@ fn top_middle_bottom_line_vi() {
     send_copy_cmd(&tmux, "cancel");
 }
 
-// 7. Beginning/end of line, back-to-indentation
+// 7. Beginning and end of line, back-to-indentation
 #[test]
 fn start_end_of_line_vi() {
     let (tmux, mut client) = setup(40, 10);

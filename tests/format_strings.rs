@@ -391,7 +391,7 @@ fn format_nested_conditional_with_variables() {
 #[test]
 fn format_string_length() {
     let tmux = setup();
-    // n: returns length — but it operates on the format variable name's value length
+    // n: returns length, but it operates on the format variable name's value length
     #[expect(
         clippy::literal_string_with_formatting_args,
         reason = "tmux format string, not a Rust one"
