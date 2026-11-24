@@ -28,6 +28,13 @@ pub fn client_bin() -> PathBuf {
     cargo_bin()
 }
 
+/// Whether new servers are tmux-rs, not C tmux (`TMUX_SERVER_BIN`). For
+/// the few tests of tmux-rs behaviour that C tmux 3.8 does not have
+/// reliably.
+pub fn server_is_tmux_rs() -> bool {
+    server_bin() == cargo_bin()
+}
+
 /// Returns the path to the cargo-built tmux-rs binary.
 fn cargo_bin() -> PathBuf {
     // cargo sets this for integration tests

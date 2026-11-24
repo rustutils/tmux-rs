@@ -465,17 +465,30 @@ fn output_of_exited_pane_is_read_to_the_end() {
         );
         std::thread::sleep(Duration::from_millis(50));
     }
-    std::thread::sleep(Duration::from_millis(300));
-    let out = tmux
-        .cmd()
-        .args(["capture-pane", "-p", "-t", ":1", "-S", "-"])
-        .run()
-        .stdout_str();
-    assert!(
-        out.contains("1500 some padding"),
-        "last line missing, capture ends with:\n{}",
-        out.lines().rev().find(|l| !l.is_empty()).unwrap_or("")
-    );
+    // tmux 3.8 loses the end of the output now and then under load: it
+    // checks for unread data with FIONREAD on the pty, but output that
+    // libevent already read and has not handled yet is freed with the
+    // pane's bufferevent. tmux-rs reads to the end, so only check it.
+    if !harness::server_is_tmux_rs() {
+        return;
+    }
+    let start = std::time::Instant::now();
+    loop {
+        let out = tmux
+            .cmd()
+            .args(["capture-pane", "-p", "-t", ":1", "-S", "-"])
+            .run()
+            .stdout_str();
+        if out.contains("1500 some padding") {
+            break;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "last line missing, capture ends with:\n{}",
+            out.lines().rev().find(|l| !l.is_empty()).unwrap_or("")
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 /// kill-pane -a kills every pane but the target, however many there are.
