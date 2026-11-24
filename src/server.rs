@@ -168,7 +168,8 @@ unsafe fn server_tidy_fire() {
 
         format_tidy_jobs();
 
-        #[cfg(not(target_os = "macos"))]
+        // Only glibc has malloc_trim, as C tmux checks with HAVE_MALLOC_TRIM.
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
         {
             libc::malloc_trim(0);
         }

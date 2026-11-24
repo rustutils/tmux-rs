@@ -12,13 +12,10 @@
 // ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-#[cfg(target_os = "linux")]
-unsafe extern "C" {
-    pub fn closefrom(__lowfd: i32);
-}
-
-#[cfg(target_os = "macos")]
-/// Closes all file descriptors >= `start_fd`.
+/// Closes all file descriptors >= `start_fd`, as BSD closefrom does. On
+/// Linux it uses the close_range system call (Linux 5.9 and later), as
+/// glibc's closefrom does. musl and macOS have no closefrom, and older
+/// kernels no close_range, so otherwise it closes them one by one.
 ///
 /// # Safety
 ///
@@ -26,7 +23,18 @@ unsafe extern "C" {
 /// the process is about to exec.
 pub unsafe fn closefrom(start_fd: i32) {
     unsafe {
-        let max_fd = libc::getdtablesize();
+        #[cfg(target_os = "linux")]
+        if let Ok(first) = libc::c_uint::try_from(start_fd)
+            && libc::syscall(libc::SYS_close_range, first, libc::c_uint::MAX, 0) == 0
+        {
+            return;
+        }
+        let max_fd = libc::sysconf(libc::_SC_OPEN_MAX);
+        let max_fd = if max_fd > 0 {
+            i32::try_from(max_fd).unwrap_or(i32::MAX)
+        } else {
+            1024
+        };
         for fd in start_fd..max_fd {
             libc::close(fd); // ignore close errors
         }

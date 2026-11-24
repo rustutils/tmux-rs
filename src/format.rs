@@ -16,8 +16,8 @@ use std::collections::HashMap;
 
 use crate::compat::HOST_NAME_MAX;
 use crate::libc::{
-    FNM_CASEFOLD, REG_NOSUB, ctime_r, getpwuid, getuid, ispunct, localtime_r, memcpy, regcomp,
-    regex_t, regexec, regfree, strchr, strcmp, strcspn, strftime, strstr, strtod, tm,
+    FNM_CASEFOLD, REG_NOSUB, getpwuid, getuid, ispunct, localtime_r, memcpy, regcomp,
+    regex_t, regexec, regfree, strchr, strcmp, strftime, strstr, strtod, tm,
 };
 use crate::*;
 use crate::sort::{SortCriteria, SortOrder};
@@ -3367,6 +3367,31 @@ pub unsafe fn format_quote_style(s: *const u8) -> *mut u8 {
     }
 }
 
+/// A broken down time as ctime writes it, without the newline:
+/// `Tue Nov 24 11:20:02 2026`. The day and month names are always
+/// English, as in the C library, whatever the locale.
+fn format_ctime(tm: &tm) -> String {
+    ctime_string(
+        tm.tm_wday,
+        tm.tm_mon,
+        tm.tm_mday,
+        (tm.tm_hour, tm.tm_min, tm.tm_sec),
+        i64::from(tm.tm_year) + 1900,
+    )
+}
+
+/// ctime's layout from its parts: day of the week from 0 (Sunday), month
+/// from 0, day of the month, time of day and year.
+fn ctime_string(wday: i32, mon: i32, mday: i32, (hour, min, sec): (i32, i32, i32), year: i64) -> String {
+    const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let day = usize::try_from(wday).ok().and_then(|d| DAYS.get(d)).unwrap_or(&"???");
+    let month = usize::try_from(mon).ok().and_then(|m| MONTHS.get(m)).unwrap_or(&"???");
+    format!("{day} {month}{mday:3} {hour:02}:{min:02}:{sec:02} {year}")
+}
+
 /// Make a prettier time.
 pub unsafe fn format_pretty_time(t: time_t, seconds: i32) -> *mut u8 {
     unsafe {
@@ -3525,17 +3550,15 @@ unsafe fn format_find(
             if modifiers.intersects(format_modifiers::FORMAT_PRETTY) {
                 found = format_pretty_time(t, 0);
             } else {
+                let mut tm = MaybeUninit::<tm>::zeroed();
+                let tm = tm.as_mut_ptr();
+                localtime_r(&raw const t, tm);
                 if !time_format.is_null() {
-                    let mut tm = MaybeUninit::<tm>::uninit();
-                    let tm = tm.as_mut_ptr();
-
-                    localtime_r(&raw const t, tm);
                     strftime(s, SIZEOF_S, time_format, tm);
+                    found = xstrdup(s).as_ptr();
                 } else {
-                    ctime_r(&raw const t, s.cast());
-                    *s.add(strcspn(s, c!("\n"))) = b'\0';
+                    found = format_nul!("{}", format_ctime(&*tm));
                 }
-                found = xstrdup(s).as_ptr();
             }
             return found;
         }
@@ -5701,6 +5724,13 @@ pub fn fuzz_format_expand(input: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ctime_layout() {
+        assert_eq!(ctime_string(3, 10, 4, (9, 5, 7), 2026), "Wed Nov  4 09:05:07 2026");
+        assert_eq!(ctime_string(2, 10, 24, (11, 20, 2), 2026), "Tue Nov 24 11:20:02 2026");
+        assert_eq!(ctime_string(9, 12, 1, (0, 0, 0), 2026), "??? ???  1 00:00:00 2026");
+    }
 
     #[test]
     fn loop_sort_defaults() {

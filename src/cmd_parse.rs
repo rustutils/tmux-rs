@@ -1292,12 +1292,9 @@ unsafe fn yylex_token(ps: &mut cmd_parse_state, mut ch: i32) -> Option<Vec<u8>> 
 
 unsafe fn yylex_token_escape(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> bool {
     unsafe {
-        #[cfg(not(target_os = "macos"))]
-        const SIZEOF_M: usize = libc::_SC_MB_LEN_MAX as usize;
-
-        // TODO determine a more stable way to get this value on mac
-        #[cfg(target_os = "macos")]
-        const SIZEOF_M: usize = 6; // compiled and printed constant from C
+        // MB_LEN_MAX, the longest multibyte character. It is 16 on glibc,
+        // 6 on macOS and 4 on musl, so 16 is enough everywhere.
+        const SIZEOF_M: usize = 16;
 
         let mut tmp: u32 = 0;
         let mut s: [u8; 9] = [0; 9];

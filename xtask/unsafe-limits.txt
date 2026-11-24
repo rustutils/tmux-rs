@@ -4,7 +4,7 @@
 # commit message and `cargo xtask limits --allow-raise`.
 # Files not listed have a limit of 0.
 11 compat/src/b64.rs
-3 compat/src/closefrom.rs
+2 compat/src/closefrom.rs
 2 compat/src/fdforkpty.rs
 8 compat/src/getpeereid.rs
 4 compat/src/getprogname.rs
