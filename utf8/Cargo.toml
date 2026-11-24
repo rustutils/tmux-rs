@@ -2,7 +2,10 @@
 name         = "tmux-utf8"
 version      = "0.0.1"
 edition      = "2024"
-license      = "ISC"
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+homepage.workspace   = true
 description  = "UTF-8 cell codec, interning, and width lookup for tmux-rs."
 
 [dependencies]

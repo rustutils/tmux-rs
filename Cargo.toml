@@ -1,13 +1,14 @@
 [package]
 name         = "tmux-rs"
 version      = "0.0.3"
-authors      = ["Collin Richards <richardscollin@gatech.edu>"]
+authors.workspace = true
 categories   = ["command-line-utilities"]
 edition      = "2024"
 include      = ["/src", "LICENSE", "README.md", "build.rs"]
 keywords     = ["tmux"]
-license      = "ISC"
-repository   = "https://github.com/richardscollin/tmux-rs"
+license.workspace    = true
+repository.workspace = true
+homepage.workspace   = true
 rust-version = "1.88" # let chains
 description  = "A Rust port of tmux"
 
@@ -15,6 +16,12 @@ description  = "A Rust port of tmux"
 # off automatic test file discovery to only have a single entry
 # point at tests/tests.rs (see lib section below)
 autotests = false
+
+[workspace.package]
+authors    = ["Collin Richards <richardscollin@gatech.edu>", "Patrick Elsen"]
+license    = "ISC"
+repository = "https://gitlab.com/rustutils/tmux-rs"
+homepage   = "https://rustutils.com/projects/tmux-rs/"
 
 [workspace]
 members = ["compat", "event", "grid", "log", "protocol", "regsub", "types", "utf8", "xtask"]

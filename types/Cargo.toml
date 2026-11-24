@@ -2,5 +2,8 @@
 name         = "tmux-types"
 version      = "0.0.1"
 edition      = "2024"
-license      = "ISC"
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+homepage.workspace   = true
 description  = "Shared data types for tmux-rs: grid cells, attributes, colours, utf-8 data."

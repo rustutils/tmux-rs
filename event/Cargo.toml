@@ -2,7 +2,10 @@
 name        = "tmux-event"
 version     = "0.0.3"
 edition     = "2024"
-license     = "ISC"
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+homepage.workspace   = true
 description = "Calloop-backed event loop and evbuffer for tmux-rs"
 publish     = false
 

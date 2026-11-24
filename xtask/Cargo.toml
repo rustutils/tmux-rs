@@ -2,7 +2,10 @@
 name        = "xtask"
 version     = "0.0.1"
 edition     = "2024"
-license     = "ISC"
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+homepage.workspace   = true
 description = "Project tooling for tmux-rs, run with cargo xtask"
 publish     = false
 
