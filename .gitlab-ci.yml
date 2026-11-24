@@ -1,0 +1,182 @@
+# Lints and tests for every push to main and every merge request.
+# https://docs.gitlab.com/ci/yaml/
+#
+# The jobs run in a Fedora container, the distribution tmux-rs is developed
+# on. Fedora 45 packages tmux 3.8, the version the tests compare against.
+# Containers run as root, but tmux is not normally run as root and the
+# server access tests need a normal user, so the jobs install as root and
+# then run cargo as the user "tester" through as_tester.
+#
+# as_tester also runs the command under tini as a subreaper. The tests
+# start tmux servers that daemonize, and without something reaping them
+# they stay around as zombies that look alive to the tests.
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "web"
+  # A new push to the same branch cancels the older pipeline.
+  auto_cancel:
+    on_new_commit: interruptible
+
+stages:
+  - check
+  - test
+
+default:
+  image: fedora:45
+  interruptible: true
+  timeout: 1h
+
+variables:
+  CARGO_TERM_COLOR: always
+  CARGO_HOME: $CI_PROJECT_DIR/.cargo
+  RUSTUP_HOME: /opt/rustup
+  # The tests start servers that read the locale. Without UTF-8 the UTF-8
+  # tests see a different tmux.
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+
+.fedora:
+  cache:
+    key: $CI_JOB_NAME_SLUG
+    paths:
+      - .cargo/registry/index
+      - .cargo/registry/cache
+      - .cargo/git/db
+  before_script:
+    - dnf install -y --setopt=install_weak_deps=False
+        gcc git make tar gzip xz curl which procps-ng hostname
+        util-linux ncurses-term tmux tini just
+    - useradd -m tester
+    - curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+        --profile minimal --default-toolchain stable
+    - export PATH="$CARGO_HOME/bin:$PATH"
+    - curl -LsSf "https://get.nexte.st/latest/linux$(test "$(uname -m)" = aarch64 && echo -arm)"
+        | tar zxf - -C "$CARGO_HOME/bin"
+    - |
+      as_tester() {
+        tini -s -- runuser -u tester -- bash --noprofile --norc -eo pipefail -c "$1"
+      }
+    - rm -f server-panic-*.txt
+  after_script:
+    # Fail on server panics, and show the start of each.
+    - |
+      if ls server-panic-*.txt 2>/dev/null; then
+        head -20 server-panic-*.txt
+      fi
+
+# Hands the workspace and toolchain to the test user. Runs after the
+# toolchain components are installed.
+.hand-over: &hand-over
+  - chown -R tester "$CI_PROJECT_DIR" "$CARGO_HOME" "$RUSTUP_HOME"
+
+.no-panics: &no-panics
+  - if ls server-panic-*.txt >/dev/null 2>&1; then exit 1; fi
+
+.test-results:
+  artifacts:
+    when: always
+    paths:
+      - server-panic-*.txt
+    reports:
+      junit: target/nextest/ci/junit.xml
+    expire_in: 1 week
+
+# rustfmt (nightly, for the unstable options), rustdoc and clippy, the same
+# as `just check`.
+check:
+  stage: check
+  extends: .fedora
+  script:
+    - rustup toolchain install nightly --profile minimal --component rustfmt
+    - rustup component add clippy
+    - *hand-over
+    - as_tester "just check"
+
+# Unit and integration tests of every crate, with the Rust binaries on both
+# sides. The parity tests compare with the packaged tmux 3.8.
+test:
+  stage: test
+  extends: [.fedora, .test-results]
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64]
+  tags:
+    - saas-linux-small-$ARCH
+  script:
+    - *hand-over
+    - as_tester "cargo nextest run --workspace --profile ci"
+    - *no-panics
+
+# The integration tests against C tmux 3.8 in the three mixed combinations,
+# which is what checks protocol compatibility. The same as the last three
+# steps of `just test`.
+cross:
+  stage: test
+  extends: [.fedora, .test-results]
+  variables:
+    TMUX_REFERENCE_BIN: /usr/bin/tmux
+  script:
+    - /usr/bin/tmux -V | grep -qx 'tmux 3.8'
+    - *hand-over
+    - status=0
+    - echo "C server, C client"
+    - as_tester "TMUX_SERVER_BIN=/usr/bin/tmux TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests --profile ci" || status=1
+    - echo "Rust server, C client"
+    - as_tester "TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests --profile ci" || status=1
+    - echo "C server, Rust client"
+    - as_tester "TMUX_SERVER_BIN=/usr/bin/tmux cargo nextest run --tests --profile ci" || status=1
+    - *no-panics
+    - exit $status
+
+# The test suite under AddressSanitizer, which catches use after free and
+# out of bounds access in the remaining unsafe code. Leaks are not checked
+# yet, the client and server do not free everything on exit.
+asan:
+  stage: test
+  extends: [.fedora, .test-results]
+  variables:
+    ASAN_OPTIONS: detect_leaks=0
+    RUSTFLAGS: -Zsanitizer=address
+  script:
+    - rustup toolchain install nightly --profile minimal
+    - *hand-over
+    # An explicit target keeps the sanitizer out of build scripts and proc
+    # macros.
+    - as_tester "cargo +nightly nextest run --workspace --profile ci --target x86_64-unknown-linux-gnu"
+    - *no-panics
+
+# Coverage of the unit and integration tests and the upstream regress
+# scripts, shown in merge requests.
+coverage:
+  stage: test
+  extends: .fedora
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "web"
+  script:
+    - rustup toolchain install nightly --profile minimal --component llvm-tools
+    - curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz
+        | tar zxf - -C "$CARGO_HOME/bin"
+    - *hand-over
+    - as_tester "cargo +nightly llvm-cov --no-report nextest --workspace --profile ci"
+    # Most regress scripts do not pass yet and the Makefile ignores their
+    # exit codes. They only add coverage, so a hanging script must not
+    # hold up the job.
+    - as_tester 'source <(cargo +nightly llvm-cov show-env --sh) && cargo +nightly build && timeout 15m make -C regress' || true
+    - as_tester "cargo +nightly llvm-cov report --cobertura --output-path coverage.xml"
+    - as_tester "cargo +nightly llvm-cov report --summary-only"
+  coverage: '/^TOTAL(?:\s+\S+){8}\s+(\d+\.\d+)%/'
+  artifacts:
+    when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+      junit: target/nextest/ci/junit.xml
+    expire_in: 1 week
