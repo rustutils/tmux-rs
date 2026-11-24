@@ -1,57 +1,120 @@
-<section class="warning">
-
-> [!WARNING]
-> This project is alpha quality and has many known bugs. It's written in
-> almost entirely unsafe Rust. Don't use it yet unless you're willing to deal
-> with frequent crashes.
->
-> THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-> WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-> MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-> ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-> WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
-> IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
-> OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-</section>
-
 # tmux-rs
 
-A rust port of [tmux](https://github.com/tmux/tmux).
+tmux-rs is a terminal multiplexer written in Rust. It lets you run several
+terminal sessions inside one terminal window: you can split the window into
+panes, open more windows, switch between them, and detach from a session and
+attach to it again later, from the same or another terminal, while the
+programs in it keep running. It is a port of [tmux] and aims to be a drop-in
+replacement for it, with the same commands, options, key bindings,
+configuration file and client-server protocol.
 
-## Why?
+## History
 
-Why not? This a fun hobby project for me. It's been my gardening for the past year.
+tmux was written by Nicholas Marriott, who started it in 2007 as a BSD
+licensed alternative to GNU Screen. Version 1.0 was released in 2009, and the
+same year it was imported into the OpenBSD base system. It is still developed
+by Nicholas Marriott together with many contributors, both in OpenBSD and on
+[GitHub][tmux].
 
-Why not just use [zellij](https://zellij.dev/)? I like tmux. I want tmux,
-not something else.
+In January 2025 Collin Richards began porting tmux 3.5a to Rust in the
+[richardscollin/tmux-rs] repository. The port translated the C sources file
+by file and kept their structure, which meant a lot of unsafe code, but it
+produced a working tmux, and it was announced in July 2025. Collin continued
+the work with help from Pavel Roskin and other contributors until early 2026.
+
+In April 2026 Patrick Elsen, who had contributed to the original port, forked
+it to continue the work. Since then the project has moved to a workspace of
+smaller crates, replaced libevent with [calloop], started converting the code
+to safe and idiomatic Rust module by module, and is bringing the behaviour up
+to tmux 3.8. The tests run tmux-rs against C tmux to check that both behave
+the same and can talk to each other.
 
 ## Compatibility
 
-tmux-rs aims to behave like tmux 3.8. It started as a port of tmux 3.5a and
-is being brought up to 3.8. It already speaks the tmux 3.8 protocol, so a
-tmux-rs client works with a tmux 3.8 server and the other way around. Most
-commands, options and formats added after 3.5a are not available yet.
+tmux-rs aims to behave like [tmux] 3.8. It started as a port of tmux 3.5a
+and much of what changed up to 3.8 has been ported, but some larger 3.8
+features are still missing. It reads the same configuration files as tmux
+(`~/.tmux.conf`, `~/.config/tmux/tmux.conf` and `/etc/tmux.conf`).
+
+### What works
+
+- The features of tmux 3.5a.
+- The tmux 3.8 client-server protocol, in both directions: a tmux-rs client
+  can talk to a tmux 3.8 server and a tmux 3.8 client to a tmux-rs server.
+- The bug, crash and leak fixes from tmux 3.6 to 3.8 that apply to the
+  existing code, and the 3.8 default key bindings that need no new
+  features.
+- From 3.8: sorting with `-O` and `-r` in the list commands and
+  `switch-client`, the new events and hooks, `wait-for -E`, `set-hook -E`
+  and hook monitors (`set-hook -B`, `show-hooks -B`), control mode
+  subscriptions as 3.8 checks them, array options with named items
+  (`command-alias[foo]`), `-F` on the show commands, and the 3.8 rules for
+  paste buffer names.
+
+### Not ported yet
+
+- Themes and the new default styles and colours.
+- Floating panes and `new-pane`.
+- `switch-mode` and the new status line formats.
+- Pane scrollbars.
+- The new prompt features (`command-prompt -P` and the prompt cursor
+  options).
+- The copy mode additions, and new flags on about 35 commands.
+- `display-panes` as a mode.
+
+The tests compare the options, commands and key bindings with tmux 3.8, and
+[tests/parity_known.rs](tests/parity_known.rs) lists every difference that
+is left.
+
+### Differences on purpose
+
+- The binary is called `tmux-rs`, and its sockets are in
+  `/tmp/tmux-rs-UID/` instead of `/tmp/tmux-UID/`, so it can be installed
+  next to tmux. To use a tmux-rs client with a tmux server, or the other
+  way around, give both the same socket with `-S`.
+- A few edge cases where tmux 3.8 reads uninitialised memory or writes
+  outside a buffer behave in a defined way in tmux-rs.
 
 The integration tests run with tmux-rs on both sides and with C tmux as the
 client, the server or both, see [TESTING.md](TESTING.md).
 
 ## Installation
 
-### Linux
-
-It requires a terminfo database (usually packaged with ncurses).
-
-```sh
-sudo apt-get install libncurses
-cargo install tmux-rs
-tmux-rs
-```
-
-### macOS
+tmux-rs is not on crates.io yet. The `tmux-rs` crate there is the original
+port. Install it from this repository with Cargo (Rust 1.88 or newer):
 
 ```sh
-brew install ncurses
-cargo install tmux-rs
-tmux-rs
+cargo install --locked --git https://gitlab.com/rustutils/tmux-rs tmux-rs
 ```
+
+Or run it with Nix:
+
+```sh
+nix run gitlab:rustutils/tmux-rs
+```
+
+tmux-rs does not link against ncurses. It reads the terminfo database
+directly, which almost every Linux system and macOS has installed already
+(on Debian and Ubuntu it is the `ncurses-base` package). Building needs no
+libraries apart from the C library.
+
+## Usage
+
+Start it with `tmux-rs`. It takes the same command line arguments and
+commands as tmux, see the [tmux manual page] for them.
+
+```sh
+# start a new session
+tmux-rs
+
+# attach to the last session again
+tmux-rs attach
+
+# list sessions
+tmux-rs ls
+```
+
+[tmux]: https://github.com/tmux/tmux
+[richardscollin/tmux-rs]: https://github.com/richardscollin/tmux-rs
+[calloop]: https://crates.io/crates/calloop
+[tmux manual page]: https://man.openbsd.org/tmux
