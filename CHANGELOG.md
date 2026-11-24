@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 (2026-11-24)
 
-The first release of the fork, which continues the original port by Collin
+The first release of this fork, which continues the original port by Collin
 Richards. tmux-rs now aims for compatibility with tmux 3.8 instead of 3.5a.
 
 ### Compatibility with tmux 3.8
