@@ -113,6 +113,18 @@ test:
     - as_tester "cargo nextest run --workspace --profile ci"
     - *no-panics
 
+# The same tests with a static binary linked against musl instead of glibc,
+# which is how release packages may be built. musl lacks some glibc
+# functions (closefrom, malloc_trim), so this keeps the build working.
+musl:
+  stage: test
+  extends: [.fedora, .test-results]
+  script:
+    - rustup target add x86_64-unknown-linux-musl
+    - *hand-over
+    - as_tester "cargo nextest run --workspace --profile ci --target x86_64-unknown-linux-musl"
+    - *no-panics
+
 # The integration tests against C tmux 3.8 in the three mixed combinations,
 # which is what checks protocol compatibility. The same as the last three
 # steps of `just test`.
