@@ -193,8 +193,13 @@ pub unsafe fn server_kill_pane(wp: *mut window_pane) {
     }
 }
 
+/// Removes window `w` from every session that has it, destroying sessions
+/// left without windows. Holds a reference to the window meanwhile, as 3.8
+/// does, so detaching its last winlink does not free it while the loop
+/// still looks for more.
 pub unsafe fn server_kill_window(w: *mut window, renumber: i32) {
     unsafe {
+        window_add_ref(w, c!("server_kill_window"));
         let sessions: Vec<*mut session> =
             sessions_iter().collect();
         for s in sessions {
@@ -217,6 +222,7 @@ pub unsafe fn server_kill_window(w: *mut window, renumber: i32) {
         }
 
         recalculate_sizes();
+        window_remove_ref(w, c!("server_kill_window"));
     }
 }
 
