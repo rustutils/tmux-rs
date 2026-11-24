@@ -32,21 +32,29 @@ pub static mut NEXT_CLIENT_ID: u64 = 1;
 
 /// Iterate over all live clients as `*mut client` pointers.
 ///
-/// Iterate over all clients via the `CLIENT_REGISTRY`.
-/// Returns pointers derived from the `CLIENT_REGISTRY` `Box` entries.
-#[inline]
+/// A lost client stays in `CLIENT_REGISTRY` until its last reference goes,
+/// but C takes it off the client list at once, so dead clients are
+/// skipped. The pointers are collected first, so the loop body may add or
+/// free clients.
 pub unsafe fn clients_iter() -> impl Iterator<Item = *mut client> {
     unsafe {
         (*(&raw mut CLIENT_REGISTRY))
             .values_mut()
+            .filter(|c| !c.flags.intersects(client_flag::DEAD))
             .map(|b| &mut **b as *mut client)
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
 
-/// Number of clients in the registry.
-#[inline]
+/// Number of live clients, as C's client list would hold.
 pub unsafe fn clients_count() -> usize {
-    unsafe { (*(&raw const CLIENT_REGISTRY)).len() }
+    unsafe {
+        (*(&raw const CLIENT_REGISTRY))
+            .values()
+            .filter(|c| !c.flags.intersects(client_flag::DEAD))
+            .count()
+    }
 }
 pub static mut SERVER_PROC: *mut tmuxproc = null_mut();
 pub static mut SERVER_FD: c_int = -1;

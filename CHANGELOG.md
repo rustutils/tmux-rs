@@ -42,6 +42,10 @@ Richards. tmux-rs now aims for compatibility with tmux 3.8 instead of 3.5a.
   panes, `#{l:...}` in formats, customize mode freeing a name twice,
   `set-buffer -w` and `load-buffer` using freed data, and event callbacks
   using freed memory.
+- Killing a window, or moving its last pane away, read the window after it
+  was freed.
+- The server could redraw a client whose terminal had just closed, using
+  freed memory.
 - Five pane hooks had misspelled names, so `set-hook pane-focus-in` failed.
 - `set-option` and the paste buffer commands no longer change values that
   are not valid UTF-8, and the client no longer panics on such arguments.
