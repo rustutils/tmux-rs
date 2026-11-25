@@ -15,8 +15,11 @@
 //! completion and the editing keys of tmux 3.8.
 //!
 //! The prompt knows nothing about clients or panes. Its owner creates it
-//! with the message and input already expanded, feeds it keys with
-//! [`Prompt::key`] and draws it from its accessors. A key never calls the
+//! with the input already expanded and the options it uses read into a
+//! [`PromptLook`], feeds it keys with [`Prompt::key`] and draws it: the
+//! owner expands the message through message-format, then
+//! [`Prompt::layout`] says where the parts go and [`Prompt::input_cells`]
+//! and [`Prompt::completion_cells`] what to write there. A key never calls the
 //! owner's callback. It returns a [`KeyOutcome`] listing the callbacks to
 //! fire ([`Fire`]), and the owner fires them in order and reports back
 //! with [`Prompt::fired`]. What the prompt needs from the rest of tmux
@@ -31,7 +34,7 @@ use crate::key_string::key_string_lookup_key;
 use crate::prompt_history::{HistoryPositions, PromptType};
 use crate::utf8::{Utf8Data, Utf8State};
 use crate::{
-    KEYC_CTRL, KEYC_IS_UNICODE, KEYC_MASK_FLAGS, KEYC_MASK_KEY, KEYC_MASK_MODIFIERS, KEYC_META,
+    GRID_DEFAULT_CELL, GridCell, KEYC_CTRL, KEYC_IS_UNICODE, KEYC_MASK_FLAGS, KEYC_MASK_KEY, KEYC_MASK_MODIFIERS, KEYC_META,
     KEYC_VI, key_code, keyc, modekey, prompt_flags,
 };
 
@@ -120,9 +123,85 @@ pub trait PromptEnv {
     fn complete_commands(&mut self, prefix: &[u8]) -> Vec<String>;
 }
 
+/// The options a prompt draws with, read when it opens (3.8's
+/// `prompt_set_options`). Changing them later does not change an open
+/// prompt.
+#[derive(Clone)]
+pub struct PromptLook {
+    /// message-format, which shows the message as #{message}.
+    pub message_format: Vec<u8>,
+    /// message-style applied, used when the expanded style string does
+    /// not parse.
+    pub style: GridCell,
+    /// message-style as a string, expanded with the prompt's formats
+    /// when drawn.
+    pub style_str: Vec<u8>,
+    /// message-command-style applied, for vi command mode.
+    pub command_style: GridCell,
+    /// message-command-style as a string.
+    pub command_style_str: Vec<u8>,
+    /// prompt-cursor-style, as the choice number.
+    pub cursor_style: u32,
+    /// prompt-command-cursor-style.
+    pub command_cursor_style: u32,
+    /// prompt-cursor-colour.
+    pub cursor_colour: i32,
+    /// prompt-command-cursor-colour.
+    pub command_cursor_colour: i32,
+}
+
+impl Default for PromptLook {
+    fn default() -> Self {
+        Self {
+            message_format: b"#{message}".to_vec(),
+            style: GRID_DEFAULT_CELL,
+            style_str: Vec::new(),
+            command_style: GRID_DEFAULT_CELL,
+            command_style_str: Vec::new(),
+            cursor_style: 0,
+            command_cursor_style: 0,
+            cursor_colour: -1,
+            command_cursor_colour: -1,
+        }
+    }
+}
+
+/// How the prompt's content is aligned in its area, from the align
+/// directive of the message style.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Align {
+    #[default]
+    Left,
+    Centre,
+    Right,
+}
+
+/// Where the parts of a prompt go in its area (3.8's `prompt_layout`). All
+/// columns are absolute, like the area's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Layout {
+    pub area_x: u32,
+    pub area_width: u32,
+    /// Width of the expanded message-format.
+    pub label_width: u32,
+    /// Where the label and input start, after alignment.
+    pub content_x: u32,
+    /// Width of the label, the visible input and the completions.
+    pub content_width: u32,
+    /// Where the input starts.
+    pub input_x: u32,
+    /// How many columns of the input are scrolled off to the left.
+    pub input_offset: u32,
+    /// How many columns of the input are visible.
+    pub input_width: u32,
+    /// The cursor.
+    pub cursor_x: u32,
+}
+
 /// How a prompt starts.
 pub struct PromptSetup {
-    /// The message shown before the input, expanded.
+    /// The message shown before the input, not expanded: it is expanded
+    /// when the prompt is drawn, so it can show the input.
     pub message: Vec<u8>,
     /// The initial input, expanded.
     pub input: Vec<u8>,
@@ -132,6 +211,7 @@ pub struct PromptSetup {
     pub keys: modekey,
     /// The word-separators option.
     pub word_separators: Vec<u8>,
+    pub look: PromptLook,
 }
 
 /// A prompt.
@@ -156,6 +236,7 @@ pub struct Prompt {
     /// Completions shown after the input, when Tab found several.
     complete: Vec<String>,
     closed: bool,
+    look: PromptLook,
 }
 
 /// Decodes `s` into characters as `utf8_fromcstr` does: bytes that are not
@@ -195,6 +276,52 @@ pub fn utf8_encode(buffer: &[Utf8Data]) -> Vec<u8> {
 /// The display width of `buffer`.
 pub fn utf8_width(buffer: &[Utf8Data]) -> u32 {
     buffer.iter().map(|ud| u32::from(ud.width)).sum()
+}
+
+/// The input cells being collected for drawing, see
+/// [`Prompt::input_cells`].
+struct Cells {
+    /// Columns of the input scrolled off to the left.
+    offset: u32,
+    /// Columns of the input that fit.
+    width_limit: u32,
+    /// Columns of the input passed so far, scrolled off or not.
+    width: u32,
+    /// Columns written, where the screen's cursor would be.
+    drawn: u32,
+    out: Vec<Utf8Data>,
+}
+
+impl Cells {
+    /// Adds `ud` if it is in the visible part (3.8's
+    /// `prompt_redraw_character`). Returns false when the area is full.
+    fn push(&mut self, ud: &Utf8Data) -> bool {
+        if self.width < self.offset {
+            self.width += u32::from(ud.width);
+            return true;
+        }
+        if self.width >= self.offset + self.width_limit {
+            return false;
+        }
+        self.width += u32::from(ud.width);
+        if self.width > self.offset + self.width_limit {
+            return false;
+        }
+        let ch = ud.data[0];
+        let cell = if ud.size == 1 && (ch <= 0x1f || ch == 0x7f) {
+            let mut cell = Utf8Data::single(b'^');
+            cell.data[1] = if ch == 0x7f { b'?' } else { ch | 0x40 };
+            cell.size = 2;
+            cell.have = 2;
+            cell.width = 2;
+            cell
+        } else {
+            *ud
+        };
+        self.drawn += u32::from(cell.width);
+        self.out.push(cell);
+        true
+    }
 }
 
 /// Whether `ud` is one of the `separators`.
@@ -289,6 +416,7 @@ impl Prompt {
             command_mode: false,
             complete: Vec::new(),
             closed: false,
+            look: setup.look,
         }
     }
 
@@ -310,12 +438,180 @@ impl Prompt {
         self.complete.clear();
     }
 
-    /// The message shown before the input.
+    /// The message shown before the input, not expanded.
     pub fn message(&self) -> &[u8] {
         &self.message
     }
 
+    /// The options the prompt draws with.
+    pub fn look(&self) -> &PromptLook {
+        &self.look
+    }
+
+    /// The style to draw with, as the applied cell and the string to
+    /// expand: message-command-style in vi command mode, otherwise
+    /// message-style.
+    pub fn style(&self) -> (&GridCell, &[u8]) {
+        if self.command_mode {
+            (&self.look.command_style, &self.look.command_style_str)
+        } else {
+            (&self.look.style, &self.look.style_str)
+        }
+    }
+
+    /// The cursor style choice and colour to show: the command variants
+    /// in vi command mode.
+    pub fn cursor(&self) -> (u32, i32) {
+        if self.command_mode {
+            (self.look.command_cursor_style, self.look.command_cursor_colour)
+        } else {
+            (self.look.cursor_style, self.look.cursor_colour)
+        }
+    }
+
+    /// The prompt's type.
+    pub fn prompt_type(&self) -> PromptType {
+        self.ty
+    }
+
+    /// The prompt's flags as `#{prompt_flags}` shows them: names separated
+    /// by commas, with QUOTENEXT and COMMANDMODE while they apply.
+    pub fn flags_string(&self) -> String {
+        let f = |flag: prompt_flags| self.flags.intersects(flag);
+        let names = [
+            (f(prompt_flags::PROMPT_SINGLE), "SINGLE"),
+            (f(prompt_flags::PROMPT_NUMERIC), "NUMERIC"),
+            (f(prompt_flags::PROMPT_INCREMENTAL), "INCREMENTAL"),
+            (f(prompt_flags::PROMPT_NOFORMAT), "NOFORMAT"),
+            (f(prompt_flags::PROMPT_KEY), "KEY"),
+            (f(prompt_flags::PROMPT_ACCEPT), "ACCEPT"),
+            (self.quote_next, "QUOTENEXT"),
+            (f(prompt_flags::PROMPT_BSPACE_EXIT), "BSPACE_EXIT"),
+            (f(prompt_flags::PROMPT_NOFREEZE), "NOFREEZE"),
+            (self.command_mode, "COMMANDMODE"),
+            (f(prompt_flags::PROMPT_ISPANE), "ISPANE"),
+            (f(prompt_flags::PROMPT_ISMODE), "ISMODE"),
+            (f(prompt_flags::PROMPT_EDITARROWS), "EDITARROWS"),
+        ];
+        let set: Vec<&str> = names.iter().filter(|(on, _)| *on).map(|(_, n)| *n).collect();
+        set.join(",")
+    }
+
+    /// The width of the input and of the input before the cursor. The
+    /// ^ shown while C-v waits counts in the width.
+    fn widths(&self) -> (u32, u32) {
+        let pcursor = utf8_width(&self.buffer[..self.index]);
+        let mut pwidth = utf8_width(&self.buffer);
+        if self.quote_next {
+            pwidth += 1;
+        }
+        (pcursor, pwidth)
+    }
+
+    /// Works out where the parts go in an area of `area_width` columns
+    /// from `area_x`, when the expanded message-format is `label_width`
+    /// wide. The input scrolls so the cursor stays visible.
+    pub fn layout(&self, area_x: u32, area_width: u32, label_width: u32, align: Align) -> Layout {
+        let mut pl = Layout {
+            area_x,
+            area_width,
+            ..Layout::default()
+        };
+        if area_width == 0 {
+            return pl;
+        }
+        pl.label_width = label_width.min(area_width);
+
+        let (pcursor, pwidth) = self.widths();
+        let avail = area_width - pl.label_width;
+        if avail == 0 {
+            pl.cursor_x = pl.label_width;
+        } else {
+            let (offset, width) = if pcursor >= avail {
+                ((pcursor - avail) + 1, avail)
+            } else {
+                (0, pwidth)
+            };
+            pl.input_offset = offset;
+            pl.input_width = width.min(avail);
+            pl.cursor_x = pl.label_width + pcursor - offset;
+        }
+
+        pl.content_width = pl.label_width + pl.input_width;
+        if let Some(display) = self.completion_display()
+            && pl.cursor_x < area_width
+        {
+            let width = utf8_width(&utf8_decode(display.as_bytes())).min(area_width - pl.cursor_x);
+            pl.content_width = pl.content_width.max(pl.cursor_x + width);
+        }
+        pl.content_width = pl.content_width.min(area_width);
+
+        pl.content_x = match align {
+            Align::Centre => area_x + (area_width - pl.content_width) / 2,
+            Align::Right => area_x + area_width - pl.content_width,
+            Align::Left => area_x,
+        };
+        pl.input_x = pl.content_x + pl.label_width;
+        pl.cursor_x += pl.content_x;
+        pl
+    }
+
+    /// The cells to write from `layout.input_x`: the visible part of the
+    /// input, control characters as ^X (one cell two columns wide), and a
+    /// ^ at the cursor while C-v waits for a key. Like 3.8, the scroll
+    /// counts a control character as one column.
+    pub fn input_cells(&self, layout: &Layout) -> Vec<Utf8Data> {
+        let mut cells = Cells {
+            offset: layout.input_offset,
+            width_limit: layout.input_width,
+            width: 0,
+            drawn: 0,
+            out: Vec::new(),
+        };
+        if layout.content_width == 0 {
+            return cells.out;
+        }
+        let (pcursor, _) = self.widths();
+        let quote = Utf8Data::single(b'^');
+        // 3.8's prompt_redraw_quote: the ^ goes where the cursor is.
+        let quote_here = |cells: &mut Cells| {
+            if self.quote_next && pcursor >= cells.offset && cells.drawn == pcursor - cells.offset {
+                return cells.push(&quote);
+            }
+            true
+        };
+        for ud in &self.buffer {
+            if !quote_here(&mut cells) || !cells.push(ud) {
+                return cells.out;
+            }
+        }
+        quote_here(&mut cells);
+        cells.out
+    }
+
+    /// The completions to write from `layout.cursor_x`, underlined, if
+    /// Tab found several and the cursor is at the end of the input.
+    pub fn completion_cells(&self, layout: &Layout) -> Option<Vec<Utf8Data>> {
+        let display = self.completion_display()?;
+        let (ax, aw, cx) = (layout.content_x, layout.content_width, layout.cursor_x);
+        if cx < ax || cx - ax >= aw {
+            return None;
+        }
+        let avail = aw - (cx - ax);
+        let mut width = 0;
+        let mut out = Vec::new();
+        for ud in utf8_decode(display.as_bytes()) {
+            if width + u32::from(ud.width) > avail {
+                break;
+            }
+            width += u32::from(ud.width);
+            out.push(ud);
+        }
+        Some(out)
+    }
+
     /// The input, one entry per character.
+    #[cfg(test)]
     pub fn buffer(&self) -> &[Utf8Data] {
         &self.buffer
     }
@@ -326,6 +622,7 @@ impl Prompt {
     }
 
     /// The cursor, as an index into [`Prompt::buffer`].
+    #[cfg(test)]
     pub fn index(&self) -> usize {
         self.index
     }
@@ -337,6 +634,7 @@ impl Prompt {
     }
 
     /// Whether C-v is waiting for the key to insert.
+    #[cfg(test)]
     pub fn quote_next(&self) -> bool {
         self.quote_next
     }

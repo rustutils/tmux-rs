@@ -52,11 +52,6 @@ pub const OPTIONS: &[(&str, &str)] = &[
     ),
     ("missing:-g focus-follows-mouse", "Track 3: new options"),
     ("missing:-g initial-repeat-time", "Track 3: new options"),
-    ("missing:-g message-format", "F4: prompt"),
-    ("missing:-g prompt-command-cursor-colour", "F4: prompt"),
-    ("missing:-g prompt-command-cursor-style", "F4: prompt"),
-    ("missing:-g prompt-cursor-colour", "F4: prompt"),
-    ("missing:-g prompt-cursor-style", "F4: prompt"),
     (
         "missing:-g status-format[2]",
         "Track 3: switch-mode and status lines",

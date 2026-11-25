@@ -15,9 +15,8 @@ use std::time::Duration;
 
 use std::rc::Rc;
 
-use crate::prompt::{
-    CallbackResult, Fire, KeyResult, Prompt, PromptEnv, PromptSetup, utf8_decode, utf8_width,
-};
+use crate::prompt::{CallbackResult, Fire, KeyResult, Prompt, PromptEnv};
+use crate::prompt_draw::{prompt_draw, prompt_setup};
 use crate::prompt_history::{
     HistoryPositions, prompt_history_add, prompt_history_down, prompt_history_up,
 };
@@ -474,14 +473,23 @@ pub unsafe fn status_message_redraw(c: *mut client) -> i32 {
             messageline = lines - 1;
         }
 
-        let msg = (*c).message_string.as_deref().unwrap_or("");
-        let mut len = screen_write_strlen!("{}", msg);
-        if len > (*c).tty.sx as usize {
-            len = (*c).tty.sx as usize;
-        }
+        let (ax, aw) = status_message_area(c);
 
         let ft = format_create_defaults(null_mut(), c, null_mut(), null_mut(), null_mut());
         style_apply(&raw mut gc, (*s).options, c!("message-style"), ft);
+
+        // With styles ignored, # is doubled so format_draw shows the
+        // message as it is.
+        let msg = (*c).message_string.as_deref().unwrap_or("");
+        if (*c).message_ignore_styles != 0 {
+            format_add!(ft, "message", "{}", msg.replace('#', "##"));
+        } else {
+            format_add!(ft, "message", "{msg}");
+        }
+        format_add!(ft, "command_prompt", "0");
+        let expanded = format_expand_time(ft, options_get_string_((*s).options, "message-format"));
+        let expanded_str = cstr_to_string_lossy(expanded);
+        free_(expanded);
         format_free(ft);
 
         screen_write_start(&raw mut ctx, (*sl).active);
@@ -493,29 +501,8 @@ pub unsafe fn status_message_redraw(c: *mut client) -> i32 {
             (*c).tty.sx,
             lines,
         );
-        screen_write_cursormove(&raw mut ctx, 0, messageline as i32, 0);
-        for _ in 0..(*c).tty.sx {
-            screen_write_putc(&raw mut ctx, &raw const gc, b' ');
-        }
-        screen_write_cursormove(&raw mut ctx, 0, messageline as i32, 0);
-        if (*c).message_ignore_styles != 0 {
-            screen_write_nputs!(
-                &raw mut ctx,
-                len as isize,
-                &raw mut gc,
-                "{}",
-                msg,
-            );
-        } else {
-            format_draw(
-                &raw mut ctx,
-                &raw const gc,
-                (*c).tty.sx,
-                msg,
-                null_mut(),
-                0,
-            );
-        }
+        screen_write_cursormove(&raw mut ctx, ax as i32, messageline as i32, 0);
+        format_draw(&raw mut ctx, &raw const gc, aw, &expanded_str, null_mut(), 0);
         screen_write_stop(&raw mut ctx);
 
         if (*(*sl).active).grid.visible_eq(&old_grid) {
@@ -577,36 +564,6 @@ unsafe fn status_prompt_aliases() -> Vec<String> {
     }
 }
 
-/// Expand `s` as a format for the prompt, unless `noformat`.
-///
-/// # Safety
-/// `c` must be a valid client and `fs` null or a valid find state.
-unsafe fn status_prompt_expand(
-    c: *mut client,
-    fs: *mut cmd_find_state,
-    s: *const u8,
-    noformat: bool,
-) -> Vec<u8> {
-    unsafe {
-        if s.is_null() {
-            return Vec::new();
-        }
-        if noformat {
-            return CStr::from_ptr(s.cast()).to_bytes().to_vec();
-        }
-        let ft = if !fs.is_null() {
-            format_create_from_state(null_mut(), c, fs)
-        } else {
-            format_create_defaults(null_mut(), c, null_mut(), null_mut(), null_mut())
-        };
-        let expanded = format_expand_time(ft, s);
-        let out = CStr::from_ptr(expanded.cast()).to_bytes().to_vec();
-        free_(expanded);
-        format_free(ft);
-        out
-    }
-}
-
 /// Enable status line prompt.
 pub unsafe fn status_prompt_set<T>(
     c: *mut client,
@@ -622,28 +579,13 @@ pub unsafe fn status_prompt_set<T>(
     unsafe {
         server_client_clear_overlay(c);
 
-        let message = status_prompt_expand(c, fs, msg, false);
-        let input = status_prompt_expand(c, fs, input, flags.intersects(prompt_flags::PROMPT_NOFORMAT));
-
         status_message_clear(NonNull::new_unchecked(c));
         status_prompt_clear(c);
         status_push_screen(c);
 
-        let oo = (*client_get_session(c)).options;
-        let keys = if options_get_number_(oo, "status-keys") == modekey::MODEKEY_VI as i64 {
-            modekey::MODEKEY_VI
-        } else {
-            modekey::MODEKEY_EMACS
-        };
-        let separators = options_get_string_(oo, "word-separators");
-        (*c).prompt = Some(Box::new(Prompt::new(PromptSetup {
-            message,
-            input,
-            ty: prompt_type,
-            flags,
-            keys,
-            word_separators: CStr::from_ptr(separators.cast()).to_bytes().to_vec(),
-        })));
+        let setup = prompt_setup(client_get_session(c), fs, msg, input, prompt_type, flags);
+        (*c).prompt = Some(Box::new(Prompt::new(setup)));
+        (*c).prompt_state = if fs.is_null() { cmd_find_state::default() } else { *fs };
 
         (*c).prompt_inputcb = Some(std::mem::transmute::<
             unsafe fn(*mut client, NonNull<T>, *const u8, KeyResult) -> i32,
@@ -656,7 +598,7 @@ pub unsafe fn status_prompt_set<T>(
         (*c).prompt_data = data.cast(); // note we know this is non null
 
         if !flags.intersects(prompt_flags::PROMPT_INCREMENTAL) {
-            (*c).tty.flags |= tty_flags::TTY_NOCURSOR | tty_flags::TTY_FREEZE;
+            (*c).tty.flags |= tty_flags::TTY_FREEZE;
         }
         (*c).flags |= client_flag::REDRAWSTATUS;
 
@@ -696,10 +638,18 @@ pub unsafe fn status_prompt_update(c: *mut client, msg: *const u8, input: *const
         if (*c).prompt.is_none() {
             return;
         }
-        let message = status_prompt_expand(c, null_mut(), msg, false);
-        let input = status_prompt_expand(c, null_mut(), input, false);
+        // The new input is expanded with the prompt's target, the
+        // message when it is drawn (3.8's prompt_update).
+        let setup = prompt_setup(
+            client_get_session(c),
+            &raw mut (*c).prompt_state,
+            msg,
+            input,
+            PromptType::Command,
+            prompt_flags::empty(),
+        );
         if let Some(prompt) = (*c).prompt.as_mut() {
-            prompt.update(message, &input);
+            prompt.update(setup.message, &setup.input);
         }
         (*c).flags |= client_flag::REDRAWSTATUS;
     }
@@ -773,164 +723,68 @@ pub unsafe fn status_prompt_redraw(c: *mut client) -> i32 {
         let sl = &raw mut (*c).status;
         let mut ctx: screen_write_ctx = zeroed();
 
-        let s = client_get_session(c);
-
-        let mut gc: GridCell = zeroed();
-        let mut cursorgc: GridCell = zeroed();
-        let old_grid: Box<Grid>;
-
-        // What is drawn, copied out so no reference to the prompt is held
-        // while drawing.
-        let Some((message, mut cells, mut index, command_mode, quote_next, completions)) =
-            (*c).prompt.as_deref().map(|p| {
-                (
-                    String::from_utf8_lossy(p.message()).into_owned(),
-                    p.buffer().to_vec(),
-                    p.index(),
-                    p.command_mode(),
-                    p.quote_next(),
-                    p.completion_display(),
-                )
-            })
-        else {
+        let Some(pr) = (*c).prompt.as_deref().map(|p| p as *const Prompt) else {
             return 0;
         };
-
-        'finished: {
-            if (*c).tty.sx == 0 || (*c).tty.sy == 0 {
-                return 0;
-            }
-            // Snapshot the old Grid before reinit overwrites it.
-            old_grid = std::mem::replace(&mut (*(*sl).active).grid, Box::new(Grid::new(0, 0, 0)));
-
-            let mut lines = status_line_size(c);
-            if lines <= 1 {
-                lines = 1;
-            }
-            screen_init((*sl).active, (*c).tty.sx, lines, 0);
-
-            let mut promptline = status_prompt_line_at(c);
-            if promptline > lines - 1 {
-                promptline = lines - 1;
-            }
-
-            let ft = format_create_defaults(null_mut(), c, null_mut(), null_mut(), null_mut());
-            if command_mode {
-                style_apply(&raw mut gc, (*s).options, c!("message-command-style"), ft);
-            } else {
-                style_apply(&raw mut gc, (*s).options, c!("message-style"), ft);
-            }
-            format_free(ft);
-
-            memcpy__(&raw mut cursorgc, &raw const gc);
-            cursorgc.attr ^= GridAttr::GRID_ATTR_REVERSE;
-
-            let mut start = format_width(&message);
-            if start > (*c).tty.sx {
-                start = (*c).tty.sx;
-            }
-
-            screen_write_start(&raw mut ctx, (*sl).active);
-            screen_write_fast_copy(
-                &raw mut ctx,
-                &raw mut (*sl).screen,
-                0,
-                0,
-                (*c).tty.sx,
-                lines,
-            );
-            screen_write_cursormove(&raw mut ctx, 0, promptline as i32, 0);
-            for _ in 0..(*c).tty.sx {
-                screen_write_putc(&raw mut ctx, &raw const gc, b' ');
-            }
-            screen_write_cursormove(&raw mut ctx, 0, promptline as i32, 0);
-            format_draw(&raw mut ctx, &raw const gc, start, &message, null_mut(), 0);
-            screen_write_cursormove(&raw mut ctx, start as i32, promptline as i32, 0);
-
-            let left = (*c).tty.sx - start;
-            if left == 0 {
-                break 'finished;
-            }
-
-            // The input, with a ^ at the cursor while C-v waits for a key.
-            if quote_next {
-                cells.insert(index, Utf8Data::single(b'^'));
-                index += 1;
-            }
-            let pcursor = utf8_width(&cells[..index]);
-            let mut pwidth = utf8_width(&cells);
-            let offset;
-            if pcursor >= left {
-                // The cursor would be outside the screen so start drawing
-                // with it on the right.
-                offset = (pcursor - left) + 1;
-                pwidth = left;
-            } else {
-                offset = 0;
-            }
-            if pwidth > left {
-                pwidth = left;
-            }
-
-            let cursor_at = if quote_next { index - 1 } else { index };
-            (*sl).prompt_cx = start + pcursor - offset;
-            let mut width = 0;
-            let mut i = 0;
-            while i < cells.len() {
-                let ud = cells[i];
-                if width < offset {
-                    width += u32::from(ud.width);
-                    i += 1;
-                    continue;
-                }
-                if width >= offset + pwidth {
-                    break;
-                }
-                width += u32::from(ud.width);
-                if width > offset + pwidth {
-                    break;
-                }
-
-                let cell = if i == cursor_at { &mut cursorgc } else { &mut gc };
-                if ud.size == 1 && (ud.data[0] <= 0x1f || ud.data[0] == 0x7f) {
-                    // Control characters are shown as ^X.
-                    let ch = if ud.data[0] == 0x7f { b'?' } else { ud.data[0] | 0x40 };
-                    cell.data = Utf8Data::single(b'^');
-                    screen_write_cell(&raw mut ctx, cell);
-                    cell.data = Utf8Data::single(ch);
-                    screen_write_cell(&raw mut ctx, cell);
-                } else {
-                    cell.data = ud;
-                    screen_write_cell(&raw mut ctx, cell);
-                }
-                i += 1;
-            }
-            if (*(*sl).active).cx < screen_size_x((*sl).active) && cursor_at >= i {
-                // The cursor is after the input. Several completions are
-                // shown from there, the cursor on the space before them.
-                match &completions {
-                    Some(display) => {
-                        let mut completegc = gc;
-                        completegc.attr |= GridAttr::GRID_ATTR_UNDERSCORE;
-                        for (n, ud) in utf8_decode(display.as_bytes()).into_iter().enumerate() {
-                            if (*(*sl).active).cx + u32::from(ud.width) > screen_size_x((*sl).active) {
-                                break;
-                            }
-                            let cell = if n == 0 { &mut cursorgc } else { &mut completegc };
-                            cell.data = ud;
-                            screen_write_cell(&raw mut ctx, cell);
-                        }
-                    }
-                    None => screen_write_putc(&raw mut ctx, &raw const cursorgc, b' '),
-                }
-            }
+        if (*c).tty.sx == 0 || (*c).tty.sy == 0 {
+            return 0;
         }
-        // finished:
+        // Snapshot the old Grid before reinit overwrites it.
+        let old_grid = std::mem::replace(&mut (*(*sl).active).grid, Box::new(Grid::new(0, 0, 0)));
+
+        let mut lines = status_line_size(c);
+        if lines <= 1 {
+            lines = 1;
+        }
+        screen_init((*sl).active, (*c).tty.sx, lines, 0);
+
+        let mut promptline = status_prompt_line_at(c);
+        if promptline > lines - 1 {
+            promptline = lines - 1;
+        }
+        let (ax, aw) = status_message_area(c);
+
+        screen_write_start(&raw mut ctx, (*sl).active);
+        screen_write_fast_copy(
+            &raw mut ctx,
+            &raw mut (*sl).screen,
+            0,
+            0,
+            (*c).tty.sx,
+            lines,
+        );
+        // The prompt is not changed while it is drawn.
+        (*sl).prompt_cx = prompt_draw(pr, &raw mut (*c).prompt_state, &raw mut ctx, ax, aw, promptline);
         screen_write_stop(&raw mut ctx);
 
         if (*(*sl).active).grid.visible_eq(&old_grid) {
             return 0;
         }
         1
+    }
+}
+
+/// The columns of the message and prompt area: the whole line, aligned
+/// by the align directive of message-style (3.8's `status_message_area`).
+/// 3.8 also takes a width from message-style, which waits for the width
+/// directive of styles.
+///
+/// # Safety
+/// `c` must be a valid client with a session.
+unsafe fn status_message_area(c: *mut client) -> (u32, u32) {
+    unsafe {
+        let s = client_get_session(c);
+        let w = (*c).tty.sx;
+        let sy = options_string_to_style((*s).options, "message-style", null_mut());
+        let ax = if sy.is_null() {
+            0
+        } else {
+            match (*sy).align {
+                style_align::STYLE_ALIGN_CENTRE | style_align::STYLE_ALIGN_ABSOLUTE_CENTRE => ((*c).tty.sx - w) / 2,
+                style_align::STYLE_ALIGN_RIGHT => (*c).tty.sx - w,
+                _ => 0,
+            }
+        };
+        (ax, w)
     }
 }

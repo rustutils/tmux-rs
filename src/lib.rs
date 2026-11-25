@@ -90,6 +90,7 @@ cfg_pub_mods! {
     mod osdep;
     mod paste;
     mod prompt;
+    mod prompt_draw;
     mod prompt_history;
     mod popup;
     mod proc;
@@ -2390,6 +2391,12 @@ bitflags::bitflags! {
         const PROMPT_INCREMENTAL = 0x4;
         const PROMPT_NOFORMAT = 0x8;
         const PROMPT_KEY = 0x10;
+        const PROMPT_ACCEPT = 0x20;
+        const PROMPT_BSPACE_EXIT = 0x80;
+        const PROMPT_NOFREEZE = 0x100;
+        const PROMPT_ISPANE = 0x400;
+        const PROMPT_ISMODE = 0x800;
+        const PROMPT_EDITARROWS = 0x1000;
     }
 }
 
@@ -2475,6 +2482,8 @@ struct client {
     /// The status line prompt, if one is open. Its callback and data are
     /// the fields after it.
     prompt: Option<Box<prompt::Prompt>>,
+    /// The target the prompt was opened with, for expanding its message.
+    prompt_state: cmd_find_state,
     prompt_inputcb: prompt_input_cb,
     prompt_freecb: prompt_free_cb,
     prompt_data: *mut c_void,

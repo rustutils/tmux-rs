@@ -2627,8 +2627,11 @@ pub unsafe fn server_client_reset_state(c: *mut client) {
             if let Some(overlay_mode) = (*c).overlay_mode {
                 s = overlay_mode(c, (*c).overlay_data, &raw mut cx, &raw mut cy);
             }
-        } else {
+        } else if (*c).prompt.is_none() {
             s = (*wp).screen;
+        } else {
+            // The prompt's screen, whose cursor style the prompt set.
+            s = (*c).status.active;
         }
         if !s.is_null() {
             mode = (*s).mode;
@@ -2655,7 +2658,6 @@ pub unsafe fn server_client_reset_state(c: *mut client) {
                 }
             }
             cx = (*c).status.prompt_cx;
-            mode &= !mode_flag::MODE_CURSOR;
         } else if (*c).overlay_draw.is_none() {
             cursor = 0;
             tty_window_offset(tty, &raw mut ox, &raw mut oy, &raw mut sx, &raw mut sy);

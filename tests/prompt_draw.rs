@@ -196,7 +196,6 @@ const STATUS: u16 = HEIGHT - 1;
 const PANE_LAST: u16 = HEIGHT - 2;
 
 #[test]
-#[ignore = "message-format is not ported yet (run 13 task 2)"]
 fn message_format_wraps_the_prompt() {
     let n = Nested::new(&[
         &["set", "-g", "message-style", "bg=red,fill=red"],
@@ -224,7 +223,6 @@ fn message_format_wraps_the_prompt() {
 }
 
 #[test]
-#[ignore = "message-format is not ported yet (run 13 task 2)"]
 fn message_format_wraps_messages() {
     let n = Nested::new(&[&["set", "-g", "message-format", "<#{message}>"]]);
     n.run(&["display-message", "-t", &n.name, "some message"]);
@@ -232,7 +230,6 @@ fn message_format_wraps_messages() {
 }
 
 #[test]
-#[ignore = "3.8 prompt drawing is not ported yet (run 13 task 2)"]
 fn message_style_fills_the_line() {
     let n = Nested::new(&[
         &["set", "-g", "message-style", "bg=red"],
@@ -250,7 +247,6 @@ fn message_style_fills_the_line() {
 }
 
 #[test]
-#[ignore = "the prompt cursor is not ported yet (run 13 task 2)"]
 fn prompt_shows_the_terminal_cursor() {
     let n = Nested::new(&[]);
     n.prompt(&["-p", "P>", "-I", "hello", "set -g @r '%%'"]);
@@ -264,7 +260,6 @@ fn prompt_shows_the_terminal_cursor() {
 }
 
 #[test]
-#[ignore = "prompt cursor options are not ported yet (run 13 task 2)"]
 fn prompt_cursor_style_and_colour() {
     let n = Nested::new(&[
         &["set", "-g", "prompt-cursor-style", "blinking-bar"],
@@ -287,7 +282,6 @@ fn prompt_cursor_style_and_colour() {
 }
 
 #[test]
-#[ignore = "the prompt cursor is not ported yet (run 13 task 2)"]
 fn long_input_scrolls() {
     let n = Nested::new(&[&["set", "-g", "message-style", "fill=red"]]);
     n.prompt(&[

@@ -177,7 +177,7 @@ macro_rules! options_table_window_hook {
     };
 }
 
-pub static OPTIONS_TABLE: [options_table_entry; 213] = [
+pub static OPTIONS_TABLE: [options_table_entry; 218] = [
     options_table_entry {
         name: "backspace",
         type_: OptionType::Key,
@@ -379,6 +379,46 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         unit: Some("milliseconds"),
         text: Some(
             "The timeout for the prefix key if no subsequent key is pressed. Zero means disabled."
+        ),
+        ..options_table_entry::const_default()
+    },
+    // 3.8 checks the two colours with a colour flag on a string option,
+    // which waits for Track 3 (themes). Until then any string is taken.
+    options_table_entry {
+        name: "prompt-cursor-colour",
+        type_: OptionType::String,
+        scope: OPTIONS_TABLE_SESSION,
+        default_str: Some(""),
+        text: Some("Colour of the cursor when in the command prompt."),
+        ..options_table_entry::const_default()
+    },
+    options_table_entry {
+        name: "prompt-command-cursor-colour",
+        type_: OptionType::String,
+        scope: OPTIONS_TABLE_SESSION,
+        default_str: Some(""),
+        text: Some(
+            "Colour of the cursor in the command prompt when in command mode, if 'status-keys' is set to 'vi'."
+        ),
+        ..options_table_entry::const_default()
+    },
+    options_table_entry {
+        name: "prompt-cursor-style",
+        type_: OptionType::Choice,
+        scope: OPTIONS_TABLE_SESSION,
+        choices: &OPTIONS_TABLE_CURSOR_STYLE_LIST,
+        default_num: 0,
+        text: Some("Style of the cursor when in the command prompt."),
+        ..options_table_entry::const_default()
+    },
+    options_table_entry {
+        name: "prompt-command-cursor-style",
+        type_: OptionType::Choice,
+        scope: OPTIONS_TABLE_SESSION,
+        choices: &OPTIONS_TABLE_CURSOR_STYLE_LIST,
+        default_num: 0,
+        text: Some(
+            "Style of the cursor in the command prompt when in command mode, if 'status-keys' is set to 'vi'."
         ),
         ..options_table_entry::const_default()
     },
@@ -606,11 +646,27 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         name: "message-command-style",
         type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
-        default_str: Some("bg=black,fg=yellow"),
+        // 3.8's default with plain colours: the theme colours are Track 3.
+        // The line is filled except for prompts in panes and modes.
+        default_str: Some(
+            "bg=black,fg=yellow,#{?#{m/r:(^|#,)IS(PANE|MODE)($|#,),#{prompt_flags}},,fill=black}"
+        ),
         flags: OPTIONS_TABLE_IS_STYLE,
         separator: Some(","),
         text: Some(
             "Style of the command prompt when in command mode, if 'mode-keys' is set to 'vi'."
+        ),
+        ..options_table_entry::const_default()
+    },
+    options_table_entry {
+        name: "message-format",
+        type_: OptionType::String,
+        scope: OPTIONS_TABLE_SESSION,
+        default_str: Some(
+            "#[#{?#{command_prompt},#{E:message-command-style},#{E:message-style}}]#{message}"
+        ),
+        text: Some(
+            "Format string for the prompt and message area. The '#{message}' placeholder is replaced with the content."
         ),
         ..options_table_entry::const_default()
     },
@@ -627,7 +683,10 @@ pub static OPTIONS_TABLE: [options_table_entry; 213] = [
         name: "message-style",
         type_: OptionType::String,
         scope: OPTIONS_TABLE_SESSION,
-        default_str: Some("bg=yellow,fg=black"),
+        // 3.8's default with plain colours, see message-command-style.
+        default_str: Some(
+            "bg=yellow,fg=black,#{?#{m/r:(^|#,)IS(PANE|MODE)($|#,),#{prompt_flags}},,fill=yellow}"
+        ),
         flags: OPTIONS_TABLE_IS_STYLE,
         separator: Some(","),
         text: Some("Style of messages and the command prompt."),

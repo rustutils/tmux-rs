@@ -36,6 +36,7 @@ fn prompt(flags: prompt_flags, keys: modekey, input: &str) -> Prompt {
         flags,
         keys,
         word_separators: b"!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~".to_vec(),
+        look: PromptLook::default(),
     })
 }
 
@@ -357,4 +358,106 @@ fn decoding() {
     let ud = utf8_decode(b"a\xff\xc3");
     assert_eq!(ud.len(), 3);
     assert_eq!(utf8_encode(&ud), b"a\xff\xc3");
+}
+
+/// The text of drawn cells.
+fn cells_text(cells: &[Utf8Data]) -> String {
+    String::from_utf8_lossy(&utf8_encode(cells)).into_owned()
+}
+
+#[test]
+fn layout_scrolls_to_the_cursor() {
+    let mut env = Env::default();
+    let mut p = emacs("0123456789");
+    // 8 columns, 3 for the label: 5 for the input, the cursor at the end.
+    let pl = p.layout(0, 8, 3, Align::Left);
+    assert_eq!(
+        (pl.input_x, pl.input_offset, pl.input_width, pl.cursor_x),
+        (3, 6, 5, 7)
+    );
+    assert_eq!(cells_text(&p.input_cells(&pl)), "6789");
+
+    press(&mut p, &mut env, &[ctrl(b'a')]);
+    let pl = p.layout(0, 8, 3, Align::Left);
+    assert_eq!((pl.input_offset, pl.input_width, pl.cursor_x), (0, 5, 3));
+    assert_eq!(cells_text(&p.input_cells(&pl)), "01234");
+}
+
+#[test]
+fn layout_aligns_and_clips() {
+    let p = emacs("ab");
+    let pl = p.layout(10, 20, 3, Align::Right);
+    assert_eq!((pl.content_x, pl.content_width, pl.input_x, pl.cursor_x), (25, 5, 28, 30));
+    let pl = p.layout(10, 20, 3, Align::Centre);
+    assert_eq!((pl.content_x, pl.cursor_x), (17, 22));
+
+    // No room: nothing but the area.
+    assert_eq!(
+        p.layout(5, 0, 3, Align::Left),
+        Layout {
+            area_x: 5,
+            ..Layout::default()
+        }
+    );
+    // A label wider than the area leaves no room for the input.
+    let pl = p.layout(0, 4, 10, Align::Left);
+    assert_eq!((pl.label_width, pl.input_width, pl.cursor_x), (4, 0, 4));
+    assert!(p.input_cells(&pl).is_empty());
+}
+
+#[test]
+fn input_cells_show_control_characters_and_the_quote() {
+    let mut env = Env::default();
+    let p = emacs("a\u{1}b");
+    let pl = p.layout(0, 20, 2, Align::Left);
+    let cells = p.input_cells(&pl);
+    assert_eq!(cells_text(&cells), "a^Ab");
+    assert_eq!(cells[1].width, 2);
+
+    // C-v shows a ^ at the cursor and widens the input by one.
+    let mut p = emacs("ab");
+    press(&mut p, &mut env, &[LEFT, ctrl(b'v')]);
+    let pl = p.layout(0, 20, 2, Align::Left);
+    assert_eq!(pl.input_width, 3);
+    assert_eq!(cells_text(&p.input_cells(&pl)), "a^b");
+}
+
+#[test]
+fn completion_cells_follow_the_cursor() {
+    let mut env = Env {
+        commands: vec!["list-buffers", "link-window"],
+        ..Env::default()
+    };
+    let mut p = emacs("li");
+    press(&mut p, &mut env, &[b'\t' as key_code]);
+    let pl = p.layout(0, 40, 2, Align::Left);
+    assert_eq!(pl.cursor_x, 4);
+    assert_eq!(pl.content_width, 4 + " link-window list-buffers".len() as u32);
+    let cells = p.completion_cells(&pl).expect("completions");
+    assert_eq!(cells_text(&cells), " link-window list-buffers");
+
+    // Clipped to the area.
+    let pl = p.layout(0, 10, 2, Align::Left);
+    assert_eq!(cells_text(&p.completion_cells(&pl).expect("completions")), " link-");
+
+    // Not shown when the cursor is not at the end.
+    press(&mut p, &mut env, &[b'\t' as key_code, LEFT]);
+    assert!(p.completion_cells(&p.layout(0, 40, 2, Align::Left)).is_none());
+}
+
+#[test]
+fn flags_string_names_flags_and_modes() {
+    let p = prompt(
+        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_ISPANE,
+        modekey::MODEKEY_EMACS,
+        "",
+    );
+    assert_eq!(p.flags_string(), "SINGLE,ISPANE");
+
+    let mut env = Env::default();
+    let mut p = vi("x");
+    assert_eq!(p.flags_string(), "");
+    press(&mut p, &mut env, &[ESCAPE]);
+    assert_eq!(p.flags_string(), "COMMANDMODE");
+    assert_eq!(p.cursor(), (0, -1));
 }

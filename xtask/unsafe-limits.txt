@@ -127,6 +127,7 @@
 14 src/paste/mod.rs
 40 src/popup.rs
 41 src/proc.rs
+14 src/prompt_draw.rs
 12 src/prompt_history/mod.rs
 21 src/resize.rs
 75 src/screen_.rs
