@@ -11,17 +11,24 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use crate::*;
+//! show-prompt-history and clear-prompt-history, converted to run in a
+//! [`CmdCtx`].
+
+#![forbid(unsafe_code)]
+
+use crate::cmd_::context::{CmdCtx, CmdFlow, CmdResult};
+use crate::prompt_history::PromptType;
+use crate::{CmdExec, args_parse, cmd_entry, cmd_entry_flag, cmd_flag};
 
 pub static CMD_SHOW_PROMPT_HISTORY_ENTRY: cmd_entry = cmd_entry {
     name: "show-prompt-history",
     alias: Some("showphist"),
 
     args: args_parse::new("T:", 0, 0, None),
-    usage: "[-T type]",
+    usage: "[-T prompt-type]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: CmdExec::Old(cmd_show_prompt_history_exec),
+    exec: CmdExec::Ctx(cmd_show_prompt_history_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
@@ -31,76 +38,107 @@ pub static CMD_CLEAR_PROMPT_HISTORY_ENTRY: cmd_entry = cmd_entry {
     alias: Some("clearphist"),
 
     args: args_parse::new("T:", 0, 0, None),
-    usage: "[-T type]",
+    usage: "[-T prompt-type]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: CmdExec::Old(cmd_show_prompt_history_exec),
+    exec: CmdExec::Ctx(cmd_clear_prompt_history_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
 
-unsafe fn cmd_show_prompt_history_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_);
-        let typestr = args_get(args, b'T');
-        let type_: prompt_type;
+/// Errors of the prompt history commands, with C's messages.
+#[derive(Debug, thiserror::Error)]
+pub enum PromptHistoryError {
+    /// -T names no prompt type.
+    #[error("invalid type: {0}")]
+    InvalidType(String),
+}
 
-        if std::ptr::eq(cmd_get_entry(self_), &CMD_CLEAR_PROMPT_HISTORY_ENTRY) {
-            if typestr.is_null() {
-                for tidx in 0..PROMPT_NTYPES {
-                    free_(STATUS_PROMPT_HLIST[tidx as usize]);
-                    STATUS_PROMPT_HLIST[tidx as usize] = null_mut();
-                    STATUS_PROMPT_HSIZE[tidx as usize] = 0;
-                }
-            } else {
-                type_ = status_prompt_type(typestr);
-                if type_ == prompt_type::PROMPT_TYPE_INVALID {
-                    cmdq_error!(item, "invalid type: {}", _s(typestr));
-                    return cmd_retval::CMD_RETURN_ERROR;
-                }
-                free_(STATUS_PROMPT_HLIST[type_ as usize]);
-                STATUS_PROMPT_HLIST[type_ as usize] = null_mut();
-                STATUS_PROMPT_HSIZE[type_ as usize] = 0;
-            }
+/// The types -T names: one, or all without -T.
+fn types(ctx: &CmdCtx<'_>) -> Result<Vec<PromptType>, PromptHistoryError> {
+    match ctx.args().get('T') {
+        None => Ok(PromptType::ALL.to_vec()),
+        Some(name) => PromptType::from_name(name)
+            .map(|ty| vec![ty])
+            .ok_or_else(|| PromptHistoryError::InvalidType(String::from_utf8_lossy(name).into())),
+    }
+}
 
-            return cmd_retval::CMD_RETURN_NORMAL;
+/// show-prompt-history: list the history of each type, numbered from 1.
+fn cmd_show_prompt_history_exec(ctx: &mut CmdCtx<'_>) -> CmdResult {
+    for ty in types(ctx)? {
+        ctx.print(format!("History for {}:\n", ty.name()));
+        for (i, line) in ctx.prompt_history().entries(ty).into_iter().enumerate() {
+            let mut out = format!("{}: ", i + 1).into_bytes();
+            out.extend_from_slice(&line);
+            ctx.print(out);
         }
+        ctx.print("");
+    }
+    Ok(CmdFlow::Done)
+}
 
-        if typestr.is_null() {
-            for tidx in 0..PROMPT_NTYPES {
-                cmdq_print!(item, "History for {}:\n", status_prompt_type_string(tidx),);
-                for hidx in 0u32..STATUS_PROMPT_HSIZE[tidx as usize] {
-                    cmdq_print!(
-                        item,
-                        "{}: {}",
-                        hidx + 1,
-                        _s(*STATUS_PROMPT_HLIST[tidx as usize].add(hidx as usize)),
-                    );
-                }
-                cmdq_print!(item, "");
-            }
-        } else {
-            type_ = status_prompt_type(typestr);
-            if type_ == prompt_type::PROMPT_TYPE_INVALID {
-                cmdq_error!(item, "invalid type: {}", _s(typestr));
-                return cmd_retval::CMD_RETURN_ERROR;
-            }
-            cmdq_print!(
-                item,
-                "History for {}:\n",
-                status_prompt_type_string(type_ as u32),
-            );
-            for hidx in 0u32..STATUS_PROMPT_HSIZE[type_ as usize] {
-                cmdq_print!(
-                    item,
-                    "{}: {}",
-                    hidx + 1,
-                    _s(*STATUS_PROMPT_HLIST[type_ as usize].add(hidx as usize)),
-                );
-            }
-            cmdq_print!(item, "");
+/// clear-prompt-history: delete the history of one type, or all.
+fn cmd_clear_prompt_history_exec(ctx: &mut CmdCtx<'_>) -> CmdResult {
+    for ty in types(ctx)? {
+        ctx.prompt_history().clear(ty);
+    }
+    Ok(CmdFlow::Done)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cmd_::context::CmdEffect;
+    use crate::cmd_::context::testing::{args, ctx, parts};
+    use crate::global::with_prompt_history;
+
+    fn printed(effects: Vec<CmdEffect>) -> Vec<String> {
+        effects
+            .into_iter()
+            .filter_map(|e| match e {
+                CmdEffect::Print(p) => Some(String::from_utf8(p).unwrap()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn show_and_clear() {
+        with_prompt_history(|h| {
+            h.add(PromptType::Command, b"one", 10);
+            h.add(PromptType::Search, b"two", 10);
+        });
+        let a = args(&[], &[]);
+        let mut c = ctx(&a, parts());
+        cmd_show_prompt_history_exec(&mut c).unwrap();
+        assert_eq!(
+            printed(c.take_effects()),
+            [
+                "History for command:\n",
+                "1: one",
+                "",
+                "History for search:\n",
+                "1: two",
+                ""
+            ]
+        );
+
+        let a = args(&[('T', Some("search"))], &[]);
+        cmd_clear_prompt_history_exec(&mut ctx(&a, parts())).unwrap();
+        assert!(with_prompt_history(|h| h.entries(PromptType::Search).is_empty()));
+        assert_eq!(with_prompt_history(|h| h.entries(PromptType::Command).len()), 1);
+        let a = args(&[], &[]);
+        cmd_clear_prompt_history_exec(&mut ctx(&a, parts())).unwrap();
+        assert!(with_prompt_history(|h| h.entries(PromptType::Command).is_empty()));
+    }
+
+    #[test]
+    fn invalid_type() {
+        for exec in [cmd_show_prompt_history_exec, cmd_clear_prompt_history_exec] {
+            let a = args(&[('T', Some("target"))], &[]);
+            let result = exec(&mut ctx(&a, parts()));
+            assert_eq!(result.err().unwrap().to_string(), "invalid type: target");
         }
-
-        cmd_retval::CMD_RETURN_NORMAL
     }
 }

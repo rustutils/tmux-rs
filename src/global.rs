@@ -39,6 +39,7 @@ use std::cell::RefCell;
 use crate::events::EventBus;
 use crate::message_log::MessageLog;
 use crate::paste::PasteStore;
+use crate::prompt_history::PromptHistory;
 use crate::server_acl::ServerAcl;
 
 thread_local! {
@@ -50,6 +51,8 @@ thread_local! {
     static ACL: RefCell<ServerAcl> = RefCell::new(ServerAcl::default());
     /// The registered event sinks.
     static EVENTS: RefCell<EventBus> = RefCell::new(EventBus::new());
+    /// The prompt history of every prompt type.
+    static PROMPT_HISTORY: RefCell<PromptHistory> = RefCell::new(PromptHistory::new());
 }
 
 /// Run `f` with the paste buffer store.
@@ -82,4 +85,12 @@ pub fn with_acl<R>(f: impl FnOnce(&mut ServerAcl) -> R) -> R {
 /// If `f` reaches the event bus again (see the module rules).
 pub fn with_events<R>(f: impl FnOnce(&mut EventBus) -> R) -> R {
     EVENTS.with_borrow_mut(f)
+}
+
+/// Run `f` with the prompt history.
+///
+/// # Panics
+/// If `f` reaches the prompt history again (see the module rules).
+pub fn with_prompt_history<R>(f: impl FnOnce(&mut PromptHistory) -> R) -> R {
+    PROMPT_HISTORY.with_borrow_mut(f)
 }

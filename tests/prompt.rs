@@ -433,7 +433,6 @@ fn history_file_survives_a_restart() {
 }
 
 #[test]
-#[ignore = "3.8 has two prompt types (run 12 task 2)"]
 fn show_and_clear_prompt_history() {
     let mut p = Prompt::new(&[]);
     p.submit("one", &[]);
@@ -511,5 +510,45 @@ fn fuzzy_format_modifiers() {
     ];
     for (format, expected) in cases {
         assert_eq!(tmux.query(format), expected, "{format}");
+    }
+}
+
+/// 3.8 has only the command and search prompt types. The target types
+/// went with target completion.
+#[test]
+fn only_command_and_search_types() {
+    let p = Prompt::new(&[]);
+    for (ty, ok) in [
+        ("command", true),
+        ("search", true),
+        ("target", false),
+        ("window-target", false),
+    ] {
+        let out = p
+            .tmux
+            .cmd()
+            .args([
+                "command-prompt",
+                "-b",
+                "-t",
+                &p.name,
+                "-T",
+                ty,
+                "-p",
+                "T>",
+                STORE,
+            ])
+            .run();
+        if ok {
+            out.assert_success();
+            p.tmux
+                .cmd()
+                .args(["send-keys", "-K", "-c", &p.name, "Escape"])
+                .run();
+        } else {
+            out.assert_failure();
+            assert_eq!(out.stderr_str().trim(), format!("unknown type: {ty}"));
+        }
+        std::thread::sleep(Duration::from_millis(100));
     }
 }

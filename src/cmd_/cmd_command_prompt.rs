@@ -37,7 +37,7 @@ struct cmd_command_prompt_cdata<'a> {
     state: *mut args_command_state<'a>,
 
     flags: prompt_flags,
-    prompt_type: prompt_type,
+    prompt_type: PromptType,
 
     prompts: *mut cmd_command_prompt_prompt,
     count: u32,
@@ -136,14 +136,14 @@ unsafe fn cmd_command_prompt_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
 
         let type_ = args_get(args, b'T');
         if !type_.is_null() {
-            cdata.prompt_type = status_prompt_type(type_);
-            if cdata.prompt_type == prompt_type::PROMPT_TYPE_INVALID {
+            let Some(ty) = PromptType::from_name(CStr::from_ptr(type_.cast()).to_bytes()) else {
                 cmdq_error!(item, "unknown type: {}", _s(type_));
                 cmd_command_prompt_free(NonNull::new_unchecked(Box::into_raw(cdata)));
                 return cmd_retval::CMD_RETURN_ERROR;
-            }
+            };
+            cdata.prompt_type = ty;
         } else {
-            cdata.prompt_type = prompt_type::PROMPT_TYPE_COMMAND;
+            cdata.prompt_type = PromptType::Command;
         }
 
         if args_has(args, '1') {

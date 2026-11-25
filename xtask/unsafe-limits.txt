@@ -81,7 +81,6 @@
 4 src/cmd_/cmd_show_environment.rs
 4 src/cmd_/cmd_show_messages.rs
 8 src/cmd_/cmd_show_options.rs
-2 src/cmd_/cmd_show_prompt_history.rs
 12 src/cmd_/cmd_source_file.rs
 2 src/cmd_/cmd_split_window.rs
 2 src/cmd_/cmd_swap_pane.rs
@@ -128,6 +127,7 @@
 14 src/paste/mod.rs
 40 src/popup.rs
 41 src/proc.rs
+12 src/prompt_history/mod.rs
 21 src/resize.rs
 75 src/screen_.rs
 38 src/screen_redraw.rs
@@ -139,7 +139,7 @@
 83 src/session_.rs
 24 src/sort_get.rs
 8 src/spawn.rs
-98 src/status.rs
+82 src/status.rs
 56 src/style_.rs
 24 src/tmux.rs
 238 src/tty_.rs

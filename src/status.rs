@@ -11,11 +11,12 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use std::io::BufRead;
-use std::io::Write;
 use std::time::Duration;
 
 use crate::libc::strncmp;
+use crate::prompt_history::{
+    HistoryPositions, prompt_history_add, prompt_history_down, prompt_history_up,
+};
 use crate::*;
 use crate::options_::*;
 
@@ -24,127 +25,6 @@ struct status_prompt_menu {
     start: u32,
     list: Vec<String>,
     flag: u8,
-}
-
-pub static PROMPT_TYPE_STRINGS: [&str; 4] = ["command", "search", "target", "window-target"];
-
-/// Status prompt history.
-pub static mut STATUS_PROMPT_HLIST: [*mut *mut u8; PROMPT_NTYPES as usize] =
-    [null_mut(); PROMPT_NTYPES as usize];
-
-pub static mut STATUS_PROMPT_HSIZE: [u32; PROMPT_NTYPES as usize] = [0; PROMPT_NTYPES as usize];
-
-/// Find the history file to load/save from/to.
-unsafe fn status_prompt_find_history_file() -> Option<String> {
-    unsafe {
-        let history_file = options_get_string_(GLOBAL_OPTIONS, "history-file");
-        if *history_file == b'\0' {
-            return None;
-        }
-        if *history_file == b'/' {
-            return Some(
-                std::ffi::CStr::from_ptr(history_file.cast())
-                    .to_string_lossy()
-                    .into_owned(),
-            );
-        }
-
-        if *history_file != b'~' || *history_file.add(1) != b'/' {
-            return None;
-        }
-
-        let home = find_home()?;
-
-        let str = format_nul!("{}{}", home.to_str().unwrap(), _s(history_file.add(1)));
-        Some(
-            std::ffi::CStr::from_ptr(str.cast())
-                .to_string_lossy()
-                .into_owned(),
-        )
-    }
-}
-
-/// Add loaded history item to the appropriate list.
-unsafe fn status_prompt_add_typed_history(mut line: *mut u8) {
-    unsafe {
-        let mut type_ = prompt_type::PROMPT_TYPE_INVALID;
-
-        let typestr: *mut u8 = strsep(&raw mut line, c!(":"));
-        if !line.is_null() {
-            type_ = status_prompt_type(typestr);
-        }
-        if type_ == prompt_type::PROMPT_TYPE_INVALID {
-            // Invalid types are not expected, but this provides backward
-            // compatibility with old history files.
-            if !line.is_null() {
-                line = line.sub(1);
-                *(line) = b':';
-            }
-            status_prompt_add_history(typestr, prompt_type::PROMPT_TYPE_COMMAND as u32);
-        } else {
-            status_prompt_add_history(line, type_ as u32);
-        }
-    }
-}
-
-/// Load status prompt history from file.
-pub unsafe fn status_prompt_load_history() {
-    unsafe {
-        let Some(history_file) = status_prompt_find_history_file() else {
-            return;
-        };
-
-        log_debug!("loading history from {}", &history_file);
-
-        let Ok(file) = std::fs::OpenOptions::new().read(true).open(&history_file) else {
-            log_debug!("{}: failed to open file", &history_file);
-            return;
-        };
-        let reader = std::io::BufReader::new(file);
-
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                let mut line_bytes = line.into_bytes();
-                line_bytes.push(b'\0');
-
-                status_prompt_add_typed_history(line_bytes.as_mut_ptr());
-            } else {
-                break;
-            }
-        }
-    }
-}
-
-/// Save status prompt history to file.
-pub unsafe fn status_prompt_save_history() {
-    unsafe {
-        let Some(history_file) = status_prompt_find_history_file() else {
-            return;
-        };
-
-        log_debug!("saving history to {}", &history_file);
-
-        let Ok(mut file) = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&history_file)
-        else {
-            log_debug!("{}: failed to open file for writing", &history_file);
-            return;
-        };
-
-        for type_ in 0..PROMPT_NTYPES {
-            for i in 0..STATUS_PROMPT_HSIZE[type_ as usize] {
-                _ = writeln!(
-                    file,
-                    "{}:{}",
-                    PROMPT_TYPE_STRINGS[type_ as usize],
-                    _s(*STATUS_PROMPT_HLIST[type_ as usize].add(i as usize))
-                );
-            }
-        }
-    }
 }
 
 /// Fire the status timer for a client: redraw the status line and re-arm.
@@ -657,7 +537,7 @@ pub unsafe fn status_prompt_set<T>(
     freecb: unsafe fn(NonNull<T>),
     data: *mut T,
     flags: prompt_flags,
-    prompt_type: prompt_type,
+    prompt_type: PromptType,
 ) {
     unsafe {
         server_client_clear_overlay(c);
@@ -708,11 +588,7 @@ pub unsafe fn status_prompt_set<T>(
         >(freecb));
         (*c).prompt_data = data.cast(); // note we know this is non null
 
-        libc::memset(
-            (&raw mut (*c).prompt_hindex).cast(),
-            0,
-            size_of::<[u32; 4]>(),
-        );
+        (*c).prompt_hindex = HistoryPositions::default();
 
         (*c).prompt_flags = flags;
         (*c).prompt_type = prompt_type;
@@ -783,11 +659,7 @@ pub unsafe fn status_prompt_update(c: *mut client, msg: *const u8, input: *const
         (*c).prompt_buffer = utf8_fromcstr(tmp);
         (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
 
-        libc::memset(
-            (&raw mut (*c).prompt_hindex).cast(),
-            0,
-            size_of::<[u32; 4]>(),
-        );
+        (*c).prompt_hindex = HistoryPositions::default();
 
         (*c).flags |= client_flag::REDRAWSTATUS;
 
@@ -1414,7 +1286,6 @@ pub unsafe fn status_prompt_key(c: *mut client, mut key: key_code) -> i32 {
         let cp;
         let mut prefix = b'=';
 
-        let histstr: *const u8;
         let separators: *const u8;
         let mut idx: usize;
 
@@ -1616,25 +1487,23 @@ pub unsafe fn status_prompt_key(c: *mut client, mut key: key_code) -> i32 {
                         break 'changed;
                     }
                     code::KEYC_UP | code::P_CTRL => {
-                        histstr = status_prompt_up_history(
-                            (&raw mut (*c).prompt_hindex).cast(),
-                            (*c).prompt_type as u32,
-                        );
-                        if !histstr.is_null() {
+                        if let Some(line) =
+                            prompt_history_up((*c).prompt_type, &mut (*c).prompt_hindex)
+                        {
+                            let line = CString::new(line).unwrap_or_default();
                             free_((*c).prompt_buffer);
-                            (*c).prompt_buffer = utf8_fromcstr(histstr);
+                            (*c).prompt_buffer = utf8_fromcstr(line.as_ptr().cast());
                             (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
                             break 'changed;
                         }
                     }
                     code::KEYC_DOWN | code::N_CTRL => {
-                        histstr = status_prompt_down_history(
-                            (&raw mut (*c).prompt_hindex).cast(),
-                            (*c).prompt_type as u32,
-                        );
-                        if !histstr.is_null() {
+                        {
+                            let line =
+                                prompt_history_down((*c).prompt_type, &mut (*c).prompt_hindex);
+                            let line = CString::new(line).unwrap_or_default();
                             free_((*c).prompt_buffer);
-                            (*c).prompt_buffer = utf8_fromcstr(histstr);
+                            (*c).prompt_buffer = utf8_fromcstr(line.as_ptr().cast());
                             (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
                             break 'changed;
                         }
@@ -1660,7 +1529,7 @@ pub unsafe fn status_prompt_key(c: *mut client, mut key: key_code) -> i32 {
                     code::CR | code::LF => {
                         s = utf8_tocstr((*c).prompt_buffer);
                         if *s != b'\0' {
-                            status_prompt_add_history(s, (*c).prompt_type as u32);
+                            prompt_history_add((*c).prompt_type, CStr::from_ptr(s.cast()).to_bytes());
                         }
                         if (*c).prompt_inputcb.unwrap()(
                             c,
@@ -1779,102 +1648,6 @@ pub unsafe fn status_prompt_key(c: *mut client, mut key: key_code) -> i32 {
     }
 }
 
-/// Get previous line from the history.
-unsafe fn status_prompt_up_history(idx: *mut u32, type_: u32) -> *mut u8 {
-    unsafe {
-        // History runs from 0 to size - 1. Index is from 0 to size. Zero is
-        // empty.
-
-        if STATUS_PROMPT_HSIZE[type_ as usize] == 0
-            || *idx.add(type_ as usize) == STATUS_PROMPT_HSIZE[type_ as usize]
-        {
-            return null_mut();
-        }
-        *idx.add(type_ as usize) += 1;
-        *STATUS_PROMPT_HLIST[type_ as usize]
-            .add((STATUS_PROMPT_HSIZE[type_ as usize] - *idx.add(type_ as usize)) as usize)
-    }
-}
-
-/// Get next line from the history.
-unsafe fn status_prompt_down_history(idx: *mut u32, type_: u32) -> *const u8 {
-    unsafe {
-        if STATUS_PROMPT_HSIZE[type_ as usize] == 0 || *idx.add(type_ as usize) == 0 {
-            return c!("");
-        }
-        *idx.add(type_ as usize) -= 1;
-        if *idx.add(type_ as usize) == 0 {
-            return c!("");
-        }
-
-        *STATUS_PROMPT_HLIST[type_ as usize]
-            .add((STATUS_PROMPT_HSIZE[type_ as usize] - *idx.add(type_ as usize)) as usize)
-    }
-}
-
-/// Add line to the history.
-unsafe fn status_prompt_add_history(line: *const u8, type_: u32) {
-    unsafe {
-        let mut new: u32 = 1;
-        let newsize: u32;
-        let mut freecount: u32;
-        let movesize: usize;
-
-        let oldsize = STATUS_PROMPT_HSIZE[type_ as usize];
-        if oldsize > 0
-            && libc::strcmp(
-                *STATUS_PROMPT_HLIST[type_ as usize].add(oldsize as usize - 1),
-                line,
-            ) == 0
-        {
-            new = 0;
-        }
-
-        let hlimit = options_get_number_(GLOBAL_OPTIONS, "prompt-history-limit") as u32;
-        if hlimit > oldsize {
-            if new == 0 {
-                return;
-            }
-            newsize = oldsize + new;
-        } else {
-            newsize = hlimit;
-            freecount = oldsize + new - newsize;
-            if freecount > oldsize {
-                freecount = oldsize;
-            }
-            if freecount == 0 {
-                return;
-            }
-            for i in 0..freecount {
-                free_(*STATUS_PROMPT_HLIST[type_ as usize].add(i as usize));
-            }
-            movesize = (oldsize as isize - freecount as isize) as usize * size_of::<*mut u8>();
-            if movesize > 0 {
-                libc::memmove(
-                    STATUS_PROMPT_HLIST[type_ as usize].cast(),
-                    STATUS_PROMPT_HLIST[type_ as usize]
-                        .add(freecount as usize)
-                        .cast(),
-                    movesize,
-                );
-            }
-        }
-
-        if newsize == 0 {
-            free_(STATUS_PROMPT_HLIST[type_ as usize]);
-            STATUS_PROMPT_HLIST[type_ as usize] = null_mut();
-        } else if newsize != oldsize {
-            STATUS_PROMPT_HLIST[type_ as usize] =
-                xreallocarray_(STATUS_PROMPT_HLIST[type_ as usize], newsize as usize).as_ptr();
-        }
-
-        if new == 1 && newsize > 0 {
-            *STATUS_PROMPT_HLIST[type_ as usize].add(newsize as usize - 1) = xstrdup(line).as_ptr();
-        }
-        STATUS_PROMPT_HSIZE[type_ as usize] = newsize;
-    }
-}
-
 /// Add to completion list.
 fn status_prompt_add_list(list: &mut Vec<String>, s: &str) {
     // Check if item already exists
@@ -1987,14 +1760,7 @@ unsafe fn status_prompt_menu_callback(
             } else {
                 format!("-{}{}", (*spm).flag as char, selected)
             };
-            if (*c).prompt_type == prompt_type::PROMPT_TYPE_WINDOW_TARGET {
-                free_((*c).prompt_buffer);
-                let s = format_nul!("{}", completion);
-                (*c).prompt_buffer = utf8_fromcstr(s);
-                (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
-                free_(s);
-                (*c).flags |= client_flag::REDRAWSTATUS;
-            } else if status_prompt_replace_complete(c, Some(&completion)) != 0 {
+            if status_prompt_replace_complete(c, Some(&completion)) != 0 {
                 (*c).flags |= client_flag::REDRAWSTATUS;
             }
         }
@@ -2129,13 +1895,8 @@ unsafe fn status_prompt_complete_window_menu(
                 }
             }
 
-            if (*c).prompt_type == prompt_type::PROMPT_TYPE_WINDOW_TARGET {
-                tmp = format!("{} ({})", (*wl).idx, (*winlink_window(wl)).name.as_deref().unwrap_or(""));
-                list.push(format!("{}", (*wl).idx));
-            } else {
-                tmp = format!("{}:{} ({})", (*s).name, (*wl).idx, (*winlink_window(wl)).name.as_deref().unwrap_or(""));
-                list.push(format!("{}:{}", (*s).name, (*wl).idx));
-            }
+            tmp = format!("{}:{} ({})", (*s).name, (*wl).idx, (*winlink_window(wl)).name.as_deref().unwrap_or(""));
+            list.push(format!("{}:{}", (*s).name, (*wl).idx));
             let item = menu_item {
                 name: Cow::Owned(tmp),
                 key: (b'0' as u64) + list.len() as u64 - 1,
@@ -2264,19 +2025,12 @@ unsafe fn status_prompt_complete(c: *mut client, word: *const u8, mut offset: u3
         let mut out: Option<String> = None;
         let word_str = cstr_to_str(word);
 
-        if *word == b'\0'
-            && (*c).prompt_type != prompt_type::PROMPT_TYPE_TARGET
-            && (*c).prompt_type != prompt_type::PROMPT_TYPE_WINDOW_TARGET
-        {
+        if *word == b'\0' {
             return None;
         }
 
         'found: {
-            if (*c).prompt_type != prompt_type::PROMPT_TYPE_TARGET
-                && (*c).prompt_type != prompt_type::PROMPT_TYPE_WINDOW_TARGET
-                && strncmp(word, c!("-t"), 2) != 0
-                && strncmp(word, c!("-s"), 2) != 0
-            {
+            if strncmp(word, c!("-t"), 2) != 0 && strncmp(word, c!("-s"), 2) != 0 {
                 list = status_prompt_complete_list(word, (offset == 0) as i32);
                 out = if list.is_empty() {
                     None
@@ -2288,22 +2042,9 @@ unsafe fn status_prompt_complete(c: *mut client, word: *const u8, mut offset: u3
                 break 'found;
             }
 
-            if (*c).prompt_type == prompt_type::PROMPT_TYPE_TARGET
-                || (*c).prompt_type == prompt_type::PROMPT_TYPE_WINDOW_TARGET
-            {
-                s = word;
-                flag = b'\0';
-            } else {
-                s = word.add(2);
-                flag = *word.add(1);
-                offset += 2;
-            }
-
-            // If this is a window completion, open the window menu.
-            if (*c).prompt_type == prompt_type::PROMPT_TYPE_WINDOW_TARGET {
-                out = status_prompt_complete_window_menu(c, client_get_session(c), s, offset, b'\0');
-                break 'found;
-            }
+            s = word.add(2);
+            flag = *word.add(1);
+            offset += 2;
             colon = libc::strchr(s, b':' as i32);
 
             // If there is no colon, complete as a session.
@@ -2347,26 +2088,6 @@ unsafe fn status_prompt_complete(c: *mut client, word: *const u8, mut offset: u3
         }
         out
     }
-}
-
-/// Return the type of the prompt as an enum.
-pub unsafe fn status_prompt_type(type_: *const u8) -> prompt_type {
-    unsafe {
-        for i in 0..PROMPT_NTYPES {
-            if libc::streq_(type_, status_prompt_type_string(i)) {
-                return prompt_type::try_from(i).unwrap();
-            }
-        }
-        prompt_type::PROMPT_TYPE_INVALID
-    }
-}
-
-/// Accessor for `prompt_type_strings`.
-pub fn status_prompt_type_string(type_: u32) -> &'static str {
-    if type_ >= PROMPT_NTYPES {
-        return "invalid";
-    }
-    PROMPT_TYPE_STRINGS[type_ as usize]
 }
 
 mod code {

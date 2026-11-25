@@ -30,6 +30,7 @@ mod libc;
 pub(crate) use crate::libc::errno;
 pub(crate) use crate::libc::*;
 pub(crate) use crate::libc::{free_, memcpy_, memcpy__, streq_};
+pub(crate) use crate::prompt_history::PromptType;
 
 #[macro_use] // evbuffer_add_printf!
 extern crate tmux_event;
@@ -87,6 +88,7 @@ cfg_pub_mods! {
     mod options_table;
     mod osdep;
     mod paste;
+    mod prompt_history;
     mod popup;
     mod proc;
     mod resize;
@@ -2255,19 +2257,6 @@ struct status_line {
     entries: [status_line_entry; STATUS_LINES_LIMIT],
 }
 
-/// Prompt type.
-const PROMPT_NTYPES: u32 = 4;
-#[repr(u32)]
-#[derive(Copy, Clone, Default, Eq, PartialEq, num_enum::TryFromPrimitive)]
-enum prompt_type {
-    #[default]
-    PROMPT_TYPE_COMMAND = 0,
-    PROMPT_TYPE_SEARCH,
-    PROMPT_TYPE_TARGET,
-    PROMPT_TYPE_WINDOW_TARGET,
-    PROMPT_TYPE_INVALID = 0xff,
-}
-
 // File in client.
 type client_file_cb = Option<unsafe fn(*mut client, *mut u8, i32, i32, *mut evbuffer, *mut c_void)>;
 struct client_file {
@@ -2485,12 +2474,12 @@ struct client {
     prompt_inputcb: prompt_input_cb,
     prompt_freecb: prompt_free_cb,
     prompt_data: *mut c_void,
-    prompt_hindex: [c_uint; 4],
+    prompt_hindex: prompt_history::HistoryPositions,
     prompt_mode: prompt_mode,
     prompt_saved: *mut Utf8Data,
 
     prompt_flags: prompt_flags,
-    prompt_type: prompt_type,
+    prompt_type: prompt_history::PromptType,
     prompt_cursor: c_int,
 
     session: Option<SessionId>,

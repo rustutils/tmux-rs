@@ -35,8 +35,9 @@
 
 use std::rc::Rc;
 
-use crate::global::with_paste;
+use crate::global::{with_paste, with_prompt_history};
 use crate::paste::{PasteBuffer, PasteError, PasteEvent};
+use crate::prompt_history::PromptType;
 use crate::sort::SortCriteria;
 use crate::sort_get::sort_buffers;
 use crate::{ClientId, PaneId, args, args_value};
@@ -284,9 +285,29 @@ impl<'a> CmdCtx<'a> {
         }
     }
 
+    /// The prompt history.
+    pub fn prompt_history(&self) -> PromptHistoryAccess {
+        PromptHistoryAccess
+    }
+
     /// Takes the recorded effects, oldest first.
     pub fn take_effects(&mut self) -> Vec<CmdEffect> {
         std::mem::take(&mut self.effects)
+    }
+}
+
+/// The prompt history, for a command.
+pub struct PromptHistoryAccess;
+
+impl PromptHistoryAccess {
+    /// The entries of `ty`, oldest first.
+    pub fn entries(&self, ty: PromptType) -> Vec<Vec<u8>> {
+        with_prompt_history(|h| h.entries(ty).to_vec())
+    }
+
+    /// Delete all entries of `ty`.
+    pub fn clear(&self, ty: PromptType) {
+        with_prompt_history(|h| h.clear(ty));
     }
 }
 

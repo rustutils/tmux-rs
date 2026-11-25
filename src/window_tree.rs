@@ -1531,7 +1531,7 @@ unsafe fn window_tree_key(
                         window_tree_command_free,
                         data,
                         prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
-                        prompt_type::PROMPT_TYPE_COMMAND,
+                        PromptType::Command,
                     );
                     free_(prompt);
                 }
@@ -1551,7 +1551,7 @@ unsafe fn window_tree_key(
                         window_tree_command_free,
                         data,
                         prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
-                        prompt_type::PROMPT_TYPE_COMMAND,
+                        PromptType::Command,
                     );
                     free_(prompt);
                 }
@@ -1572,7 +1572,7 @@ unsafe fn window_tree_key(
                         window_tree_command_free,
                         data,
                         prompt_flags::PROMPT_NOFORMAT,
-                        prompt_type::PROMPT_TYPE_COMMAND,
+                        PromptType::Command,
                     );
                     free_(prompt);
                 }

@@ -47,7 +47,7 @@ unsafe fn cfg_done(_item: *mut cmdq_item, _data: *mut c_void) -> cmd_retval {
             cmdq_continue(CFG_ITEM);
         }
 
-        status_prompt_load_history();
+        crate::prompt_history::prompt_history_load();
 
         cmd_retval::CMD_RETURN_NORMAL
     }

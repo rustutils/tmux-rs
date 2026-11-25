@@ -330,7 +330,7 @@ pub unsafe fn server_start(
         proc_loop(SERVER_PROC, Some(server_loop));
 
         job_kill_all();
-        status_prompt_save_history();
+        crate::prompt_history::prompt_history_save();
 
         libc::exit(0)
     }
