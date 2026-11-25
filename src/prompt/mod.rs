@@ -963,6 +963,15 @@ impl Prompt {
                 false
             }
             k if k == b'\t' as key_code => self.replace_complete(None, Some(env)),
+            k if (k == BSPACE || k == ctrl(b'h'))
+                && size == 0
+                && self.flags.intersects(prompt_flags::PROMPT_BSPACE_EXIT) =>
+            {
+                // command-prompt -e: Backspace on an empty prompt cancels it.
+                let mut out = KeyOutcome::new(KeyResult::Handled);
+                out.fires.push(Self::done(None));
+                return out;
+            }
             k if k == BSPACE || k == ctrl(b'h') => {
                 if self.index != 0 {
                     self.index -= 1;

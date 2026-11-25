@@ -506,3 +506,22 @@ fn mouse_picks_a_completion() {
     let out = p.mouse(16, &p.layout(0, 40, 2, Align::Left));
     assert_eq!((out.result, input(&p).as_str()), (KeyResult::Handled, "li"));
 }
+
+#[test]
+fn backspace_exit() {
+    let mut env = Env::default();
+    let mut p = prompt(prompt_flags::PROMPT_BSPACE_EXIT, modekey::MODEKEY_EMACS, "a");
+    // Deletes while there is text.
+    let out = press(&mut p, &mut env, &[BSPACE]);
+    assert!(out.fires.is_empty());
+    assert_eq!(input(&p), "");
+    // Cancels when empty.
+    let out = press(&mut p, &mut env, &[ctrl(b'h')]);
+    assert_eq!(out.fires.len(), 1);
+    assert_eq!(out.fires[0].text, None);
+    assert_eq!(out.fires[0].kind, KeyResult::Close);
+
+    // Without the flag nothing happens.
+    let mut p = emacs("");
+    assert!(press(&mut p, &mut env, &[BSPACE]).fires.is_empty());
+}

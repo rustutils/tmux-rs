@@ -333,7 +333,6 @@ fn mouse_click_picks_a_completion() {
 }
 
 #[test]
-#[ignore = "command-prompt -C is not ported yet (run 13 task 4)"]
 fn prompt_freezes_the_pane_unless_dash_c() {
     let n = Nested::new(&[&[
         "respawn-pane",

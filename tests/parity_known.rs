@@ -183,8 +183,6 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("differs:choose-buffer", "Track 3: new command flags"),
     ("differs:choose-client", "Track 3: new command flags"),
     ("differs:choose-tree", "Track 3: new command flags"),
-    ("differs:command-prompt", "Track 3: new command flags"),
-    ("differs:confirm-before", "Track 3: new command flags"),
     ("differs:copy-mode", "Track 3: new command flags"),
     ("differs:customize-mode", "Track 3: new command flags"),
     ("differs:display-menu", "Track 3: new command flags"),

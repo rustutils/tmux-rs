@@ -595,7 +595,7 @@ pub unsafe fn status_prompt_set<T>(
         >(freecb));
         (*c).prompt_data = data.cast(); // note we know this is non null
 
-        if !flags.intersects(prompt_flags::PROMPT_INCREMENTAL) {
+        if !flags.intersects(prompt_flags::PROMPT_INCREMENTAL | prompt_flags::PROMPT_NOFREEZE) {
             (*c).tty.flags |= tty_flags::TTY_FREEZE;
         }
         (*c).flags |= client_flag::REDRAWSTATUS;

@@ -557,7 +557,6 @@ fn only_command_and_search_types() {
 }
 
 #[test]
-#[ignore = "command-prompt -e is not ported yet (run 13 task 4)"]
 fn backspace_on_empty_prompt_closes_with_dash_e() {
     let mut p = Prompt::new(&[]);
     p.tmux
@@ -580,7 +579,6 @@ fn backspace_on_empty_prompt_closes_with_dash_e() {
 }
 
 #[test]
-#[ignore = "command-prompt -l is not ported yet (run 13 task 4)"]
 fn dash_l_keeps_commas() {
     let mut p = Prompt::new(&[]);
     p.tmux
