@@ -9,14 +9,15 @@ test: check
 coverage:
   cargo llvm-cov --html
 
-# build .deb and .rpm packages of a static binary in target/package
-# (needs cargo-deb and cargo-generate-rpm)
-package target="x86_64-unknown-linux-musl":
-  scripts/package.sh {{target}}
+# build tarballs, .deb and .rpm packages of a static binary in target/package,
+# for x86_64 and aarch64 unless targets are given (needs cargo-deb and
+# cargo-generate-rpm)
+package *targets:
+  scripts/package.sh {{targets}}
 
-# build the packages, then install each in a container of its distribution
-# and start a server with it (needs podman)
-package-test target="x86_64-unknown-linux-musl": (package target)
+# build the packages, then install them in a container of each distribution
+# and start a server with them (needs podman)
+package-test: package
   scripts/package-test.sh
 
 # run code formatter

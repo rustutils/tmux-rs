@@ -8,8 +8,8 @@ four new options style. They can open inside a pane with
 `command-prompt -P`, and the searches and prompts of the tree modes open
 inside the mode. The mouse moves the cursor and picks completions, and the
 editing keys behave as in 3.8. `paste-buffer` now escapes what it pastes,
-as 3.8 does. Releases now come with .deb and .rpm packages, built as
-static binaries linked against musl.
+as 3.8 does. Releases now come with .deb and .rpm packages and tarballs
+for x86_64 and aarch64 Linux, with a static binary linked against musl.
 
 ### Compatibility with tmux 3.8
 
@@ -52,9 +52,10 @@ static binaries linked against musl.
 ### Changes
 
 - tmux-rs builds and passes its tests linked against musl.
-- .deb and .rpm packages with a static binary, which install on any
-  distribution release and recommend ncurses-base for the terminfo
-  database.
+- Releases on GitLab and GitHub with .deb and .rpm packages and tarballs
+  for x86_64 and aarch64 Linux. The binary is static, so the packages
+  install on any distribution release. They recommend ncurses-base for
+  the terminfo database.
 
 ## 0.1.0 (2026-11-24)
 

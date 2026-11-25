@@ -26,6 +26,8 @@ workflow:
 stages:
   - check
   - test
+  - package
+  - release
 
 default:
   image: fedora:45
@@ -40,6 +42,10 @@ variables:
   # tests see a different tmux.
   LANG: C.UTF-8
   LC_ALL: C.UTF-8
+  # The packaging tools. Bumping a version also renews the cache of
+  # installed binaries, which is keyed on this file.
+  CARGO_DEB_VERSION: "3.8.0"
+  CARGO_GENERATE_RPM_VERSION: "0.21.1"
 
 .fedora:
   cache:
@@ -192,3 +198,89 @@ coverage:
         path: coverage.xml
       junit: target/nextest/ci/junit.xml
     expire_in: 1 week
+
+# Release files for tags: a tarball, .deb and .rpm with a static musl
+# binary for x86_64 and aarch64 (scripts/package.sh). On other pipelines
+# the job can be started by hand to try the packaging.
+package:
+  stage: package
+  rules:
+    - if: $CI_COMMIT_TAG
+    - when: manual
+      allow_failure: true
+  cache:
+    - key: $CI_JOB_NAME_SLUG
+      paths:
+        - .cargo/registry/index
+        - .cargo/registry/cache
+        - .cargo/git/db
+    - key:
+        files: [.gitlab-ci.yml]
+      paths:
+        - .cargo/bin
+        - .cargo/.crates.toml
+        - .cargo/.crates2.json
+  script:
+    - dnf install -y --setopt=install_weak_deps=False gcc git curl tar gzip
+    - curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path
+        --profile minimal --default-toolchain stable
+    - export PATH="$CARGO_HOME/bin:$PATH"
+    - cargo install --locked --version "$CARGO_DEB_VERSION" cargo-deb
+    - cargo install --locked --version "$CARGO_GENERATE_RPM_VERSION" cargo-generate-rpm
+    - scripts/package.sh
+  artifacts:
+    paths:
+      - target/package/
+    # The release pages link to these.
+    expire_in: never
+
+# Installs the packages on each distribution and architecture and starts
+# a server with them (scripts/package-smoke.sh). Manual like package on
+# other pipelines, started after it.
+package-test:
+  stage: package
+  needs: [package]
+  rules:
+    - if: $CI_COMMIT_TAG
+    - when: manual
+      allow_failure: true
+  image: $IMAGE
+  parallel:
+    matrix:
+      - IMAGE: ["debian:stable", "ubuntu:latest", "fedora:latest"]
+        ARCH: [amd64, arm64]
+  tags:
+    - saas-linux-small-$ARCH
+  script:
+    - sh scripts/package-smoke.sh
+
+# The GitLab release, with the notes from CHANGELOG.md and links to the
+# package job's files (scripts/release-gitlab.sh). Only for version tags.
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(-[\w.]+)?$/
+  needs:
+    - job: package
+      artifacts: true
+    - package-test
+  script:
+    - apk add --no-cache bash
+    - scripts/release-gitlab.sh
+
+# The same release on the GitHub mirror (scripts/release-github.sh). A
+# separate job, so a GitHub failure does not fail the GitLab release.
+# Needs GITHUB_TOKEN from the rustutils group variables.
+release-github:
+  stage: release
+  image: alpine:latest
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(-[\w.]+)?$/
+  needs:
+    - job: package
+      artifacts: true
+    - package-test
+  script:
+    - apk add --no-cache bash github-cli
+    - scripts/release-github.sh
