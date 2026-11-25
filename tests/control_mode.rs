@@ -14,6 +14,8 @@ fn spawn_control_client(tmux: &TmuxTestHarness) -> std::process::Child {
         .args(["-S", tmux.socket_path(), "-C", "attach"])
         .env("TERM", "screen")
         .env_remove("TMUX")
+        .env_remove("VISUAL")
+        .env_remove("EDITOR")
         .env_remove("TMUX_CONF")
         .env_remove("TMUX_TMPDIR")
         .stdin(Stdio::piped())

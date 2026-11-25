@@ -68,6 +68,8 @@ impl Server {
             .env("HISTFILE", "/dev/null")
             .env_remove("ENV")
             .env_remove("TMUX")
+            .env_remove("VISUAL")
+            .env_remove("EDITOR")
             .env_remove("TMUX_CONF")
             .env_remove("TMUX_TMPDIR")
             .output()

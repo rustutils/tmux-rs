@@ -395,6 +395,8 @@ fn wait_for_survives_killed_client() {
         std::process::Command::new(harness::client_bin())
             .args(["-S", tmux.socket_path(), "wait-for", "chan"])
             .env_remove("TMUX")
+            .env_remove("VISUAL")
+            .env_remove("EDITOR")
             .spawn()
             .unwrap()
     };

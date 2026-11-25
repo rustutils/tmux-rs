@@ -48,16 +48,36 @@ impl Prompt {
     }
 
     /// Opens a command-prompt with `args` and waits until `shown` is on
-    /// the screen.
+    /// the screen. command-prompt does nothing while a prompt is open,
+    /// and a cancelled prompt can take a while to close on a busy
+    /// machine (Escape waits for the terminal), so it is sent again until
+    /// the prompt shows.
     fn open(&mut self, args: &[&str], shown: &str) {
+        let start = std::time::Instant::now();
+        let mut seen = String::new();
+        // Output before the command is not this prompt. Output after it
+        // is kept across retries, in case the first one opened it slowly.
         self.client.read_raw();
-        self.tmux
-            .cmd()
-            .args(["command-prompt", "-b", "-t", &self.name])
-            .args(args)
-            .run()
-            .assert_success();
-        self.client.wait_for_text(shown, Duration::from_secs(5));
+        loop {
+            self.tmux
+                .cmd()
+                .args(["command-prompt", "-b", "-t", &self.name])
+                .args(args)
+                .run()
+                .assert_success();
+            let wait = std::time::Instant::now();
+            while wait.elapsed() < Duration::from_millis(500) {
+                seen.push_str(&self.client.read_screen());
+                if seen.contains(shown) {
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(5),
+                "timed out waiting for '{shown}' in PTY output.\nGot so far:\n{seen}"
+            );
+        }
     }
 
     /// Opens the default test prompt, which stores its input in @r.
@@ -521,11 +541,13 @@ fn fuzzy_format_modifiers() {
 #[test]
 fn only_command_and_search_types() {
     let p = Prompt::new(&[]);
+    // The unknown types first: command-prompt does nothing while a prompt
+    // is open, so an error is only seen with none open.
     for (ty, ok) in [
-        ("command", true),
-        ("search", true),
         ("target", false),
         ("window-target", false),
+        ("command", true),
+        ("search", true),
     ] {
         let out = p
             .tmux

@@ -30,6 +30,8 @@ impl Control {
             .args(["-S", tmux.socket_path(), "-C", "attach"])
             .env("TERM", "screen")
             .env_remove("TMUX")
+            .env_remove("VISUAL")
+            .env_remove("EDITOR")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

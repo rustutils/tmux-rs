@@ -41,6 +41,61 @@ fn cargo_bin() -> PathBuf {
     env!("CARGO_BIN_EXE_tmux-rs").into()
 }
 
+/// A PTY pair whose descriptors are close-on-exec.
+///
+/// `cargo test` runs tests as threads of one process, so a descriptor
+/// without close-on-exec is inherited by every child any test spawns.
+/// `openpty` makes such descriptors: other tests' tmux processes then held
+/// this test's terminal open, so it never hung up, and tests lost keys.
+/// nextest runs each test in its own process and never saw it. On Linux
+/// the master is opened close-on-exec at once, so no other thread can
+/// fork in between. The slave is opened by std, which always sets it.
+fn open_pty(winsize: &nix::pty::Winsize) -> nix::pty::OpenptyResult {
+    use std::os::fd::{FromRawFd, IntoRawFd};
+    use std::os::unix::fs::OpenOptionsExt;
+
+    use nix::fcntl::OFlag;
+
+    #[cfg(target_os = "linux")]
+    let flags = OFlag::O_RDWR | OFlag::O_NOCTTY | OFlag::O_CLOEXEC;
+    #[cfg(not(target_os = "linux"))]
+    let flags = OFlag::O_RDWR | OFlag::O_NOCTTY;
+    let master = nix::pty::posix_openpt(flags).expect("posix_openpt failed");
+    nix::pty::grantpt(&master).expect("grantpt failed");
+    nix::pty::unlockpt(&master).expect("unlockpt failed");
+    // ptsname uses a static buffer that other test threads share.
+    #[cfg(target_os = "linux")]
+    let name = nix::pty::ptsname_r(&master).expect("ptsname_r failed");
+    // SAFETY: called once here, see above for the buffer.
+    #[cfg(not(target_os = "linux"))]
+    let name = unsafe { nix::pty::ptsname(&master) }.expect("ptsname failed");
+    // SAFETY: the fd is valid and owned by `master`, which is consumed.
+    let master = unsafe { OwnedFd::from_raw_fd(master.into_raw_fd()) };
+    #[cfg(not(target_os = "linux"))]
+    // SAFETY: `master` is a valid fd.
+    unsafe {
+        libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC);
+    }
+    let slave = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_NOCTTY)
+        .open(&name)
+        .expect("open PTY slave");
+    // SAFETY: `slave` is a valid terminal fd and `winsize` a valid struct.
+    unsafe {
+        libc::ioctl(
+            slave.as_raw_fd(),
+            libc::TIOCSWINSZ,
+            std::ptr::from_ref(winsize),
+        );
+    }
+    nix::pty::OpenptyResult {
+        master,
+        slave: slave.into(),
+    }
+}
+
 /// A test harness that manages a tmux server with an isolated socket.
 ///
 /// Each instance gets a unique socket path so tests can run in parallel
@@ -325,6 +380,10 @@ impl<'a> TmuxCommandBuilder<'a> {
         cmd.env_remove("ENV");
         // Keep nesting detection and custom socket paths from leaking in.
         cmd.env_remove("TMUX");
+        // tmux defaults status-keys and mode-keys to vi when VISUAL or
+        // EDITOR mentions vi, so a developer's vim would change key tests.
+        cmd.env_remove("VISUAL");
+        cmd.env_remove("EDITOR");
         cmd.env_remove("TMUX_CONF");
         cmd.env_remove("TMUX_TMPDIR");
 
@@ -447,7 +506,7 @@ impl PtyClient {
             ws_ypixel: 0,
         };
 
-        let pty = nix::pty::openpty(Some(&winsize), None).expect("openpty failed");
+        let pty = open_pty(&winsize);
 
         let slave_fd = pty.slave;
 
@@ -473,6 +532,8 @@ impl PtyClient {
             .env("HISTFILE", "/dev/null")
             .env_remove("ENV")
             .env_remove("TMUX")
+            .env_remove("VISUAL")
+            .env_remove("EDITOR")
             .env_remove("TMUX_CONF")
             .env_remove("TMUX_TMPDIR")
             .stdin(Stdio::from(slave_stdin))
