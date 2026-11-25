@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased
+
+This release brings the command prompt up to tmux 3.8. Prompts are drawn
+through the new `message-format` option and show the terminal cursor, which
+four new options style. They can open inside a pane with
+`command-prompt -P`, and the searches and prompts of the tree modes open
+inside the mode. The mouse moves the cursor and picks completions, and the
+editing keys behave as in 3.8. `paste-buffer` now escapes what it pastes,
+as 3.8 does. Releases now come with .deb and .rpm packages, built as
+static binaries linked against musl.
+
+### Compatibility with tmux 3.8
+
+- The `message-format` option decides how prompts and messages are drawn,
+  and `message-style` and `message-command-style` are expanded with the
+  prompt formats (`prompt_input`, `prompt_flags`, `prompt_type` and
+  others).
+- The prompt shows the terminal cursor at the input instead of a reversed
+  cell. The new options `prompt-cursor-style`, `prompt-cursor-colour`,
+  `prompt-command-cursor-style` and `prompt-command-cursor-colour` set its
+  shape and colour.
+- `command-prompt -P` opens the prompt in a pane, over its last line, and
+  fires the new `pane-prompt-opened` and `pane-prompt-closed` hooks. The
+  copy mode bindings that prompt use it, as in 3.8.
+- `command-prompt -C` keeps the panes updating while the prompt is open,
+  `-e` closes the prompt on Backspace when it is empty, and `-l` takes the
+  `-p` and `-I` values as one prompt.
+- Searching and filtering in the tree, buffer, client and customize modes,
+  and the prompts of tree and customize mode, open inside the mode.
+- A left click in the prompt moves the cursor or picks a completion.
+- Prompt editing as in 3.8: C-v inserts the next key as it is, keypad keys
+  insert their text, Escape in vi mode moves the cursor left, cursor keys
+  leave an incremental prompt, and Tab shows the possible completions
+  inline after the text. Only command names are completed.
+- There are two prompt types, `command` and `search`, so
+  `command-prompt -T target` and `-T window-target` fail as in 3.8.
+- Fuzzy matching in formats with the `z` and `p` flags of the `m`
+  modifier.
+- `paste-buffer` escapes control characters and bytes that are not UTF-8,
+  so a paste cannot send escape sequences to a program. `-S` pastes the
+  buffer as it is.
+- Command output is no longer escaped.
+
+### Fixes
+
+- `show-buffer` printed garbage to control mode clients.
+- Killing the pane that tree mode runs in, from the mode's own kill
+  prompt, no longer crashes the server (tmux 3.8 crashes).
+
+### Changes
+
+- tmux-rs builds and passes its tests linked against musl.
+- .deb and .rpm packages with a static binary, which install on any
+  distribution release and recommend ncurses-base for the terminfo
+  database.
+
 ## 0.1.0 (2026-11-24)
 
 The first release of this fork, which continues the original port by Collin
