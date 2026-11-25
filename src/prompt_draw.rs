@@ -14,14 +14,85 @@
 //! The adapter between the prompt object ([`crate::prompt`]) and the rest
 //! of tmux, shared by every owner of a prompt (the client's status line,
 //! a pane, a mode): reading the options a prompt draws with, expanding
-//! its message through message-format and its style, and drawing it with
-//! `screen_write`. This is the part of 3.8's prompt.c that uses formats,
+//! its message through message-format and its style, drawing it with
+//! `screen_write`, and what it reads while it handles a key. This is the part of 3.8's prompt.c that uses formats,
 //! styles and screens.
 
 use crate::options_::*;
-use crate::prompt::{Align, Layout, Prompt, PromptLook, PromptSetup};
-use crate::prompt_history::PromptType;
+use std::rc::Rc;
+
+use crate::paste::paste_get_top;
+use crate::prompt::{Align, CallbackResult, Fire, Layout, Prompt, PromptEnv, PromptLook, PromptSetup};
+use crate::prompt_history::{HistoryPositions, PromptType, prompt_history_down, prompt_history_up};
 use crate::*;
+
+/// What a prompt reads from the rest of tmux while it handles a key, see
+/// [`PromptEnv`]: the history and paste buffer through their bridges,
+/// the command names from the table and the aliases read before the key.
+pub struct PromptEnvAdapter {
+    /// The command-alias names, read before the key when it is Tab.
+    aliases: Vec<String>,
+}
+
+impl PromptEnv for PromptEnvAdapter {
+    fn history_up(&mut self, ty: PromptType, positions: &mut HistoryPositions) -> Option<Vec<u8>> {
+        prompt_history_up(ty, positions)
+    }
+
+    fn history_down(&mut self, ty: PromptType, positions: &mut HistoryPositions) -> Vec<u8> {
+        prompt_history_down(ty, positions)
+    }
+
+    fn paste_top(&mut self) -> Option<Rc<[u8]>> {
+        paste_get_top().map(|pb| pb.data().clone())
+    }
+
+    fn complete_commands(&mut self, prefix: &[u8]) -> Vec<String> {
+        let mut list: Vec<String> = Vec::new();
+        let names = CMD_TABLE.iter().map(|e| e.name).chain(self.aliases.iter().map(String::as_str));
+        for name in names {
+            if name.as_bytes().starts_with(prefix) && !list.iter().any(|l| l == name) {
+                list.push(name.to_string());
+            }
+        }
+        list
+    }
+}
+
+/// The names of the command-alias option (the part before "=").
+///
+/// # Safety
+/// The global options must exist.
+unsafe fn prompt_aliases() -> Vec<String> {
+    unsafe {
+        let o = options_get_only(GLOBAL_OPTIONS, "command-alias");
+        if o.is_null() {
+            return Vec::new();
+        }
+        options_array_strings(o)
+            .into_iter()
+            .filter_map(|(_, value)| {
+                let value = value.to_string_lossy();
+                value.split_once('=').map(|(name, _)| name.to_string())
+            })
+            .collect()
+    }
+}
+
+/// The env for handling `key`: the aliases are read only for Tab.
+///
+/// # Safety
+/// The global options must exist.
+pub unsafe fn prompt_env(key: key_code) -> PromptEnvAdapter {
+    unsafe {
+        let aliases = if key & KEYC_MASK_KEY == b'\t' as key_code {
+            prompt_aliases()
+        } else {
+            Vec::new()
+        };
+        PromptEnvAdapter { aliases }
+    }
+}
 
 /// Reads the options a prompt draws with from `s`, or the global session
 /// options without a session (3.8's `prompt_set_options`).
@@ -281,5 +352,32 @@ pub unsafe fn prompt_draw(
             }
         }
         pl.cursor_x
+    }
+}
+
+/// Calls an owner's prompt callback for `fire` with client `c` (null for
+/// none) and returns what it said: a callback returns 0 to close the
+/// prompt. Without a callback the prompt closes.
+///
+/// # Safety
+/// `cb` must accept `data` and `c`, and may change or free the owner of
+/// the prompt: the caller looks the owner up again afterwards.
+pub unsafe fn prompt_call(
+    cb: prompt_input_cb,
+    c: *mut client,
+    data: *mut c_void,
+    fire: &Fire,
+) -> CallbackResult {
+    unsafe {
+        let (Some(cb), Some(data)) = (cb, NonNull::new(data)) else {
+            return CallbackResult::Close;
+        };
+        let text = fire.text.as_ref().map(|t| CString::new(t.clone()).unwrap_or_default());
+        let ptr = text.as_ref().map_or(null(), |t| t.as_ptr().cast());
+        if cb(c, data, ptr, fire.kind) == 0 {
+            CallbackResult::Close
+        } else {
+            CallbackResult::Continue
+        }
     }
 }

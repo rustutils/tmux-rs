@@ -124,10 +124,11 @@
 4 src/options_/changes.rs
 87 src/options_/mod.rs
 13 src/osdep.rs
+30 src/pane_prompt.rs
 14 src/paste/mod.rs
 40 src/popup.rs
 41 src/proc.rs
-14 src/prompt_draw.rs
+20 src/prompt_draw.rs
 12 src/prompt_history/mod.rs
 21 src/resize.rs
 75 src/screen_.rs
@@ -140,7 +141,7 @@
 83 src/session_.rs
 24 src/sort_get.rs
 8 src/spawn.rs
-58 src/status.rs
+56 src/status.rs
 56 src/style_.rs
 24 src/tmux.rs
 238 src/tty_.rs

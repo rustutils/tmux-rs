@@ -2305,6 +2305,27 @@ unsafe fn server_client_handle_key0(
             {
                 return None;
             }
+
+            // Then a pane prompt: the active pane's, or the first visible
+            // pane with one. A pane prompt keeps cursor keys, and mouse
+            // keys it does not use go nowhere.
+            let w = winlink_window((*s).curw);
+            let mut wp = (*w).active.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
+            if wp.is_null() || !pane_prompt::window_pane_has_prompt(wp) {
+                wp = (*w)
+                    .panes
+                    .iter()
+                    .copied()
+                    .find(|&p| pane_prompt::window_pane_has_prompt(p) && window_pane_visible(p))
+                    .unwrap_or(null_mut());
+            }
+            if !wp.is_null() && pane_prompt::window_pane_has_prompt(wp) && window_pane_visible(wp) {
+                match pane_prompt::window_pane_prompt_key(wp, c, (*event).key, &raw const (*event).m) {
+                    KeyResult::Handled | KeyResult::Close | KeyResult::Move => return None,
+                    KeyResult::NotHandled if KEYC_IS_MOUSE((*event).key) => return None,
+                    KeyResult::NotHandled => {}
+                }
+            }
         }
 
         // Add the key to the queue so it happens after any commands queued by previous keys.
@@ -2647,6 +2668,16 @@ pub unsafe fn server_client_reset_state(c: *mut client) {
         if (*c).prompt.is_some() {
             cy = status_prompt_screen_line(c);
             cx = (*c).status.prompt_cx;
+        } else if (*c).overlay_draw.is_none()
+            && let Some((px, py, shown)) = pane_prompt::server_client_prompt_cursor(c, wp)
+        {
+            // The cursor of a pane prompt, in its style.
+            cx = px;
+            cy = py;
+            mode &= !mode_flag::MODE_CURSOR;
+            if shown {
+                mode |= mode_flag::MODE_CURSOR;
+            }
         } else if (*c).overlay_draw.is_none() {
             cursor = 0;
             tty_window_offset(tty, &raw mut ox, &raw mut oy, &raw mut sx, &raw mut sy);

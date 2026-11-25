@@ -1462,6 +1462,8 @@ pub unsafe fn window_pane_create(
 
 unsafe fn window_pane_destroy(wp: *mut window_pane) {
     unsafe {
+        // Closed without pane-prompt-closed, the pane is going.
+        pane_prompt::window_pane_remove_prompt(wp, false);
         window_pane_reset_mode_all(wp);
         // `searchstr` is `Option<String>`, dropped automatically by Box drop.
 

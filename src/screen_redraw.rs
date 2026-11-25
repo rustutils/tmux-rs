@@ -1026,6 +1026,8 @@ pub unsafe fn screen_redraw_draw_pane(ctx: *mut screen_redraw_ctx, wp: *mut wind
             tty_draw_line(tty, s, i, j, width, x, y, &raw mut defaults, palette);
         }
 
+        pane_prompt::screen_redraw_draw_pane_prompt(ctx, wp);
+
         #[cfg(feature = "sixel")]
         crate::tty_::tty_draw_images(c, wp, s);
     }

@@ -13,13 +13,10 @@
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 use std::time::Duration;
 
-use std::rc::Rc;
 
-use crate::prompt::{CallbackResult, Fire, KeyResult, Prompt, PromptEnv};
-use crate::prompt_draw::{prompt_draw, prompt_layout, prompt_setup};
-use crate::prompt_history::{
-    HistoryPositions, prompt_history_add, prompt_history_down, prompt_history_up,
-};
+use crate::prompt::{CallbackResult, Fire, KeyResult, Prompt};
+use crate::prompt_draw::{prompt_call, prompt_draw, prompt_env, prompt_layout, prompt_setup};
+use crate::prompt_history::prompt_history_add;
 use crate::*;
 use crate::options_::*;
 
@@ -510,58 +507,6 @@ pub unsafe fn status_message_redraw(c: *mut client) -> i32 {
     }
 }
 
-/// What the status line prompt reads from the rest of tmux, see
-/// [`PromptEnv`].
-struct StatusPromptEnv {
-    /// The command-alias names, read before the key when it is Tab.
-    aliases: Vec<String>,
-}
-
-impl PromptEnv for StatusPromptEnv {
-    fn history_up(&mut self, ty: PromptType, positions: &mut HistoryPositions) -> Option<Vec<u8>> {
-        prompt_history_up(ty, positions)
-    }
-
-    fn history_down(&mut self, ty: PromptType, positions: &mut HistoryPositions) -> Vec<u8> {
-        prompt_history_down(ty, positions)
-    }
-
-    fn paste_top(&mut self) -> Option<Rc<[u8]>> {
-        paste_get_top().map(|pb| pb.data().clone())
-    }
-
-    fn complete_commands(&mut self, prefix: &[u8]) -> Vec<String> {
-        let mut list: Vec<String> = Vec::new();
-        let names = CMD_TABLE.iter().map(|e| e.name).chain(self.aliases.iter().map(String::as_str));
-        for name in names {
-            if name.as_bytes().starts_with(prefix) && !list.iter().any(|l| l == name) {
-                list.push(name.to_string());
-            }
-        }
-        list
-    }
-}
-
-/// The names of the command-alias option (the part before "=").
-///
-/// # Safety
-/// The global options must exist.
-unsafe fn status_prompt_aliases() -> Vec<String> {
-    unsafe {
-        let o = options_get_only(GLOBAL_OPTIONS, "command-alias");
-        if o.is_null() {
-            return Vec::new();
-        }
-        options_array_strings(o)
-            .into_iter()
-            .filter_map(|(_, value)| {
-                let value = value.to_string_lossy();
-                value.split_once('=').map(|(name, _)| name.to_string())
-            })
-            .collect()
-    }
-}
-
 /// Enable status line prompt.
 pub unsafe fn status_prompt_set<T>(
     c: *mut client,
@@ -660,18 +605,7 @@ pub unsafe fn status_prompt_update(c: *mut client, msg: *const u8, input: *const
 /// `c` must be a valid client.
 unsafe fn status_prompt_fire(c: *mut client, fire: Fire, result: KeyResult) -> KeyResult {
     unsafe {
-        let said = match ((*c).prompt_inputcb, NonNull::new((*c).prompt_data)) {
-            (Some(cb), Some(data)) => {
-                let text = fire.text.as_ref().map(|t| CString::new(t.clone()).unwrap_or_default());
-                let ptr = text.as_ref().map_or(null(), |t| t.as_ptr().cast());
-                if cb(c, data, ptr, fire.kind) == 0 {
-                    CallbackResult::Close
-                } else {
-                    CallbackResult::Continue
-                }
-            }
-            _ => CallbackResult::Close,
-        };
+        let said = prompt_call((*c).prompt_inputcb, c, (*c).prompt_data, &fire);
         match (*c).prompt.as_mut() {
             Some(prompt) => {
                 let result = prompt.fired(&fire, said, result);
@@ -713,12 +647,7 @@ pub unsafe fn status_prompt_key(c: *mut client, key: key_code, m: *const mouse_e
                 None => return KeyResult::NotHandled,
             }
         } else {
-            let aliases = if key & KEYC_MASK_KEY == b'\t' as key_code {
-                status_prompt_aliases()
-            } else {
-                Vec::new()
-            };
-            let mut env = StatusPromptEnv { aliases };
+            let mut env = prompt_env(key);
             match (*c).prompt.as_mut() {
                 Some(p) => p.key(key, &mut env),
                 None => return KeyResult::NotHandled,

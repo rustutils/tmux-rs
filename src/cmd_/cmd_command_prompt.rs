@@ -40,6 +40,9 @@ struct cmd_command_prompt_cdata<'a> {
     flags: prompt_flags,
     prompt_type: PromptType,
 
+    /// The pane of a pane prompt (-P).
+    wp: Option<PaneId>,
+
     prompts: *mut cmd_command_prompt_prompt,
     count: u32,
     current: u32,
@@ -67,7 +70,13 @@ unsafe fn cmd_command_prompt_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         let mut wait = !args_has(args, 'b');
         let mut space = 1;
 
-        if (*tc).prompt.is_some() {
+        let pane = args_has(args, 'P');
+        let wp = (*target).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
+        if pane {
+            if wp.is_null() || pane_prompt::window_pane_has_prompt(wp) {
+                return cmd_retval::CMD_RETURN_NORMAL;
+            }
+        } else if (*tc).prompt.is_some() {
             return cmd_retval::CMD_RETURN_NORMAL;
         }
         if args_has(args, 'i') {
@@ -77,6 +86,9 @@ unsafe fn cmd_command_prompt_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         let mut cdata: Box<cmd_command_prompt_cdata> = Box::default();
         if wait {
             cdata.item = item;
+        }
+        if pane {
+            cdata.wp = Some(PaneId((*wp).id));
         }
         cdata.state =
             args_make_commands_prepare(self_, item, 0, c!("%1"), wait, args_has(args, 'F'));
@@ -170,19 +182,38 @@ unsafe fn cmd_command_prompt_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
             cdata.flags |= prompt_flags::PROMPT_NOFREEZE;
         }
 
+        if pane {
+            cdata.flags |= prompt_flags::PROMPT_ISPANE;
+        }
         let flags = cdata.flags;
         let prompt_type = cdata.prompt_type;
-        status_prompt_set(
-            tc,
-            target,
-            (*cdata.prompts).prompt,
-            (*cdata.prompts).input,
-            cmd_command_prompt_callback,
-            cmd_command_prompt_free,
-            Box::into_raw(cdata),
-            flags,
-            prompt_type,
-        );
+        let (msg, input) = ((*cdata.prompts).prompt, (*cdata.prompts).input);
+        if pane {
+            pane_prompt::window_pane_set_prompt(
+                wp,
+                tc,
+                target,
+                msg,
+                input,
+                cmd_command_prompt_callback,
+                cmd_command_prompt_free,
+                Box::into_raw(cdata),
+                flags,
+                prompt_type,
+            );
+        } else {
+            status_prompt_set(
+                tc,
+                target,
+                msg,
+                input,
+                cmd_command_prompt_callback,
+                cmd_command_prompt_free,
+                Box::into_raw(cdata),
+                flags,
+                prompt_type,
+            );
+        }
 
         if !wait {
             return cmd_retval::CMD_RETURN_NORMAL;
@@ -217,7 +248,14 @@ unsafe fn cmd_command_prompt_callback(
                 (*cdata).current += 1;
                 if (*cdata).current != (*cdata).count {
                     let prompt = (*cdata).prompts.add((*cdata).current as usize);
-                    status_prompt_update(c, (*prompt).prompt, (*prompt).input);
+                    match (*cdata).wp {
+                        Some(id) => {
+                            if let Some(wp) = pane_from_id(id) {
+                                pane_prompt::window_pane_update_prompt(wp, (*prompt).prompt, (*prompt).input);
+                            }
+                        }
+                        None => status_prompt_update(c, (*prompt).prompt, (*prompt).input),
+                    }
                     return 1;
                 }
             }
@@ -257,6 +295,7 @@ unsafe fn cmd_command_prompt_callback(
         }
         // out:
         if !item.is_null() {
+            (*cdata).item = null_mut();
             cmdq_continue(item);
         }
         0

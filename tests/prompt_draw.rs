@@ -365,7 +365,6 @@ fn prompt_freezes_the_pane_unless_dash_c() {
 }
 
 #[test]
-#[ignore = "pane prompts are not ported yet (run 13 task 5)"]
 fn pane_prompt_is_drawn_over_the_pane() {
     let n = Nested::new(&[]);
     n.prompt(&["-P", "-p", "PANE>", "-I", "z", "set -g @r '[%%]'"]);
@@ -379,7 +378,6 @@ fn pane_prompt_is_drawn_over_the_pane() {
 }
 
 #[test]
-#[ignore = "pane prompts are not ported yet (run 13 task 5)"]
 fn pane_prompt_hooks() {
     let n = Nested::new(&[
         &[
@@ -413,7 +411,6 @@ fn pane_prompt_hooks() {
 }
 
 #[test]
-#[ignore = "pane prompts are not ported yet (run 13 task 5)"]
 fn pane_prompt_gets_keys_when_another_pane_is_active() {
     let n = Nested::new(&[&["split-window", "-h", "sleep 1000"]]);
     n.run(&["select-pane", "-t", "0"]);
@@ -426,7 +423,6 @@ fn pane_prompt_gets_keys_when_another_pane_is_active() {
 }
 
 #[test]
-#[ignore = "pane prompts are not ported yet (run 13 task 5)"]
 fn pane_prompt_mouse_click() {
     let n = Nested::new(&[&["set", "-g", "mouse", "on"]]);
     n.prompt(&["-P", "-p", "P>", "-I", "abcdef", "set -g @r '[%%]'"]);
@@ -438,7 +434,6 @@ fn pane_prompt_mouse_click() {
 }
 
 #[test]
-#[ignore = "pane prompts are not ported yet (run 13 task 5)"]
 fn copy_mode_search_prompt_is_in_the_pane() {
     let n = Nested::new(&[
         &["set", "-g", "mode-keys", "emacs"],

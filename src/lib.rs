@@ -88,6 +88,7 @@ cfg_pub_mods! {
     mod options_;
     mod options_table;
     mod osdep;
+    mod pane_prompt;
     mod paste;
     mod prompt;
     mod prompt_draw;
@@ -1197,6 +1198,11 @@ struct window_pane {
 
     control_bg: i32,
     control_fg: i32,
+
+    /// The pane's prompt (command-prompt -P), drawn over its last line.
+    prompt: Option<Box<pane_prompt::PanePrompt>>,
+    /// The column of the pane prompt's cursor, set when it is drawn.
+    prompt_cx: u32,
 }
 type window_pane_tree = BTreeMap<u32, *mut window_pane>;
 
