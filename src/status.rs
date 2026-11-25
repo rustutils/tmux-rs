@@ -13,19 +13,17 @@
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 use std::time::Duration;
 
-use crate::libc::strncmp;
+use std::rc::Rc;
+
+use crate::prompt::{
+    CallbackResult, Fire, KeyResult, Prompt, PromptEnv, PromptSetup, utf8_decode, utf8_width,
+};
 use crate::prompt_history::{
     HistoryPositions, prompt_history_add, prompt_history_down, prompt_history_up,
 };
 use crate::*;
 use crate::options_::*;
 
-struct status_prompt_menu {
-    c: *mut client,
-    start: u32,
-    list: Vec<String>,
-    flag: u8,
-}
 
 /// Fire the status timer for a client: redraw the status line and re-arm.
 unsafe fn status_timer_fire(cid: ClientId) {
@@ -40,7 +38,7 @@ unsafe fn status_timer_fire(cid: ClientId) {
             return;
         }
 
-        if (*c).message_string.is_none() && (*c).prompt_string.is_none() {
+        if (*c).message_string.is_none() && (*c).prompt.is_none() {
             (*c).flags |= client_flag::REDRAWSTATUS;
         }
 
@@ -431,7 +429,7 @@ pub unsafe fn status_message_clear(c: NonNull<client>) {
 
         (*c).message_string = None;
 
-        if (*c).prompt_string.is_none() {
+        if (*c).prompt.is_none() {
             (*c).tty.flags &= !(tty_flags::TTY_NOCURSOR | tty_flags::TTY_FREEZE);
         }
         (*c).flags |= CLIENT_ALLREDRAWFLAGS; /* was frozen and may have changed */
@@ -527,13 +525,95 @@ pub unsafe fn status_message_redraw(c: *mut client) -> i32 {
     }
 }
 
+/// What the status line prompt reads from the rest of tmux, see
+/// [`PromptEnv`].
+struct StatusPromptEnv {
+    /// The command-alias names, read before the key when it is Tab.
+    aliases: Vec<String>,
+}
+
+impl PromptEnv for StatusPromptEnv {
+    fn history_up(&mut self, ty: PromptType, positions: &mut HistoryPositions) -> Option<Vec<u8>> {
+        prompt_history_up(ty, positions)
+    }
+
+    fn history_down(&mut self, ty: PromptType, positions: &mut HistoryPositions) -> Vec<u8> {
+        prompt_history_down(ty, positions)
+    }
+
+    fn paste_top(&mut self) -> Option<Rc<[u8]>> {
+        paste_get_top().map(|pb| pb.data().clone())
+    }
+
+    fn complete_commands(&mut self, prefix: &[u8]) -> Vec<String> {
+        let mut list: Vec<String> = Vec::new();
+        let names = CMD_TABLE.iter().map(|e| e.name).chain(self.aliases.iter().map(String::as_str));
+        for name in names {
+            if name.as_bytes().starts_with(prefix) && !list.iter().any(|l| l == name) {
+                list.push(name.to_string());
+            }
+        }
+        list
+    }
+}
+
+/// The names of the command-alias option (the part before "=").
+///
+/// # Safety
+/// The global options must exist.
+unsafe fn status_prompt_aliases() -> Vec<String> {
+    unsafe {
+        let o = options_get_only(GLOBAL_OPTIONS, "command-alias");
+        if o.is_null() {
+            return Vec::new();
+        }
+        options_array_strings(o)
+            .into_iter()
+            .filter_map(|(_, value)| {
+                let value = value.to_string_lossy();
+                value.split_once('=').map(|(name, _)| name.to_string())
+            })
+            .collect()
+    }
+}
+
+/// Expand `s` as a format for the prompt, unless `noformat`.
+///
+/// # Safety
+/// `c` must be a valid client and `fs` null or a valid find state.
+unsafe fn status_prompt_expand(
+    c: *mut client,
+    fs: *mut cmd_find_state,
+    s: *const u8,
+    noformat: bool,
+) -> Vec<u8> {
+    unsafe {
+        if s.is_null() {
+            return Vec::new();
+        }
+        if noformat {
+            return CStr::from_ptr(s.cast()).to_bytes().to_vec();
+        }
+        let ft = if !fs.is_null() {
+            format_create_from_state(null_mut(), c, fs)
+        } else {
+            format_create_defaults(null_mut(), c, null_mut(), null_mut(), null_mut())
+        };
+        let expanded = format_expand_time(ft, s);
+        let out = CStr::from_ptr(expanded.cast()).to_bytes().to_vec();
+        free_(expanded);
+        format_free(ft);
+        out
+    }
+}
+
 /// Enable status line prompt.
 pub unsafe fn status_prompt_set<T>(
     c: *mut client,
     fs: *mut cmd_find_state,
     msg: *const u8,
-    mut input: *const u8,
-    inputcb: unsafe fn(*mut client, NonNull<T>, *const u8, i32) -> i32,
+    input: *const u8,
+    inputcb: unsafe fn(*mut client, NonNull<T>, *const u8, KeyResult) -> i32,
     freecb: unsafe fn(NonNull<T>),
     data: *mut T,
     flags: prompt_flags,
@@ -542,45 +622,32 @@ pub unsafe fn status_prompt_set<T>(
     unsafe {
         server_client_clear_overlay(c);
 
-        let ft = if !fs.is_null() {
-            format_create_from_state(null_mut(), c, fs)
-        } else {
-            format_create_defaults(null_mut(), c, null_mut(), null_mut(), null_mut())
-        };
-
-        if input.is_null() {
-            input = c!("");
-        }
-        let tmp = if flags.intersects(prompt_flags::PROMPT_NOFORMAT) {
-            xstrdup(input).as_ptr()
-        } else {
-            format_expand_time(ft, input)
-        };
+        let message = status_prompt_expand(c, fs, msg, false);
+        let input = status_prompt_expand(c, fs, input, flags.intersects(prompt_flags::PROMPT_NOFORMAT));
 
         status_message_clear(NonNull::new_unchecked(c));
         status_prompt_clear(c);
         status_push_screen(c);
 
-        let prompt_ptr = format_expand_time(ft, msg);
-        (*c).prompt_string = Some(
-            std::ffi::CStr::from_ptr(prompt_ptr.cast())
-                .to_string_lossy()
-                .into_owned(),
-        );
-        free_(prompt_ptr);
-
-        if flags.intersects(prompt_flags::PROMPT_INCREMENTAL) {
-            (*c).prompt_last = xstrdup(tmp).as_ptr();
-            (*c).prompt_buffer = utf8_fromcstr(c!(""));
+        let oo = (*client_get_session(c)).options;
+        let keys = if options_get_number_(oo, "status-keys") == modekey::MODEKEY_VI as i64 {
+            modekey::MODEKEY_VI
         } else {
-            (*c).prompt_last = null_mut();
-            (*c).prompt_buffer = utf8_fromcstr(tmp);
-        }
-        (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
+            modekey::MODEKEY_EMACS
+        };
+        let separators = options_get_string_(oo, "word-separators");
+        (*c).prompt = Some(Box::new(Prompt::new(PromptSetup {
+            message,
+            input,
+            ty: prompt_type,
+            flags,
+            keys,
+            word_separators: CStr::from_ptr(separators.cast()).to_bytes().to_vec(),
+        })));
 
         (*c).prompt_inputcb = Some(std::mem::transmute::<
-            unsafe fn(*mut client, NonNull<T>, *const u8, i32) -> i32,
-            unsafe fn(*mut client, NonNull<c_void>, *const u8, i32) -> i32,
+            unsafe fn(*mut client, NonNull<T>, *const u8, KeyResult) -> i32,
+            unsafe fn(*mut client, NonNull<c_void>, *const u8, KeyResult) -> i32,
         >(inputcb));
         (*c).prompt_freecb = Some(std::mem::transmute::<
             unsafe fn(NonNull<T>),
@@ -588,30 +655,22 @@ pub unsafe fn status_prompt_set<T>(
         >(freecb));
         (*c).prompt_data = data.cast(); // note we know this is non null
 
-        (*c).prompt_hindex = HistoryPositions::default();
-
-        (*c).prompt_flags = flags;
-        (*c).prompt_type = prompt_type;
-        (*c).prompt_mode = prompt_mode::PROMPT_ENTRY;
-
         if !flags.intersects(prompt_flags::PROMPT_INCREMENTAL) {
             (*c).tty.flags |= tty_flags::TTY_NOCURSOR | tty_flags::TTY_FREEZE;
         }
         (*c).flags |= client_flag::REDRAWSTATUS;
 
-        if flags.intersects(prompt_flags::PROMPT_INCREMENTAL) {
-            (*c).prompt_inputcb.unwrap()(c, NonNull::new((*c).prompt_data).unwrap(), c!("="), 0);
+        let start = (*c).prompt.as_ref().and_then(|p| p.incremental_start());
+        if let Some(fire) = start {
+            status_prompt_fire(c, fire, KeyResult::Handled);
         }
-
-        free_(tmp);
-        format_free(ft);
     }
 }
 
 /// Remove status line prompt.
 pub unsafe fn status_prompt_clear(c: *mut client) {
     unsafe {
-        if (*c).prompt_string.is_none() {
+        if (*c).prompt.take().is_none() {
             return;
         }
 
@@ -620,17 +679,9 @@ pub unsafe fn status_prompt_clear(c: *mut client) {
         {
             prompt_freecb(prompt_data);
         }
-
-        free_((*c).prompt_last);
-        (*c).prompt_last = null_mut();
-
-        (*c).prompt_string = None;
-
-        free_((*c).prompt_buffer);
-        (*c).prompt_buffer = null_mut();
-
-        free_((*c).prompt_saved);
-        (*c).prompt_saved = null_mut();
+        (*c).prompt_inputcb = None;
+        (*c).prompt_freecb = None;
+        (*c).prompt_data = null_mut();
 
         (*c).tty.flags &= !(tty_flags::TTY_NOCURSOR | tty_flags::TTY_FREEZE);
         (*c).flags |= CLIENT_ALLREDRAWFLAGS; /* was frozen and may have changed */
@@ -642,29 +693,77 @@ pub unsafe fn status_prompt_clear(c: *mut client) {
 /// Update status line prompt with a new prompt string.
 pub unsafe fn status_prompt_update(c: *mut client, msg: *const u8, input: *const u8) {
     unsafe {
-        let ft = format_create(c, null_mut(), FORMAT_NONE, format_flags::empty());
-        format_defaults(ft, c, None, None, None);
-
-        let tmp = format_expand_time(ft, input);
-
-        let prompt_ptr = format_expand_time(ft, msg);
-        (*c).prompt_string = Some(
-            std::ffi::CStr::from_ptr(prompt_ptr.cast())
-                .to_string_lossy()
-                .into_owned(),
-        );
-        free_(prompt_ptr);
-
-        free_((*c).prompt_buffer);
-        (*c).prompt_buffer = utf8_fromcstr(tmp);
-        (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
-
-        (*c).prompt_hindex = HistoryPositions::default();
-
+        if (*c).prompt.is_none() {
+            return;
+        }
+        let message = status_prompt_expand(c, null_mut(), msg, false);
+        let input = status_prompt_expand(c, null_mut(), input, false);
+        if let Some(prompt) = (*c).prompt.as_mut() {
+            prompt.update(message, &input);
+        }
         (*c).flags |= client_flag::REDRAWSTATUS;
+    }
+}
 
-        free_(tmp);
-        format_free(ft);
+/// Fire the prompt's callback for `fire` and returns the key's result.
+/// The callback may update, replace or clear the prompt.
+///
+/// # Safety
+/// `c` must be a valid client.
+unsafe fn status_prompt_fire(c: *mut client, fire: Fire, result: KeyResult) -> KeyResult {
+    unsafe {
+        let said = match ((*c).prompt_inputcb, NonNull::new((*c).prompt_data)) {
+            (Some(cb), Some(data)) => {
+                let text = fire.text.as_ref().map(|t| CString::new(t.clone()).unwrap_or_default());
+                let ptr = text.as_ref().map_or(null(), |t| t.as_ptr().cast());
+                if cb(c, data, ptr, fire.kind) == 0 {
+                    CallbackResult::Close
+                } else {
+                    CallbackResult::Continue
+                }
+            }
+            _ => CallbackResult::Close,
+        };
+        match (*c).prompt.as_mut() {
+            Some(prompt) => {
+                let result = prompt.fired(&fire, said, result);
+                if said == CallbackResult::Continue {
+                    (*c).flags |= client_flag::REDRAWSTATUS;
+                }
+                result
+            }
+            None => result,
+        }
+    }
+}
+
+/// Handle a key in the prompt.
+pub unsafe fn status_prompt_key(c: *mut client, key: key_code) -> KeyResult {
+    unsafe {
+        let aliases = if key & KEYC_MASK_KEY == b'\t' as key_code {
+            status_prompt_aliases()
+        } else {
+            Vec::new()
+        };
+        let mut env = StatusPromptEnv { aliases };
+        let Some(out) = (*c).prompt.as_mut().map(|p| p.key(key, &mut env)) else {
+            return KeyResult::NotHandled;
+        };
+
+        if let Some((ty, line)) = &out.history {
+            prompt_history_add(*ty, line);
+        }
+        let mut result = out.result;
+        for fire in out.fires {
+            result = status_prompt_fire(c, fire, result);
+        }
+        if out.redraw && (*c).prompt.is_some() {
+            (*c).flags |= client_flag::REDRAWSTATUS;
+        }
+        if (*c).prompt.as_ref().is_some_and(|p| p.closed()) {
+            status_prompt_clear(c);
+        }
+        result
     }
 }
 
@@ -676,11 +775,26 @@ pub unsafe fn status_prompt_redraw(c: *mut client) -> i32 {
 
         let s = client_get_session(c);
 
-        let offset: u32;
-
         let mut gc: GridCell = zeroed();
         let mut cursorgc: GridCell = zeroed();
         let old_grid: Box<Grid>;
+
+        // What is drawn, copied out so no reference to the prompt is held
+        // while drawing.
+        let Some((message, mut cells, mut index, command_mode, quote_next, completions)) =
+            (*c).prompt.as_deref().map(|p| {
+                (
+                    String::from_utf8_lossy(p.message()).into_owned(),
+                    p.buffer().to_vec(),
+                    p.index(),
+                    p.command_mode(),
+                    p.quote_next(),
+                    p.completion_display(),
+                )
+            })
+        else {
+            return 0;
+        };
 
         'finished: {
             if (*c).tty.sx == 0 || (*c).tty.sy == 0 {
@@ -701,7 +815,7 @@ pub unsafe fn status_prompt_redraw(c: *mut client) -> i32 {
             }
 
             let ft = format_create_defaults(null_mut(), c, null_mut(), null_mut(), null_mut());
-            if (*c).prompt_mode == prompt_mode::PROMPT_COMMAND {
+            if command_mode {
                 style_apply(&raw mut gc, (*s).options, c!("message-command-style"), ft);
             } else {
                 style_apply(&raw mut gc, (*s).options, c!("message-style"), ft);
@@ -711,8 +825,7 @@ pub unsafe fn status_prompt_redraw(c: *mut client) -> i32 {
             memcpy__(&raw mut cursorgc, &raw const gc);
             cursorgc.attr ^= GridAttr::GRID_ATTR_REVERSE;
 
-            let prompt_owned = (*c).prompt_string.clone().unwrap_or_default();
-            let mut start = format_width(&prompt_owned);
+            let mut start = format_width(&message);
             if start > (*c).tty.sx {
                 start = (*c).tty.sx;
             }
@@ -731,14 +844,7 @@ pub unsafe fn status_prompt_redraw(c: *mut client) -> i32 {
                 screen_write_putc(&raw mut ctx, &raw const gc, b' ');
             }
             screen_write_cursormove(&raw mut ctx, 0, promptline as i32, 0);
-            format_draw(
-                &raw mut ctx,
-                &raw const gc,
-                start,
-                &prompt_owned,
-                null_mut(),
-                0,
-            );
+            format_draw(&raw mut ctx, &raw const gc, start, &message, null_mut(), 0);
             screen_write_cursormove(&raw mut ctx, start as i32, promptline as i32, 0);
 
             let left = (*c).tty.sx - start;
@@ -746,8 +852,14 @@ pub unsafe fn status_prompt_redraw(c: *mut client) -> i32 {
                 break 'finished;
             }
 
-            let pcursor = utf8_strwidth((*c).prompt_buffer, (*c).prompt_index as isize);
-            let mut pwidth = utf8_strwidth((*c).prompt_buffer, -1);
+            // The input, with a ^ at the cursor while C-v waits for a key.
+            if quote_next {
+                cells.insert(index, Utf8Data::single(b'^'));
+                index += 1;
+            }
+            let pcursor = utf8_width(&cells[..index]);
+            let mut pwidth = utf8_width(&cells);
+            let offset;
             if pcursor >= left {
                 // The cursor would be outside the screen so start drawing
                 // with it on the right.
@@ -759,36 +871,58 @@ pub unsafe fn status_prompt_redraw(c: *mut client) -> i32 {
             if pwidth > left {
                 pwidth = left;
             }
-            (*c).prompt_cursor =
-                (start as isize + (*c).prompt_index as isize - offset as isize) as i32;
 
+            let cursor_at = if quote_next { index - 1 } else { index };
+            (*sl).prompt_cx = start + pcursor - offset;
             let mut width = 0;
             let mut i = 0;
-            while (*(*c).prompt_buffer.add(i)).size != 0 {
+            while i < cells.len() {
+                let ud = cells[i];
                 if width < offset {
-                    width += (*(*c).prompt_buffer.add(i)).width as u32;
+                    width += u32::from(ud.width);
                     i += 1;
                     continue;
                 }
                 if width >= offset + pwidth {
                     break;
                 }
-                width += (*(*c).prompt_buffer.add(i)).width as u32;
+                width += u32::from(ud.width);
                 if width > offset + pwidth {
                     break;
                 }
 
-                if i != (*c).prompt_index {
-                    gc.data = *(*c).prompt_buffer.add(i);
-                    screen_write_cell(&raw mut ctx, &raw const gc);
+                let cell = if i == cursor_at { &mut cursorgc } else { &mut gc };
+                if ud.size == 1 && (ud.data[0] <= 0x1f || ud.data[0] == 0x7f) {
+                    // Control characters are shown as ^X.
+                    let ch = if ud.data[0] == 0x7f { b'?' } else { ud.data[0] | 0x40 };
+                    cell.data = Utf8Data::single(b'^');
+                    screen_write_cell(&raw mut ctx, cell);
+                    cell.data = Utf8Data::single(ch);
+                    screen_write_cell(&raw mut ctx, cell);
                 } else {
-                    cursorgc.data = *(*c).prompt_buffer.add(i);
-                    screen_write_cell(&raw mut ctx, &raw const cursorgc);
+                    cell.data = ud;
+                    screen_write_cell(&raw mut ctx, cell);
                 }
                 i += 1;
             }
-            if (*(*sl).active).cx < screen_size_x((*sl).active) && (*c).prompt_index >= i {
-                screen_write_putc(&raw mut ctx, &raw const cursorgc, b' ');
+            if (*(*sl).active).cx < screen_size_x((*sl).active) && cursor_at >= i {
+                // The cursor is after the input. Several completions are
+                // shown from there, the cursor on the space before them.
+                match &completions {
+                    Some(display) => {
+                        let mut completegc = gc;
+                        completegc.attr |= GridAttr::GRID_ATTR_UNDERSCORE;
+                        for (n, ud) in utf8_decode(display.as_bytes()).into_iter().enumerate() {
+                            if (*(*sl).active).cx + u32::from(ud.width) > screen_size_x((*sl).active) {
+                                break;
+                            }
+                            let cell = if n == 0 { &mut cursorgc } else { &mut completegc };
+                            cell.data = ud;
+                            screen_write_cell(&raw mut ctx, cell);
+                        }
+                    }
+                    None => screen_write_putc(&raw mut ctx, &raw const cursorgc, b' '),
+                }
             }
         }
         // finished:
@@ -799,1370 +933,4 @@ pub unsafe fn status_prompt_redraw(c: *mut client) -> i32 {
         }
         1
     }
-}
-
-/// Is this a separator?
-unsafe fn status_prompt_in_list(ws: *const u8, ud: *const Utf8Data) -> i32 {
-    unsafe {
-        if (*ud).size != 1 || (*ud).width != 1 {
-            return 0;
-        }
-        !libc::strchr(ws, (*ud).data[0] as i32).is_null() as i32
-    }
-}
-
-/// Is this a space?
-unsafe fn status_prompt_space(ud: *const Utf8Data) -> i32 {
-    unsafe {
-        if (*ud).size != 1 || (*ud).width != 1 {
-            return 0;
-        }
-        ((*ud).data[0] == b' ') as i32
-    }
-}
-
-/// Translate key from vi to emacs. Return 0 to drop key, 1 to process the key
-/// as an emacs key; return 2 to append to the buffer.
-unsafe fn status_prompt_translate_key(
-    c: *mut client,
-    key: key_code,
-    new_key: *mut key_code,
-) -> i32 {
-    unsafe {
-        if (*c).prompt_mode == prompt_mode::PROMPT_ENTRY {
-            match key {
-                code::A_CTRL
-                | code::C_CTRL
-                | code::E_CTRL
-                | code::G_CTRL
-                | code::H_CTRL
-                | code::TAB
-                | code::K_CTRL
-                | code::N_CTRL
-                | code::P_CTRL
-                | code::T_CTRL
-                | code::W_CTRL
-                | code::Y_CTRL
-                | code::LF
-                | code::CR
-                | code::LEFT_CTRL
-                | code::RIGHT_CTRL
-                | code::KEYC_BSPACE
-                | code::KEYC_DC
-                | code::KEYC_DOWN
-                | code::KEYC_END
-                | code::KEYC_HOME
-                | code::KEYC_LEFT
-                | code::KEYC_RIGHT
-                | code::KEYC_UP => {
-                    *new_key = key;
-                    return 1;
-                }
-                code::ESC => {
-                    (*c).prompt_mode = prompt_mode::PROMPT_COMMAND;
-                    (*c).flags |= client_flag::REDRAWSTATUS;
-                    return 0;
-                }
-                _ => (),
-            }
-            *new_key = key;
-            return 2;
-        }
-
-        match key {
-            code::KEYC_BSPACE => {
-                *new_key = keyc::KEYC_LEFT as u64;
-                return 1;
-            }
-            code::A_UPPER | code::I_UPPER | code::C_UPPER | code::S | code::A => {
-                (*c).prompt_mode = prompt_mode::PROMPT_ENTRY;
-                (*c).flags |= client_flag::REDRAWSTATUS;
-            }
-            code::S_UPPER => {
-                (*c).prompt_mode = prompt_mode::PROMPT_ENTRY;
-                (*c).flags |= client_flag::REDRAWSTATUS;
-                *new_key = b'u' as u64 | KEYC_CTRL;
-                return 1;
-            }
-            code::I | code::ESC => {
-                (*c).prompt_mode = prompt_mode::PROMPT_ENTRY;
-                (*c).flags |= client_flag::REDRAWSTATUS;
-                return 0;
-            }
-            _ => (),
-        }
-
-        match key {
-            code::A_UPPER | code::DOLLAR => {
-                *new_key = keyc::KEYC_END as u64;
-                return 1;
-            }
-            code::I_UPPER | code::ZERO | code::CARET => {
-                *new_key = keyc::KEYC_HOME as u64;
-                return 1;
-            }
-            code::C_UPPER | code::D_UPPER => {
-                *new_key = b'k' as u64 | KEYC_CTRL;
-                return 1;
-            }
-            code::KEYC_BSPACE | code::X_UPPER => {
-                *new_key = keyc::KEYC_BSPACE as u64;
-                return 1;
-            }
-            code::B => {
-                *new_key = b'b' as u64 | KEYC_META;
-                return 1;
-            }
-            code::B_UPPER => {
-                *new_key = b'B' as u64 | KEYC_VI;
-                return 1;
-            }
-            code::D => {
-                *new_key = b'u' as u64 | KEYC_CTRL;
-                return 1;
-            }
-            code::E => {
-                *new_key = b'e' as u64 | KEYC_VI;
-                return 1;
-            }
-            code::E_UPPER => {
-                *new_key = b'E' as u64 | KEYC_VI;
-                return 1;
-            }
-            code::W => {
-                *new_key = b'w' as u64 | KEYC_VI;
-                return 1;
-            }
-            code::W_UPPER => {
-                *new_key = b'W' as u64 | KEYC_VI;
-                return 1;
-            }
-            code::P => {
-                *new_key = b'y' as u64 | KEYC_CTRL;
-                return 1;
-            }
-            code::Q => {
-                *new_key = b'c' as u64 | KEYC_CTRL;
-                return 1;
-            }
-            code::S | code::KEYC_DC | code::X => {
-                *new_key = keyc::KEYC_DC as u64;
-                return 1;
-            }
-            code::KEYC_DOWN | code::J => {
-                *new_key = keyc::KEYC_DOWN as u64;
-                return 1;
-            }
-            code::KEYC_LEFT | code::H => {
-                *new_key = keyc::KEYC_LEFT as u64;
-                return 1;
-            }
-            code::A | code::KEYC_RIGHT | code::L => {
-                *new_key = keyc::KEYC_RIGHT as u64;
-                return 1;
-            }
-            code::KEYC_UP | code::K => {
-                *new_key = keyc::KEYC_UP as u64;
-                return 1;
-            }
-            code::H_CTRL | code::C_CTRL | code::CR | code::LF => {
-                return 1;
-            }
-            _ => (),
-        }
-
-        0
-    }
-}
-
-/// Paste into prompt.
-unsafe fn status_prompt_paste(c: *mut client) -> i32 {
-    unsafe {
-        // struct PasteBuffer *pb;
-        // const char *bufdata;
-        // size_t size, n, bufsize;
-        // u_int i;
-        // struct Utf8Data *ud, *udp;
-        // enum utf8_state more;
-
-        let bufsize: usize;
-        let n: usize;
-
-        let ud: *mut Utf8Data;
-        let size = utf8_strlen((*c).prompt_buffer);
-        if !(*c).prompt_saved.is_null() {
-            ud = (*c).prompt_saved;
-            n = utf8_strlen((*c).prompt_saved);
-        } else {
-            let Some(pb) = paste_get_top() else {
-                return 0;
-            };
-            let data = pb.data().clone();
-            let bufdata: *const u8 = data.as_ptr();
-            bufsize = data.len();
-            let mut udp = xreallocarray_::<Utf8Data>(null_mut(), bufsize + 1).as_ptr();
-            ud = udp;
-            let mut i: u32 = 0;
-            while i as usize != bufsize {
-                let mut more = (*udp).open(*bufdata.add(i as usize));
-                if more == Utf8State::More {
-                    while {
-                        i += 1;
-                        i as usize != bufsize && more == Utf8State::More
-                    } {
-                        more = (*udp).append(*bufdata.add(i as usize));
-                    }
-                    if more == Utf8State::Done {
-                        udp = udp.add(1);
-                        continue;
-                    }
-                    i -= (*udp).have as u32;
-                }
-                if *bufdata.add(i as usize) <= 31 || *bufdata.add(i as usize) >= 127 {
-                    break;
-                }
-                *udp = Utf8Data::single(*bufdata.add(i as usize));
-                udp = udp.add(1);
-                i += 1;
-            }
-            (*udp).size = 0;
-            n = udp.offset_from_unsigned(ud);
-        }
-        if n != 0 {
-            (*c).prompt_buffer =
-                xreallocarray_::<Utf8Data>((*c).prompt_buffer, size + n + 1).as_ptr();
-            if (*c).prompt_index == size {
-                libc::memcpy(
-                    (*c).prompt_buffer.add((*c).prompt_index).cast(),
-                    ud.cast(),
-                    n * size_of::<Utf8Data>(),
-                );
-                (*c).prompt_index += n;
-                (*(*c).prompt_buffer.add((*c).prompt_index)).size = 0;
-            } else {
-                libc::memmove(
-                    (*c).prompt_buffer.add((*c).prompt_index + n).cast(),
-                    (*c).prompt_buffer.add((*c).prompt_index).cast(),
-                    (size + 1 - (*c).prompt_index) * size_of::<Utf8Data>(),
-                );
-                libc::memcpy(
-                    (*c).prompt_buffer.add((*c).prompt_index).cast(),
-                    ud.cast(),
-                    n * size_of::<Utf8Data>(),
-                );
-                (*c).prompt_index += n;
-            }
-        }
-        if ud != (*c).prompt_saved {
-            free_(ud);
-        }
-        1
-    }
-}
-
-/// Finish completion.
-unsafe fn status_prompt_replace_complete(c: *mut client, s: Option<&str>) -> i32 {
-    unsafe {
-        let mut word: [u8; 64] = [0; 64];
-        let completion: Option<String>;
-
-        let mut used: usize;
-
-        let mut last: *mut Utf8Data;
-        let mut ud: *mut Utf8Data;
-
-        // Work out where the cursor currently is.
-        let idx = (*c).prompt_index.saturating_sub(1);
-        let mut size = utf8_strlen((*c).prompt_buffer);
-
-        // Find the word we are in.
-        let mut first = (*c).prompt_buffer.add(idx);
-        while first.addr() > (*c).prompt_buffer.addr() && status_prompt_space(first) == 0 {
-            first = first.sub(1);
-        }
-        while (*first).size != 0 && status_prompt_space(first) != 0 {
-            first = first.add(1);
-        }
-        last = (*c).prompt_buffer.add(idx);
-        while (*last).size != 0 && status_prompt_space(last) == 0 {
-            last = last.add(1);
-        }
-        while last > (*c).prompt_buffer && status_prompt_space(last) != 0 {
-            last = last.sub(1);
-        }
-        if (*last).size != 0 {
-            last = last.add(1);
-        }
-        if last < first {
-            return 0;
-        }
-
-        let s_str = if let Some(s) = s {
-            s
-        } else {
-            used = 0;
-            ud = first;
-            while ud < last {
-                if used + (*ud).size as usize >= word.len() {
-                    break;
-                }
-                libc::memcpy(
-                    (&raw mut word as *mut i8).add(used).cast(),
-                    (&raw mut (*ud).data).cast(),
-                    (*ud).size as usize,
-                );
-                used += (*ud).size as usize;
-                ud = ud.add(1);
-            }
-            if ud != last {
-                return 0;
-            }
-            word[used] = b'\0';
-
-            // Try to complete it.
-            completion = status_prompt_complete(
-                c,
-                (&raw const word).cast(),
-                first.offset_from_unsigned((*c).prompt_buffer) as u32,
-            );
-            if completion.is_none() {
-                return 0;
-            }
-            completion.as_ref().unwrap().as_str()
-        };
-
-        // Trim out word.
-        let n: usize = size - last.offset_from_unsigned((*c).prompt_buffer) + 1; /* with \0 */
-        libc::memmove(first.cast(), last.cast(), n * size_of::<Utf8Data>());
-        size -= last.offset_from_unsigned(first);
-
-        // Insert the new word.
-        size += s_str.len();
-        let off: usize = first.offset_from_unsigned((*c).prompt_buffer);
-        (*c).prompt_buffer = xreallocarray_::<Utf8Data>((*c).prompt_buffer, size + 1).as_ptr();
-        first = (*c).prompt_buffer.add(off);
-        libc::memmove(
-            first.add(s_str.len()).cast(),
-            first.cast(),
-            n * size_of::<Utf8Data>(),
-        );
-        for (idx, &byte) in s_str.as_bytes().iter().enumerate() {
-            *first.add(idx) = Utf8Data::single(byte);
-        }
-        (*c).prompt_index = first.offset_from_unsigned((*c).prompt_buffer) + s_str.len();
-
-        1
-    }
-}
-
-/// Prompt forward to the next beginning of a word.
-unsafe fn status_prompt_forward_word(c: *mut client, size: usize, vi: i32, separators: *const u8) {
-    unsafe {
-        let mut idx = (*c).prompt_index;
-
-        // In emacs mode, skip until the first non-whitespace character.
-        if vi == 0 {
-            while idx != size && status_prompt_space((*c).prompt_buffer.add(idx)) != 0 {
-                idx += 1;
-            }
-        }
-
-        // Can't move forward if we're already at the end.
-        if idx == size {
-            (*c).prompt_index = idx;
-            return;
-        }
-
-        // Determine the current character class (separators or not).
-        let word_is_separators =
-            (status_prompt_in_list(separators, (*c).prompt_buffer.add(idx)) != 0
-                && status_prompt_space((*c).prompt_buffer.add(idx)) == 0) as i32;
-
-        // Skip ahead until the first space or opposite character class.
-        loop {
-            idx += 1;
-            if status_prompt_space((*c).prompt_buffer.add(idx)) != 0 {
-                // In vi mode, go to the start of the next word.
-                if vi != 0 {
-                    while idx != size && status_prompt_space((*c).prompt_buffer.add(idx)) != 0 {
-                        idx += 1;
-                    }
-                }
-                break;
-            }
-
-            if !(idx != size
-                && word_is_separators
-                    == status_prompt_in_list(separators, (*c).prompt_buffer.add(idx)))
-            {
-                break;
-            }
-        }
-
-        (*c).prompt_index = idx;
-    }
-}
-
-/// Prompt forward to the next end of a word.
-unsafe fn status_prompt_end_word(c: *mut client, size: usize, separators: *const u8) {
-    unsafe {
-        let mut idx = (*c).prompt_index;
-        // int word_is_separators;
-
-        // Can't move forward if we're already at the end.
-        if idx == size {
-            return;
-        }
-
-        // Find the next word.
-        loop {
-            idx += 1;
-            if idx == size {
-                (*c).prompt_index = idx;
-                return;
-            }
-            if status_prompt_space((*c).prompt_buffer.add(idx)) == 0 {
-                break;
-            }
-        }
-
-        // Determine the character class (separators or not).
-        let word_is_separators = status_prompt_in_list(separators, (*c).prompt_buffer.add(idx));
-
-        // Skip ahead until the next space or opposite character class.
-        loop {
-            idx += 1;
-            if idx == size {
-                break;
-            }
-            if !(status_prompt_space((*c).prompt_buffer.add(idx)) == 0
-                && word_is_separators
-                    == status_prompt_in_list(separators, (*c).prompt_buffer.add(idx)))
-            {
-                break;
-            }
-        }
-
-        // Back up to the previous character to stop at the end of the word.
-        (*c).prompt_index = idx - 1;
-    }
-}
-
-/// Prompt backward to the previous beginning of a word.
-unsafe fn status_prompt_backward_word(c: *mut client, separators: *const u8) {
-    unsafe {
-        let mut idx = (*c).prompt_index;
-
-        // Find non-whitespace.
-        while idx != 0 {
-            idx -= 1;
-            if status_prompt_space((*c).prompt_buffer.add(idx)) == 0 {
-                break;
-            }
-        }
-        let word_is_separators = status_prompt_in_list(separators, (*c).prompt_buffer.add(idx));
-
-        // Find the character before the beginning of the word.
-        while idx != 0 {
-            idx -= 1;
-            if status_prompt_space((*c).prompt_buffer.add(idx)) != 0
-                || word_is_separators
-                    != status_prompt_in_list(separators, (*c).prompt_buffer.add(idx))
-            {
-                // Go back to the word.
-                idx += 1;
-                break;
-            }
-        }
-        (*c).prompt_index = idx;
-    }
-}
-
-/// Handle keys in prompt.
-pub unsafe fn status_prompt_key(c: *mut client, mut key: key_code) -> i32 {
-    unsafe {
-        let oo = (*client_get_session(c)).options;
-        let mut s;
-        let cp;
-        let mut prefix = b'=';
-
-        let separators: *const u8;
-        let mut idx: usize;
-
-        let tmp: Utf8Data;
-
-        let word_is_separators: i32;
-
-        if (*c).prompt_flags.intersects(prompt_flags::PROMPT_KEY) {
-            let keystring = CString::new(key_string_lookup_key(key, 0)).unwrap_or_default();
-            (*c).prompt_inputcb.unwrap()(c, NonNull::new((*c).prompt_data).unwrap(), keystring.as_ptr().cast(), 1);
-            status_prompt_clear(c);
-            return 0;
-        }
-
-        let size: usize = utf8_strlen((*c).prompt_buffer);
-
-        'changed: {
-            'append_key: {
-                'process_key: {
-                    if (*c).prompt_flags.intersects(prompt_flags::PROMPT_NUMERIC) {
-                        if key >= b'0' as u64 && key <= b'9' as u64 {
-                            break 'append_key;
-                        }
-                        s = utf8_tocstr((*c).prompt_buffer);
-                        (*c).prompt_inputcb.unwrap()(
-                            c,
-                            NonNull::new((*c).prompt_data).unwrap(),
-                            s,
-                            1,
-                        );
-                        status_prompt_clear(c);
-                        free_(s);
-                        return 1;
-                    }
-                    key &= !KEYC_MASK_FLAGS;
-
-                    let keys = modekey::try_from(options_get_number_(
-                        (*client_get_session(c)).options,
-                        "status-keys",
-                    ) as i32);
-                    if keys == Ok(modekey::MODEKEY_VI) {
-                        match status_prompt_translate_key(c, key, &raw mut key) {
-                            1 => break 'process_key,
-                            2 => break 'append_key,
-                            _ => return 0,
-                        }
-                    }
-                } // process_key:
-
-                match key {
-                    code::KEYC_LEFT | code::B_CTRL => {
-                        if (*c).prompt_index > 0 {
-                            (*c).prompt_index -= 1;
-                        }
-                    }
-                    code::KEYC_RIGHT | code::F_CTRL => {
-                        if (*c).prompt_index < size {
-                            (*c).prompt_index += 1;
-                        }
-                    }
-                    code::KEYC_HOME | code::A_CTRL => {
-                        if (*c).prompt_index != 0 {
-                            (*c).prompt_index = 0;
-                        }
-                    }
-                    code::KEYC_END | code::E_CTRL => {
-                        if (*c).prompt_index != size {
-                            (*c).prompt_index = size;
-                        }
-                    }
-                    code::TAB => {
-                        if status_prompt_replace_complete(c, None) != 0 {
-                            break 'changed;
-                        }
-                    }
-                    code::KEYC_BSPACE | code::H_CTRL => {
-                        if (*c).prompt_index != 0 {
-                            if (*c).prompt_index == size {
-                                (*c).prompt_index -= 1;
-                                (*(*c).prompt_buffer.add((*c).prompt_index)).size = 0;
-                            } else {
-                                libc::memmove(
-                                    (*c).prompt_buffer.add((*c).prompt_index - 1).cast(),
-                                    (*c).prompt_buffer.add((*c).prompt_index).cast(),
-                                    (size + 1 - (*c).prompt_index) * size_of::<Utf8Data>(),
-                                );
-                                (*c).prompt_index -= 1;
-                            }
-                            break 'changed;
-                        }
-                    }
-                    code::KEYC_DC | code::D_CTRL => {
-                        if (*c).prompt_index != size {
-                            libc::memmove(
-                                (*c).prompt_buffer.add((*c).prompt_index).cast(),
-                                (*c).prompt_buffer.add((*c).prompt_index + 1).cast(),
-                                (size + 1 - (*c).prompt_index) * size_of::<Utf8Data>(),
-                            );
-                            break 'changed;
-                        }
-                    }
-                    code::U_CTRL => {
-                        (*(*c).prompt_buffer).size = 0;
-                        (*c).prompt_index = 0;
-                        break 'changed;
-                    }
-
-                    code::K_CTRL => {
-                        if (*c).prompt_index < size {
-                            (*(*c).prompt_buffer.add((*c).prompt_index)).size = 0;
-                            break 'changed;
-                        }
-                    }
-                    code::W_CTRL => {
-                        separators = options_get_string_(oo, "word-separators");
-                        idx = (*c).prompt_index;
-
-                        // Find non-whitespace.
-                        while idx != 0 {
-                            idx -= 1;
-                            if status_prompt_space((*c).prompt_buffer.add(idx)) == 0 {
-                                break;
-                            }
-                        }
-                        word_is_separators =
-                            status_prompt_in_list(separators, (*c).prompt_buffer.add(idx));
-
-                        // Find the character before the beginning of the word.
-                        while idx != 0 {
-                            idx -= 1;
-                            if status_prompt_space((*c).prompt_buffer.add(idx)) != 0
-                                || word_is_separators
-                                    != status_prompt_in_list(
-                                        separators,
-                                        (*c).prompt_buffer.add(idx),
-                                    )
-                            {
-                                // Go back to the word.
-                                idx += 1;
-                                break;
-                            }
-                        }
-
-                        free_((*c).prompt_saved);
-                        (*c).prompt_saved =
-                            xcalloc_::<Utf8Data>(((*c).prompt_index - idx) + 1).as_ptr();
-                        libc::memcpy(
-                            (*c).prompt_saved.cast(),
-                            (*c).prompt_buffer.add(idx).cast(),
-                            ((*c).prompt_index - idx) * size_of::<Utf8Data>(),
-                        );
-
-                        libc::memmove(
-                            (*c).prompt_buffer.add(idx).cast(),
-                            (*c).prompt_buffer.add((*c).prompt_index).cast(),
-                            (size + 1 - (*c).prompt_index) * size_of::<Utf8Data>(),
-                        );
-                        libc::memset(
-                            (*c).prompt_buffer
-                                .add(size - ((*c).prompt_index - idx))
-                                .cast(),
-                            b'\0' as i32,
-                            ((*c).prompt_index - idx) * size_of::<Utf8Data>(),
-                        );
-                        (*c).prompt_index = idx;
-
-                        break 'changed;
-                    }
-                    code::RIGHT_CTRL | code::F_META => {
-                        separators = options_get_string_(oo, "word-separators");
-                        status_prompt_forward_word(c, size, 0, separators);
-                        break 'changed;
-                    }
-                    code::E_UPPER_VI => {
-                        status_prompt_end_word(c, size, c!(""));
-                        break 'changed;
-                    }
-                    code::E_VI => {
-                        separators = options_get_string_(oo, "word-separators");
-                        status_prompt_end_word(c, size, separators);
-                        break 'changed;
-                    }
-                    code::W_UPPER_VI => {
-                        status_prompt_forward_word(c, size, 1, c!(""));
-                        break 'changed;
-                    }
-                    code::W_VI => {
-                        separators = options_get_string_(oo, "word-separators");
-                        status_prompt_forward_word(c, size, 1, separators);
-                        break 'changed;
-                    }
-                    code::B_VI => {
-                        status_prompt_backward_word(c, c!(""));
-                        break 'changed;
-                    }
-                    code::LEFT_CTRL | code::B_META => {
-                        separators = options_get_string_(oo, "word-separators");
-                        status_prompt_backward_word(c, separators);
-                        break 'changed;
-                    }
-                    code::KEYC_UP | code::P_CTRL => {
-                        if let Some(line) =
-                            prompt_history_up((*c).prompt_type, &mut (*c).prompt_hindex)
-                        {
-                            let line = CString::new(line).unwrap_or_default();
-                            free_((*c).prompt_buffer);
-                            (*c).prompt_buffer = utf8_fromcstr(line.as_ptr().cast());
-                            (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
-                            break 'changed;
-                        }
-                    }
-                    code::KEYC_DOWN | code::N_CTRL => {
-                        {
-                            let line =
-                                prompt_history_down((*c).prompt_type, &mut (*c).prompt_hindex);
-                            let line = CString::new(line).unwrap_or_default();
-                            free_((*c).prompt_buffer);
-                            (*c).prompt_buffer = utf8_fromcstr(line.as_ptr().cast());
-                            (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
-                            break 'changed;
-                        }
-                    }
-                    code::Y_CTRL => {
-                        if status_prompt_paste(c) != 0 {
-                            break 'changed;
-                        }
-                    }
-                    code::T_CTRL => {
-                        idx = (*c).prompt_index;
-                        if idx < size {
-                            idx += 1;
-                        }
-                        if idx >= 2 {
-                            tmp = *(*c).prompt_buffer.add(idx - 2);
-                            *(*c).prompt_buffer.add(idx - 2) = *(*c).prompt_buffer.add(idx - 1);
-                            *(*c).prompt_buffer.add(idx - 1) = tmp;
-                            (*c).prompt_index = idx;
-                            break 'changed;
-                        }
-                    }
-                    code::CR | code::LF => {
-                        s = utf8_tocstr((*c).prompt_buffer);
-                        if *s != b'\0' {
-                            prompt_history_add((*c).prompt_type, CStr::from_ptr(s.cast()).to_bytes());
-                        }
-                        if (*c).prompt_inputcb.unwrap()(
-                            c,
-                            NonNull::new((*c).prompt_data).unwrap(),
-                            s,
-                            1,
-                        ) == 0
-                        {
-                            status_prompt_clear(c);
-                        }
-                        free_(s);
-                    }
-                    code::ESC | code::C_CTRL | code::G_CTRL => {
-                        if (*c).prompt_inputcb.unwrap()(
-                            c,
-                            NonNull::new((*c).prompt_data).unwrap(),
-                            null_mut(),
-                            1,
-                        ) == 0
-                        {
-                            status_prompt_clear(c);
-                        }
-                    }
-                    code::R_CTRL => {
-                        if (*c)
-                            .prompt_flags
-                            .intersects(prompt_flags::PROMPT_INCREMENTAL)
-                        {
-                            if (*(*c).prompt_buffer).size == 0 {
-                                prefix = b'=';
-                                free_((*c).prompt_buffer);
-                                (*c).prompt_buffer = utf8_fromcstr((*c).prompt_last);
-                                (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
-                            } else {
-                                prefix = b'-';
-                            }
-                            break 'changed;
-                        }
-                    }
-                    code::S_CTRL => {
-                        if (*c)
-                            .prompt_flags
-                            .intersects(prompt_flags::PROMPT_INCREMENTAL)
-                        {
-                            if (*(*c).prompt_buffer).size == 0 {
-                                prefix = b'=';
-                                free_((*c).prompt_buffer);
-                                (*c).prompt_buffer = utf8_fromcstr((*c).prompt_last);
-                                (*c).prompt_index = utf8_strlen((*c).prompt_buffer);
-                            } else {
-                                prefix = b'+';
-                            }
-                            break 'changed;
-                        }
-                    }
-                    _ => break 'append_key,
-                }
-
-                (*c).flags |= client_flag::REDRAWSTATUS;
-                return 0;
-            } // append_key:
-            if key <= 0x7f {
-                tmp = Utf8Data::single(key as u8);
-            } else if KEYC_IS_UNICODE(key) {
-                tmp = Utf8Data::from_char(key as u32);
-            } else {
-                return 0;
-            }
-
-            (*c).prompt_buffer = xreallocarray_((*c).prompt_buffer, size + 2).as_ptr();
-
-            if (*c).prompt_index == size {
-                *(*c).prompt_buffer.add((*c).prompt_index) = tmp;
-                (*c).prompt_index += 1;
-                (*(*c).prompt_buffer.add((*c).prompt_index)).size = 0;
-            } else {
-                libc::memmove(
-                    (*c).prompt_buffer.add((*c).prompt_index + 1).cast(),
-                    (*c).prompt_buffer.add((*c).prompt_index).cast(),
-                    (size + 1 - (*c).prompt_index) * size_of::<Utf8Data>(),
-                );
-                *(*c).prompt_buffer.add((*c).prompt_index) = tmp;
-                (*c).prompt_index += 1;
-            }
-
-            if (*c).prompt_flags.intersects(prompt_flags::PROMPT_SINGLE) {
-                if utf8_strlen((*c).prompt_buffer) != 1 {
-                    status_prompt_clear(c);
-                } else {
-                    s = utf8_tocstr((*c).prompt_buffer);
-                    if (*c).prompt_inputcb.unwrap()(
-                        c,
-                        NonNull::new((*c).prompt_data).unwrap(),
-                        s,
-                        1,
-                    ) == 0
-                    {
-                        status_prompt_clear(c);
-                    }
-                    free_(s);
-                }
-            }
-        } // changed:
-        (*c).flags |= client_flag::REDRAWSTATUS;
-        if (*c)
-            .prompt_flags
-            .intersects(prompt_flags::PROMPT_INCREMENTAL)
-        {
-            s = utf8_tocstr((*c).prompt_buffer);
-            cp = format_nul!("{}{}", prefix as char, _s(s));
-            (*c).prompt_inputcb.unwrap()(c, NonNull::new((*c).prompt_data).unwrap(), cp, 0);
-            free_(cp);
-            free_(s);
-        }
-        0
-    }
-}
-
-/// Add to completion list.
-fn status_prompt_add_list(list: &mut Vec<String>, s: &str) {
-    // Check if item already exists
-    if !list.iter().any(|item| item.as_str() == s) {
-        list.push(s.to_string());
-    }
-}
-
-/// Build completion list.
-unsafe fn status_prompt_complete_list(s: *const u8, at_start: i32) -> Vec<String> {
-    unsafe {
-        let mut list = Vec::new();
-        let s = cstr_to_str(s);
-
-        let layouts: [&str; 7] = [
-            "even-horizontal",
-            "even-vertical",
-            "main-horizontal",
-            "main-horizontal-mirrored",
-            "main-vertical",
-            "main-vertical-mirrored",
-            "tiled",
-        ];
-
-        for cmdent in CMD_TABLE {
-            if cmdent.name.starts_with(s) {
-                status_prompt_add_list(&mut list, cmdent.name);
-            }
-            if let Some(alias) = cmdent.alias
-                && alias.starts_with(s)
-            {
-                status_prompt_add_list(&mut list, alias);
-            }
-        }
-        let o = options_get_only(GLOBAL_OPTIONS, "command-alias");
-        if !o.is_null() {
-            for (_, value) in options_array_strings(o) {
-                let value: *const u8 = value.as_ptr().cast();
-
-                let cp = libc::strchr(value, b'=' as i32);
-                if cp.is_null() {
-                    continue;
-                }
-                let valuelen = cp.offset_from_unsigned(value);
-                if s.len() > valuelen || !cstr_to_str(value).starts_with(s) {
-                    continue;
-                }
-
-                let tmp = format!("{:.*}", valuelen, _s(value));
-                status_prompt_add_list(&mut list, &tmp);
-            }
-        }
-        if at_start != 0 {
-            return list;
-        }
-        for oe in &OPTIONS_TABLE {
-            if oe.name.starts_with(s) {
-                status_prompt_add_list(&mut list, oe.name);
-            }
-        }
-        for layout in layouts {
-            if layout.starts_with(s) {
-                status_prompt_add_list(&mut list, layout);
-            }
-        }
-        list
-    }
-}
-
-/// Find longest prefix.
-fn status_prompt_complete_prefix(list: &[String]) -> String {
-    if list.is_empty() {
-        return String::new();
-    }
-
-    let first = &list[0];
-    let mut prefix_len = first.len();
-
-    for item in &list[1..] {
-        prefix_len = prefix_len
-            .min(item.len())
-            .min(
-                first
-                    .bytes()
-                    .zip(item.bytes())
-                    .take_while(|(a, b)| a == b)
-                    .count()
-            );
-    }
-
-    first[..prefix_len].to_string()
-}
-
-/// Complete word menu callback.
-unsafe fn status_prompt_menu_callback(
-    _menu: *mut menu,
-    mut idx: u32,
-    key: key_code,
-    data: *mut c_void,
-) {
-    unsafe {
-        let spm: *mut status_prompt_menu = data.cast();
-        let c = (*spm).c;
-
-        if key != KEYC_NONE {
-            idx += (*spm).start;
-            let selected = &(&(*spm).list)[idx as usize];
-            let completion = if (*spm).flag == b'\0' {
-                selected.clone()
-            } else {
-                format!("-{}{}", (*spm).flag as char, selected)
-            };
-            if status_prompt_replace_complete(c, Some(&completion)) != 0 {
-                (*c).flags |= client_flag::REDRAWSTATUS;
-            }
-        }
-
-        // Assign empty Vec to drop the old Vec<String> before freeing the struct
-        (*spm).list = Vec::new();
-        free_(spm);
-    }
-}
-
-/// Show complete word menu.
-unsafe fn status_prompt_complete_list_menu(
-    c: *mut client,
-    list: Vec<String>,
-    mut offset: u32,
-    flag: u8,
-) -> i32 {
-    unsafe {
-        let lines = status_line_size(c);
-        let size = list.len() as u32;
-
-        if size <= 1 {
-            return 0;
-        }
-        if (*c).tty.sy - lines < 3 {
-            return 0;
-        }
-
-        let spm: *mut status_prompt_menu = Box::leak(Box::new(status_prompt_menu {
-            c,
-            start: 0,
-            list,
-            flag,
-        })) as *mut status_prompt_menu;
-
-        let mut height = (*c).tty.sy - lines - 2;
-        if height > 10 {
-            height = 10;
-        }
-        if height > size {
-            height = size;
-        }
-        (*spm).start = size - height;
-
-        let menu = Box::leak(menu_create(""));
-        for i in (*spm).start..size {
-            let item = menu_item {
-                name: Cow::Owned((&(*spm).list)[i as usize].to_string()),
-                key: b'0' as u64 + (i as i64 - (*spm).start as i64) as u64,
-                command: SyncCharPtr::null(),
-            };
-            menu_add_item(menu, Some(&item), null_mut(), c, null_mut());
-        }
-
-        let py = if options_get_number_((*client_get_session(c)).options, "status-position") == 0 {
-            lines
-        } else {
-            (*c).tty.sy - 3 - height
-        };
-        let prompt_c = std::ffi::CString::new((*c).prompt_string.as_deref().unwrap_or(""))
-            .unwrap_or_default();
-        offset += utf8_cstrwidth(prompt_c.as_ptr().cast::<u8>());
-        if offset > 2 {
-            offset -= 2;
-        } else {
-            offset = 0;
-        }
-
-        if menu_display(
-            menu,
-            MENU_NOMOUSE | MENU_TAB,
-            0,
-            null_mut(),
-            offset,
-            py,
-            c,
-            box_lines::BOX_LINES_DEFAULT,
-            null_mut(),
-            null_mut(),
-            null_mut(),
-            null_mut(),
-            Some(status_prompt_menu_callback),
-            spm.cast(),
-        ) != 0
-        {
-            menu_free(menu);
-            // Assign empty Vec to drop the Vec<String>
-            (*spm).list = Vec::new();
-            free_(spm);
-            return 0;
-        }
-        // Success - callback will free the list and spm
-        1
-    }
-}
-
-/// Show complete word menu.
-unsafe fn status_prompt_complete_window_menu(
-    c: *mut client,
-    s: *mut session,
-    word: *const u8,
-    mut offset: u32,
-    flag: u8,
-) -> Option<String> {
-    unsafe {
-        let mut list = Vec::new();
-        let lines = status_line_size(c);
-
-        if (*c).tty.sy - lines < 3 {
-            return None;
-        }
-
-        let mut height = (*c).tty.sy - lines - 2;
-        if height > 10 {
-            height = 10;
-        }
-
-        let spm = Box::leak(Box::new(status_prompt_menu {
-            c,
-            start: 0,
-            list: Vec::new(),
-            flag,
-        })) as *mut status_prompt_menu;
-
-        let menu = Box::leak(menu_create(""));
-        for &wl in (*(&raw mut (*s).windows)).values() {
-            let mut tmp;
-            if !word.is_null() && *word != b'\0' {
-                tmp = format!("{}", (*wl).idx);
-                if !tmp.starts_with(cstr_to_str(word)) {
-                    continue;
-                }
-            }
-
-            tmp = format!("{}:{} ({})", (*s).name, (*wl).idx, (*winlink_window(wl)).name.as_deref().unwrap_or(""));
-            list.push(format!("{}:{}", (*s).name, (*wl).idx));
-            let item = menu_item {
-                name: Cow::Owned(tmp),
-                key: (b'0' as u64) + list.len() as u64 - 1,
-                command: SyncCharPtr::null(),
-            };
-            menu_add_item(menu, Some(&item), null_mut(), c, null_mut());
-
-            if list.len() == height as usize {
-                break;
-            }
-        }
-        if list.is_empty() {
-            menu_free(menu);
-            free_(spm);
-            return None;
-        }
-        if list.len() == 1 {
-            menu_free(menu);
-            let result = if flag != b'\0' {
-                format!("-{}{}", flag as char, list[0])
-            } else {
-                list[0].clone()
-            };
-            free_(spm);
-            return Some(result);
-        }
-        if height as usize > list.len() {
-            height = list.len() as u32;
-        }
-
-        (*spm).list = list;
-
-        let py = if options_get_number_((*client_get_session(c)).options, "status-position") == 0 {
-            lines
-        } else {
-            (*c).tty.sy - 3 - height
-        };
-        let prompt_c = std::ffi::CString::new((*c).prompt_string.as_deref().unwrap_or(""))
-            .unwrap_or_default();
-        offset += utf8_cstrwidth(prompt_c.as_ptr().cast::<u8>());
-        if offset > 2 {
-            offset -= 2;
-        } else {
-            offset = 0;
-        }
-
-        if menu_display(
-            menu,
-            MENU_NOMOUSE | MENU_TAB,
-            0,
-            null_mut(),
-            offset,
-            py,
-            c,
-            box_lines::BOX_LINES_DEFAULT,
-            null_mut(),
-            null_mut(),
-            null_mut(),
-            null_mut(),
-            Some(status_prompt_menu_callback),
-            spm.cast(),
-        ) != 0
-        {
-            menu_free(menu);
-            // Assign empty Vec to drop the Vec<String>
-            (*spm).list = Vec::new();
-            free_(spm);
-            return None;
-        }
-        None
-    }
-}
-
-/// Complete a session.
-unsafe fn status_prompt_complete_session(
-    list: &mut Vec<String>,
-    s: *const u8,
-    flag: u8,
-) -> Option<String> {
-    unsafe {
-        let mut n: [u8; 11] = [0; 11];
-
-        for loop_ in sessions_iter() {
-            if *s == b'\0'
-                || strncmp(
-                    CString::new((*loop_).name.to_string())
-                        .expect("TODO remove this allocation")
-                        .as_ptr()
-                        .cast(),
-                    s,
-                    strlen(s),
-                ) == 0
-            {
-                list.push(format!("{}:", (*loop_).name));
-            } else if *s == b'$' {
-                _ = xsnprintf_!((&raw mut n).cast(), n.len(), "{}", (*loop_).id);
-                if *s.add(1) == b'\0' || strncmp((&raw mut n).cast(), s.add(1), strlen(s) - 1) == 0
-                {
-                    list.push(format!("${}:", _s((&raw const n).cast::<u8>())));
-                }
-            }
-        }
-        let prefix = status_prompt_complete_prefix(list);
-        if prefix.is_empty() {
-            None
-        } else if flag != b'\0' {
-            Some(format!("-{}{}", flag as char, prefix))
-        } else {
-            Some(prefix)
-        }
-    }
-}
-
-/// Complete word.
-unsafe fn status_prompt_complete(c: *mut client, word: *const u8, mut offset: u32) -> Option<String> {
-    unsafe {
-        let session: *mut session;
-
-        let s: *const u8;
-        let colon: *mut u8;
-
-        let mut flag: u8 = b'\0';
-
-        let mut list: Vec<String> = Vec::new();
-        let copy: *mut u8;
-        let mut out: Option<String> = None;
-        let word_str = cstr_to_str(word);
-
-        if *word == b'\0' {
-            return None;
-        }
-
-        'found: {
-            if strncmp(word, c!("-t"), 2) != 0 && strncmp(word, c!("-s"), 2) != 0 {
-                list = status_prompt_complete_list(word, (offset == 0) as i32);
-                out = if list.is_empty() {
-                    None
-                } else if list.len() == 1 {
-                    Some(format!("{} ", list[0]))
-                } else {
-                    Some(status_prompt_complete_prefix(&list))
-                };
-                break 'found;
-            }
-
-            s = word.add(2);
-            flag = *word.add(1);
-            offset += 2;
-            colon = libc::strchr(s, b':' as i32);
-
-            // If there is no colon, complete as a session.
-            if colon.is_null() {
-                out = status_prompt_complete_session(&mut list, s, flag);
-                break 'found;
-            }
-
-            // If there is a colon but no period, find session and show a menu.
-            if libc::strchr(colon.add(1), b'.' as i32).is_null() {
-                if *s == b':' {
-                    session = client_get_session(c);
-                } else {
-                    copy = xstrdup(s).as_ptr();
-                    *libc::strchr(copy, b':' as i32) = b'\0';
-                    session = session_find(cstr_to_str(copy));
-                    free_(copy);
-                    if session.is_null() {
-                        break 'found;
-                    }
-                }
-                out = Some(status_prompt_complete_window_menu(c, session, colon.add(1), offset, flag)?);
-            }
-        } // found:
-        if !list.is_empty() {
-            list.sort_unstable();
-            for (i, item) in list.iter().enumerate() {
-                log_debug!("complete {i}: {}", item);
-            }
-        }
-
-        if out.as_ref().is_some_and(|result| result == word_str) {
-            out = None;
-        }
-
-        if out.is_some() {
-            // We have a result, list will be automatically dropped
-        } else {
-            // No result, show menu which takes ownership of list
-            status_prompt_complete_list_menu(c, list, offset, flag);
-        }
-        out
-    }
-}
-
-mod code {
-    use super::*;
-
-    pub const A: u64 = 'a' as u64;
-    pub const B: u64 = 'b' as u64;
-    pub const D: u64 = 'd' as u64;
-    pub const E: u64 = 'e' as u64;
-    pub const H: u64 = 'h' as u64;
-    pub const I: u64 = 'i' as u64;
-    pub const J: u64 = 'j' as u64;
-    pub const K: u64 = 'k' as u64;
-    pub const L: u64 = 'l' as u64;
-    pub const P: u64 = 'p' as u64;
-    pub const Q: u64 = 'q' as u64;
-    pub const S: u64 = 's' as u64;
-    pub const W: u64 = 'w' as u64;
-    pub const X: u64 = 'x' as u64;
-
-    pub const DOLLAR: u64 = '$' as u64;
-    pub const ZERO: u64 = '0' as u64;
-    pub const CARET: u64 = '^' as u64;
-
-    pub const A_UPPER: u64 = 'A' as u64;
-    pub const B_UPPER: u64 = 'B' as u64;
-    pub const C_UPPER: u64 = 'C' as u64;
-    pub const D_UPPER: u64 = 'D' as u64;
-    pub const E_UPPER: u64 = 'E' as u64;
-    pub const I_UPPER: u64 = 'I' as u64;
-    pub const S_UPPER: u64 = 'S' as u64;
-    pub const W_UPPER: u64 = 'W' as u64;
-    pub const X_UPPER: u64 = 'X' as u64;
-
-    pub const TAB: u64 = b'\x09' as u64;
-    pub const KEYC_HOME: u64 = keyc::KEYC_HOME as u64;
-    pub const KEYC_END: u64 = keyc::KEYC_END as u64;
-    pub const KEYC_UP: u64 = keyc::KEYC_UP as u64;
-    pub const KEYC_DOWN: u64 = keyc::KEYC_DOWN as u64;
-    pub const KEYC_LEFT: u64 = keyc::KEYC_LEFT as u64;
-    pub const KEYC_RIGHT: u64 = keyc::KEYC_RIGHT as u64;
-    pub const KEYC_BSPACE: u64 = keyc::KEYC_BSPACE as u64;
-    pub const KEYC_DC: u64 = keyc::KEYC_DC as u64;
-
-    pub const A_CTRL: u64 = 'a' as u64 | KEYC_CTRL;
-    pub const B_CTRL: u64 = 'b' as u64 | KEYC_CTRL;
-    pub const C_CTRL: u64 = 'c' as u64 | KEYC_CTRL;
-    pub const D_CTRL: u64 = 'd' as u64 | KEYC_CTRL;
-    pub const E_CTRL: u64 = 'e' as u64 | KEYC_CTRL;
-    pub const F_CTRL: u64 = 'f' as u64 | KEYC_CTRL;
-    pub const G_CTRL: u64 = 'g' as u64 | KEYC_CTRL;
-    pub const H_CTRL: u64 = 'h' as u64 | KEYC_CTRL;
-    pub const K_CTRL: u64 = 'k' as u64 | KEYC_CTRL;
-    pub const N_CTRL: u64 = 'n' as u64 | KEYC_CTRL;
-    pub const P_CTRL: u64 = 'p' as u64 | KEYC_CTRL;
-    pub const R_CTRL: u64 = 'r' as u64 | KEYC_CTRL;
-    pub const S_CTRL: u64 = 's' as u64 | KEYC_CTRL;
-    pub const T_CTRL: u64 = 't' as u64 | KEYC_CTRL;
-    pub const U_CTRL: u64 = 'u' as u64 | KEYC_CTRL;
-    pub const W_CTRL: u64 = 'w' as u64 | KEYC_CTRL;
-    pub const Y_CTRL: u64 = 'y' as u64 | KEYC_CTRL;
-
-    pub const LEFT_CTRL: u64 = keyc::KEYC_LEFT as u64 | KEYC_CTRL;
-    pub const RIGHT_CTRL: u64 = keyc::KEYC_RIGHT as u64 | KEYC_CTRL;
-
-    pub const B_META: u64 = 'b' as u64 | KEYC_META;
-    pub const F_META: u64 = 'f' as u64 | KEYC_META;
-
-    pub const E_UPPER_VI: u64 = 'E' as u64 | KEYC_VI;
-    pub const E_VI: u64 = 'e' as u64 | KEYC_VI;
-    pub const W_UPPER_VI: u64 = 'W' as u64 | KEYC_VI;
-    pub const W_VI: u64 = 'w' as u64 | KEYC_VI;
-    pub const B_VI: u64 = 'b' as u64 | KEYC_VI;
-
-    pub const CR: u64 = '\r' as u64;
-    pub const LF: u64 = '\n' as u64;
-    pub const ESC: u64 = '\x1b' as u64;
 }

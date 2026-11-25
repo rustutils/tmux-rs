@@ -195,7 +195,6 @@ fn vi_editing() {
 /// 3.8: Escape into vi command mode moves the cursor left, as vi does, so
 /// x deletes the last character.
 #[test]
-#[ignore = "3.8 prompt keys are not ported yet (run 12 task 4)"]
 fn vi_escape_moves_left() {
     let mut p = Prompt::new(&[&["set", "-g", "status-keys", "vi"]]);
     assert_eq!(p.submit("abc", &[ESCAPE, b"x"]), "ab");
@@ -203,7 +202,6 @@ fn vi_escape_moves_left() {
 
 /// 3.8: C-v inserts the next key as it is.
 #[test]
-#[ignore = "3.8 prompt keys are not ported yet (run 12 task 4)"]
 fn ctrl_v_inserts_the_next_key() {
     let mut p = Prompt::new(&[]);
     assert_eq!(p.submit("a", &[b"\x16", b"\x01", b"b"]), "a\u{1}b");
@@ -211,7 +209,6 @@ fn ctrl_v_inserts_the_next_key() {
 
 /// 3.8: keypad keys insert the text they show.
 #[test]
-#[ignore = "3.8 prompt keys are not ported yet (run 12 task 4)"]
 fn keypad_keys_insert_text() {
     let mut p = Prompt::new(&[]);
     // KP1, KP+ and KP* in application keypad form.
@@ -338,7 +335,6 @@ fn confirm_before() {
 }
 
 #[test]
-#[ignore = "3.8 inline completion is not ported yet (run 12 task 4)"]
 fn tab_completes_commands() {
     let mut p = Prompt::new(&[]);
     // A unique prefix is completed. Completion adds a space, but
@@ -351,7 +347,6 @@ fn tab_completes_commands() {
 
 /// 3.8 shows the candidates inline after the text instead of in a menu.
 #[test]
-#[ignore = "3.8 inline completion is not ported yet (run 12 task 4)"]
 fn tab_shows_candidates_inline() {
     let mut p = Prompt::new(&[]);
     p.open_store();

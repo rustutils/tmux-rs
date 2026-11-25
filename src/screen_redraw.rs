@@ -578,7 +578,7 @@ unsafe fn screen_redraw_update(c: *mut client, mut flags: client_flag) -> client
 
         let mut redraw = if (*c).message_string.is_some() {
             status_message_redraw(c)
-        } else if (*c).prompt_string.is_some() {
+        } else if (*c).prompt.is_some() {
             status_prompt_redraw(c)
         } else {
             status_redraw(c)
@@ -632,7 +632,7 @@ pub unsafe fn screen_redraw_set_context(c: *mut client, ctx: *mut screen_redraw_
         (*ctx).c = c;
 
         let mut lines = status_line_size(c);
-        if (*c).message_string.is_some() || (*c).prompt_string.is_some() {
+        if (*c).message_string.is_some() || (*c).prompt.is_some() {
             lines = if lines == 0 { 1 } else { lines };
         }
         if lines != 0 && options_get_number_(oo, "status-position") == 0 {

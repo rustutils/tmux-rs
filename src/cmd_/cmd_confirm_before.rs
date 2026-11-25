@@ -103,7 +103,7 @@ unsafe fn cmd_confirm_before_callback(
     c: *mut client,
     cdata: NonNull<cmd_confirm_before_data>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let item = (*cdata.as_ptr()).item;

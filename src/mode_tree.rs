@@ -1086,7 +1086,7 @@ pub unsafe fn mode_tree_search_callback(
     _c: *mut client,
     mtd: NonNull<mode_tree_data>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let mtd: *mut mode_tree_data = mtd.as_ptr();
@@ -1117,7 +1117,7 @@ pub unsafe fn mode_tree_filter_callback(
     _c: *mut client,
     data: NonNull<mode_tree_data>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let mtd: *mut mode_tree_data = data.as_ptr();

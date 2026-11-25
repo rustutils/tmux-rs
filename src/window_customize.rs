@@ -1261,7 +1261,7 @@ pub unsafe fn window_customize_set_option_callback(
     c: *mut client,
     item: NonNull<window_customize_itemdata>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let item = item.as_ptr();
@@ -1505,7 +1505,7 @@ pub unsafe fn window_customize_set_command_callback(
     c: *mut client,
     item: NonNull<window_customize_itemdata>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let item = item.as_ptr();
@@ -1547,7 +1547,7 @@ pub unsafe fn window_customize_set_note_callback(
     _c: *mut client,
     item: NonNull<window_customize_itemdata>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let item = item.as_ptr();
@@ -1733,7 +1733,7 @@ pub unsafe fn window_customize_change_current_callback(
     _c: *mut client,
     modedata: NonNull<window_customize_modedata>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let data: *mut window_customize_modedata = modedata.as_ptr();
@@ -1778,7 +1778,7 @@ pub unsafe fn window_customize_change_tagged_callback(
     c: *mut client,
     modedata: NonNull<window_customize_modedata>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let data: *mut window_customize_modedata = modedata.as_ptr();

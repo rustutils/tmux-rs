@@ -14,6 +14,7 @@
 use std::time::Duration;
 
 use crate::*;
+use crate::prompt::KeyResult;
 use crate::{
     compat::imsg::{IMSG_HEADER_SIZE, imsg_get_fd},
     options_::options_get_number_,
@@ -264,7 +265,7 @@ pub unsafe fn server_client_create(fd: i32) -> *mut client {
         std::ptr::write(&raw mut (*c).term_name, None);
         std::ptr::write(&raw mut (*c).term_type, None);
         std::ptr::write(&raw mut (*c).message_string, None);
-        std::ptr::write(&raw mut (*c).prompt_string, None);
+        std::ptr::write(&raw mut (*c).prompt, None);
         std::ptr::write(&raw mut (*c).exit_session, None);
         std::ptr::write(&raw mut (*c).exit_message, None);
         std::ptr::write(&raw mut (*c).cwd, None);
@@ -525,9 +526,12 @@ pub unsafe fn server_client_lost(c: *mut client) {
         // message_string is Option<String>, dropped automatically by Box drop.
         (*c).message_timer = None;
 
-        free_((*c).prompt_saved);
-        // prompt_string is Option<String>, dropped automatically by Box drop.
-        free_((*c).prompt_buffer);
+        // As prompt_free in 3.8: the prompt goes, and its callback data.
+        if (*c).prompt.take().is_some()
+            && let (Some(freecb), Some(data)) = ((*c).prompt_freecb, NonNull::new((*c).prompt_data))
+        {
+            freecb(data);
+        }
 
         format_lost_client(c);
         // environ: Box<Environ> dropped automatically by registry removal
@@ -2291,7 +2295,14 @@ unsafe fn server_client_handle_key0(
                 }
             }
             server_client_clear_overlay(c);
-            if (*c).prompt_string.is_some() && status_prompt_key(c, (*event).key) == 0 {
+            // A key the prompt did not use, or a cursor key that left an
+            // incremental prompt, goes on to the key bindings.
+            if (*c).prompt.is_some()
+                && matches!(
+                    status_prompt_key(c, (*event).key),
+                    KeyResult::Handled | KeyResult::Close
+                )
+            {
                 return None;
             }
         }
@@ -2631,7 +2642,7 @@ pub unsafe fn server_client_reset_state(c: *mut client) {
         tty_margin_off(tty);
 
         // Move cursor to pane cursor and offset.
-        if (*c).prompt_string.is_some() {
+        if (*c).prompt.is_some() {
             n = options_get_number_((*client_get_session(c)).options, "status-position") as i32;
             if n == 0 {
                 cy = 0;
@@ -2643,7 +2654,7 @@ pub unsafe fn server_client_reset_state(c: *mut client) {
                     cy = (*tty).sy - n as u32;
                 }
             }
-            cx = (*c).prompt_cursor as u32;
+            cx = (*c).status.prompt_cx;
             mode &= !mode_flag::MODE_CURSOR;
         } else if (*c).overlay_draw.is_none() {
             cursor = 0;
@@ -2689,7 +2700,7 @@ pub unsafe fn server_client_reset_state(c: *mut client) {
         }
 
         // Clear bracketed paste mode if at the prompt.
-        if (*c).overlay_draw.is_none() && (*c).prompt_string.is_some() {
+        if (*c).overlay_draw.is_none() && (*c).prompt.is_some() {
             mode &= !mode_flag::MODE_BRACKETPASTE;
         }
 

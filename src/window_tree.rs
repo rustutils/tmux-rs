@@ -1225,7 +1225,7 @@ unsafe fn window_tree_command_callback(
     c: *mut client,
     data: NonNull<window_tree_modedata>,
     s: *const u8,
-    _done: i32,
+    _kind: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         if s.is_null() || *s == b'\0' || (*data.as_ptr()).dead != 0 {
@@ -1299,7 +1299,7 @@ unsafe fn window_tree_kill_current_callback(
     c: *mut client,
     data: NonNull<window_tree_modedata>,
     s: *const u8,
-    _: i32,
+    _: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let mtd: *mut mode_tree_data = (*data.as_ptr()).data;
@@ -1328,7 +1328,7 @@ unsafe fn window_tree_kill_tagged_callback(
     c: *mut client,
     data: NonNull<window_tree_modedata>,
     s: *const u8,
-    _: i32,
+    _: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
         let mtd: *mut mode_tree_data = (*data.as_ptr()).data;

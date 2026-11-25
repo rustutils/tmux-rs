@@ -139,7 +139,7 @@
 83 src/session_.rs
 24 src/sort_get.rs
 8 src/spawn.rs
-82 src/status.rs
+60 src/status.rs
 56 src/style_.rs
 24 src/tmux.rs
 238 src/tty_.rs
@@ -148,7 +148,7 @@
 36 src/tty_keys.rs
 36 src/tty_term_.rs
 5 src/utempter.rs
-21 src/utf8.rs
+15 src/utf8.rs
 10 src/utf8_combined.rs
 215 src/window_.rs
 34 src/window_buffer.rs

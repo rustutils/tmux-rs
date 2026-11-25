@@ -89,6 +89,7 @@ cfg_pub_mods! {
     mod options_table;
     mod osdep;
     mod paste;
+    mod prompt;
     mod prompt_history;
     mod popup;
     mod proc;
@@ -2256,6 +2257,8 @@ struct status_line {
 
     style: GridCell,
     entries: [status_line_entry; STATUS_LINES_LIMIT],
+    /// The column of the prompt's cursor, set when the prompt is drawn.
+    prompt_cx: u32,
 }
 
 // File in client.
@@ -2300,7 +2303,8 @@ struct overlay_ranges {
     nx: [u32; OVERLAY_MAX_RANGES],
 }
 
-type prompt_input_cb = Option<unsafe fn(*mut client, NonNull<c_void>, *const u8, i32) -> i32>;
+type prompt_input_cb =
+    Option<unsafe fn(*mut client, NonNull<c_void>, *const u8, prompt::KeyResult) -> i32>;
 type prompt_free_cb = Option<unsafe fn(NonNull<c_void>)>;
 
 type overlay_check_cb =
@@ -2468,20 +2472,12 @@ struct client {
     message_string: Option<String>,
     message_timer: Option<TimerHandle>,
 
-    prompt_string: Option<String>,
-    prompt_buffer: *mut Utf8Data,
-    prompt_last: *mut u8,
-    prompt_index: usize,
+    /// The status line prompt, if one is open. Its callback and data are
+    /// the fields after it.
+    prompt: Option<Box<prompt::Prompt>>,
     prompt_inputcb: prompt_input_cb,
     prompt_freecb: prompt_free_cb,
     prompt_data: *mut c_void,
-    prompt_hindex: prompt_history::HistoryPositions,
-    prompt_mode: prompt_mode,
-    prompt_saved: *mut Utf8Data,
-
-    prompt_flags: prompt_flags,
-    prompt_type: prompt_history::PromptType,
-    prompt_cursor: c_int,
 
     session: Option<SessionId>,
     last_session: Option<SessionId>,
@@ -2594,13 +2590,6 @@ enum exit_type {
     CLIENT_EXIT_RETURN,
     CLIENT_EXIT_SHUTDOWN,
     CLIENT_EXIT_DETACH,
-}
-
-#[repr(i32)]
-#[derive(Copy, Clone, Eq, PartialEq)]
-enum prompt_mode {
-    PROMPT_ENTRY,
-    PROMPT_COMMAND,
 }
 
 bitflags::bitflags! {

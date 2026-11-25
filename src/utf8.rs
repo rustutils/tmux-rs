@@ -180,35 +180,6 @@ pub unsafe fn utf8_sanitize(src: *const u8) -> Vec<u8> {
 // Sentinel-terminated Utf8Data array helpers
 // ---------------------------------------------------------------
 
-pub unsafe fn utf8_strlen(s: *const Utf8Data) -> usize {
-    let mut i = 0;
-
-    unsafe {
-        while (*s.add(i)).size != 0 {
-            i += 1;
-        }
-    }
-
-    i
-}
-
-pub unsafe fn utf8_strwidth(s: *const Utf8Data, n: isize) -> u32 {
-    unsafe {
-        let mut width: u32 = 0;
-
-        let mut i: isize = 0;
-        while (*s.add(i as usize)).size != 0 {
-            if n != -1 && n == i {
-                break;
-            }
-            width += (*s.add(i as usize)).width as u32;
-            i += 1;
-        }
-
-        width
-    }
-}
-
 pub unsafe fn utf8_fromcstr(mut src: *const u8) -> *mut Utf8Data {
     unsafe {
         let mut dst: *mut Utf8Data = null_mut();
@@ -237,27 +208,6 @@ pub unsafe fn utf8_fromcstr(mut src: *const u8) -> *mut Utf8Data {
         dst = xreallocarray_(dst, n + 1).as_ptr();
         (*dst.add(n)).size = 0;
 
-        dst
-    }
-}
-
-pub unsafe fn utf8_tocstr(mut src: *const Utf8Data) -> *mut u8 {
-    unsafe {
-        let mut dst = null_mut::<u8>();
-        let mut n: usize = 0;
-
-        while (*src).size != 0 {
-            dst = xreallocarray_(dst, n + (*src).size as usize).as_ptr();
-            memcpy(
-                dst.add(n).cast(),
-                (*src).data.as_ptr().cast(),
-                (*src).size as usize,
-            );
-            n += (*src).size as usize;
-            src = src.add(1);
-        }
-        dst = xreallocarray_(dst, n + 1).as_ptr();
-        *dst.add(n) = b'\0';
         dst
     }
 }

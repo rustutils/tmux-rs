@@ -12,6 +12,7 @@
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 use crate::*;
+use crate::prompt::KeyResult;
 
 pub static CMD_COMMAND_PROMPT_ENTRY: cmd_entry = cmd_entry {
     name: "command-prompt",
@@ -66,7 +67,7 @@ unsafe fn cmd_command_prompt_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         let mut wait = !args_has(args, 'b');
         let mut space = 1;
 
-        if (*tc).prompt_string.is_some() {
+        if (*tc).prompt.is_some() {
             return cmd_retval::CMD_RETURN_NORMAL;
         }
         if args_has(args, 'i') {
@@ -181,19 +182,21 @@ unsafe fn cmd_command_prompt_callback(
     c: *mut client,
     cdata: NonNull<cmd_command_prompt_cdata>,
     s: *const u8,
-    done: i32,
+    kind: KeyResult,
 ) -> i32 {
     unsafe {
         let cdata = cdata.as_ptr();
         let mut error: *mut u8 = null_mut();
         let item: *mut cmdq_item = (*cdata).item;
+        let done = kind == KeyResult::Close;
 
         'out: {
-            if s.is_null() {
+            // A cursor key left an incremental prompt (3.8).
+            if s.is_null() || kind == KeyResult::Move {
                 break 'out;
             }
 
-            if done != 0 {
+            if done {
                 if (*cdata).flags.intersects(prompt_flags::PROMPT_INCREMENTAL) {
                     break 'out;
                 }
@@ -208,11 +211,9 @@ unsafe fn cmd_command_prompt_callback(
 
             let mut argc = (*cdata).argc;
             let mut argv = cmd_copy_argv((*cdata).argc, (*cdata).argv);
-            if done == 0 {
+            if !done {
                 cmd_append_argv(&raw mut argc, &raw mut argv, s);
-            }
-
-            if done != 0 {
+            } else {
                 cmd_free_argv((*cdata).argc, (*cdata).argv);
                 (*cdata).argc = argc;
                 (*cdata).argv = cmd_copy_argv(argc, argv);
@@ -233,8 +234,9 @@ unsafe fn cmd_command_prompt_callback(
             }
             cmd_free_argv(argc, argv);
 
-            // Check for intervening call to status_prompt_set()
-            if (*c).prompt_data != cdata.cast() {
+            // An incremental prompt runs its command on every change and
+            // stays open, only closing it ends it.
+            if (*cdata).flags.intersects(prompt_flags::PROMPT_INCREMENTAL) {
                 return 1;
             }
 
