@@ -50,6 +50,10 @@ features are still missing. It reads the same configuration files as tmux
   subscriptions as 3.8 checks them, array options with named items
   (`command-alias[foo]`), `-F` on the show commands, and the 3.8 rules for
   paste buffer names.
+- The 3.8 command prompt: `message-format`, the prompt cursor options,
+  prompts in panes (`command-prompt -P`) and inside modes, mouse clicks in
+  the prompt, fuzzy matching in formats, and `paste-buffer` escaping what
+  it pastes.
 
 ### Not ported yet
 
@@ -57,10 +61,12 @@ features are still missing. It reads the same configuration files as tmux
 - Floating panes and `new-pane`.
 - `switch-mode` and the new status line formats.
 - Pane scrollbars.
-- The new prompt features (`command-prompt -P` and the prompt cursor
-  options).
-- The copy mode additions, and new flags on about 35 commands.
+- The copy mode additions, and copy mode commands that take arguments
+  after `--`.
+- New flags on 28 commands.
 - `display-panes` as a mode.
+- A few new options, such as `focus-follows-mouse`, `get-clipboard` and
+  `codepoint-widths`, and some changes to tree mode.
 
 The tests compare the options, commands and key bindings with tmux 3.8, and
 [tests/parity_known.rs](tests/parity_known.rs) lists every difference that
