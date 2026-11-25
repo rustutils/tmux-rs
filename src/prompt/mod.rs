@@ -610,6 +610,79 @@ impl Prompt {
         Some(out)
     }
 
+    /// A left click at column `x` (3.8's `prompt_mouse`), with the prompt
+    /// laid out as `pl`: a click on a completion picks it, a click in the
+    /// input moves the cursor there, a click on the message moves it to
+    /// the start of what is shown. Clicks outside the area are not
+    /// handled.
+    pub fn mouse(&mut self, x: u32, pl: &Layout) -> KeyOutcome {
+        if x < pl.area_x || x >= pl.area_x + pl.area_width {
+            return KeyOutcome::new(KeyResult::NotHandled);
+        }
+        let mut out = KeyOutcome::new(KeyResult::Handled);
+        if pl.input_width == 0 {
+            return out;
+        }
+        if let Some(out) = self.mouse_complete(x, pl) {
+            return out;
+        }
+
+        let (_, pwidth) = self.widths();
+        let target = if x <= pl.input_x {
+            pl.input_offset
+        } else {
+            pl.input_offset + x - pl.input_x
+        }
+        .min(pwidth);
+        let mut width = 0;
+        let mut idx = 0;
+        while idx < self.buffer.len() && width < target {
+            width += u32::from(self.buffer[idx].width);
+            idx += 1;
+        }
+        if idx != self.index {
+            self.index = idx;
+            self.complete.clear();
+            out.redraw = true;
+        }
+        out
+    }
+
+    /// A click on the completions shown after the input (3.8's
+    /// `prompt_mouse_complete`). None if the click is not on them.
+    fn mouse_complete(&mut self, x: u32, pl: &Layout) -> Option<KeyOutcome> {
+        let display = self.completion_display()?;
+        let (cx, ax, aw) = (pl.cursor_x, pl.content_x, pl.content_width);
+        if cx < ax || cx - ax >= aw || x < cx {
+            return None;
+        }
+        let avail = aw - (cx - ax);
+        let clicked = x - cx;
+        let width = utf8_width(&utf8_decode(display.as_bytes())).min(avail);
+        if clicked >= width {
+            return None;
+        }
+
+        let mut out = KeyOutcome::new(KeyResult::Handled);
+        let mut end = 0;
+        let mut picked = None;
+        for item in &self.complete {
+            let start = end + 1;
+            end = start + utf8_width(&utf8_decode(item.as_bytes()));
+            if (start..end).contains(&clicked) {
+                picked = Some(format!("{item} "));
+                break;
+            }
+        }
+        if let Some(replace) = picked
+            && self.replace_complete(Some(&replace), None)
+        {
+            self.complete.clear();
+            out.redraw = true;
+        }
+        Some(out)
+    }
+
     /// The input, one entry per character.
     #[cfg(test)]
     pub fn buffer(&self) -> &[Utf8Data] {
@@ -889,7 +962,7 @@ impl Prompt {
                 self.index = size;
                 false
             }
-            k if k == b'\t' as key_code => self.replace_complete(None, env),
+            k if k == b'\t' as key_code => self.replace_complete(None, Some(env)),
             k if k == BSPACE || k == ctrl(b'h') => {
                 if self.index != 0 {
                     self.index -= 1;
@@ -1202,7 +1275,8 @@ impl Prompt {
     }
 
     /// Tab: completes the word at the cursor, or replaces it with `with`.
-    fn replace_complete(&mut self, with: Option<&str>, env: &mut dyn PromptEnv) -> bool {
+    /// Completing reads the command names from `env`.
+    fn replace_complete(&mut self, with: Option<&str>, env: Option<&mut dyn PromptEnv>) -> bool {
         let size = self.buffer.len();
         let idx = self.index.saturating_sub(1);
         let space = |i: usize| is_space(self.buffer.get(i));
@@ -1236,6 +1310,9 @@ impl Prompt {
                 if word.len() >= 64 {
                     return false;
                 }
+                let Some(env) = env else {
+                    return false;
+                };
                 match self.complete_word(&word, first, env) {
                     Some(c) => {
                         completed = c;

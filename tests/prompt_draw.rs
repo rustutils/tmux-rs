@@ -301,7 +301,6 @@ fn long_input_scrolls() {
 }
 
 #[test]
-#[ignore = "prompt mouse is not ported yet (run 13 task 3)"]
 fn mouse_click_moves_the_cursor() {
     let n = Nested::new(&[&["set", "-g", "mouse", "on"]]);
     n.prompt(&["-p", "P>", "-I", "abcdef", "set -g @r '[%%]'"]);
@@ -321,7 +320,6 @@ fn mouse_click_moves_the_cursor() {
 }
 
 #[test]
-#[ignore = "prompt mouse is not ported yet (run 13 task 3)"]
 fn mouse_click_picks_a_completion() {
     let n = Nested::new(&[&["set", "-g", "mouse", "on"]]);
     n.prompt(&["-p", "P>", "set -g @r '[%%]'"]);

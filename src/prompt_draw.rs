@@ -215,7 +215,6 @@ fn prompt_align(sy: &style) -> Align {
 ///
 /// # Safety
 /// As [`prompt_expand`].
-#[expect(dead_code, reason = "prompt mouse handling comes in run 13 task 3")]
 pub unsafe fn prompt_layout(pr: *const Prompt, fs: *mut cmd_find_state, ax: u32, aw: u32) -> Layout {
     unsafe {
         let e = prompt_expand(pr, fs);

@@ -2299,7 +2299,7 @@ unsafe fn server_client_handle_key0(
             // incremental prompt, goes on to the key bindings.
             if (*c).prompt.is_some()
                 && matches!(
-                    status_prompt_key(c, (*event).key),
+                    status_prompt_key(c, (*event).key, &raw const (*event).m),
                     KeyResult::Handled | KeyResult::Close
                 )
             {
@@ -2602,7 +2602,6 @@ pub unsafe fn server_client_reset_state(c: *mut client) {
         let mut mode = mode_flag::empty();
         let mut cursor;
 
-        let mut n: i32;
 
         let mut cx = 0;
         let mut cy = 0;
@@ -2646,17 +2645,7 @@ pub unsafe fn server_client_reset_state(c: *mut client) {
 
         // Move cursor to pane cursor and offset.
         if (*c).prompt.is_some() {
-            n = options_get_number_((*client_get_session(c)).options, "status-position") as i32;
-            if n == 0 {
-                cy = 0;
-            } else {
-                n = status_line_size(c) as i32;
-                if n == 0 {
-                    cy = (*tty).sy - 1;
-                } else {
-                    cy = (*tty).sy - n as u32;
-                }
-            }
+            cy = status_prompt_screen_line(c);
             cx = (*c).status.prompt_cx;
         } else if (*c).overlay_draw.is_none() {
             cursor = 0;

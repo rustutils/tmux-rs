@@ -140,7 +140,7 @@
 83 src/session_.rs
 24 src/sort_get.rs
 8 src/spawn.rs
-60 src/status.rs
+58 src/status.rs
 56 src/style_.rs
 24 src/tmux.rs
 238 src/tty_.rs

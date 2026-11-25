@@ -461,3 +461,48 @@ fn flags_string_names_flags_and_modes() {
     assert_eq!(p.flags_string(), "COMMANDMODE");
     assert_eq!(p.cursor(), (0, -1));
 }
+
+#[test]
+fn mouse_moves_the_cursor() {
+    let mut p = emacs("abcdef");
+    let pl = p.layout(0, 40, 3, Align::Left);
+    // Between b and c.
+    let out = p.mouse(5, &pl);
+    assert_eq!((out.result, out.redraw, p.index()), (KeyResult::Handled, true, 2));
+    // On the message: the start of the input.
+    let out = p.mouse(1, &p.layout(0, 40, 3, Align::Left));
+    assert_eq!((out.result, p.index()), (KeyResult::Handled, 0));
+    // After the input: its end.
+    p.mouse(30, &p.layout(0, 40, 3, Align::Left));
+    assert_eq!(p.index(), 6);
+    // Outside the area.
+    let out = p.mouse(40, &p.layout(0, 40, 3, Align::Left));
+    assert_eq!(out.result, KeyResult::NotHandled);
+
+    // An empty input takes the click and nothing changes.
+    let mut p = emacs("");
+    let out = p.mouse(5, &p.layout(0, 40, 3, Align::Left));
+    assert_eq!((out.result, out.redraw), (KeyResult::Handled, false));
+}
+
+#[test]
+fn mouse_picks_a_completion() {
+    let mut env = Env {
+        commands: vec!["list-buffers", "link-window"],
+        ..Env::default()
+    };
+    let mut p = emacs("li");
+    press(&mut p, &mut env, &[b'\t' as key_code]);
+    // " link-window list-buffers" from column 4: list-buffers is 17 to 28.
+    let pl = p.layout(0, 40, 2, Align::Left);
+    let out = p.mouse(19, &pl);
+    assert_eq!((out.result, out.redraw), (KeyResult::Handled, true));
+    assert_eq!(input(&p), "list-buffers ");
+    assert!(p.completion_display().is_none());
+
+    // The space between two completions is taken but picks nothing.
+    let mut p = emacs("li");
+    press(&mut p, &mut env, &[b'\t' as key_code]);
+    let out = p.mouse(16, &p.layout(0, 40, 2, Align::Left));
+    assert_eq!((out.result, input(&p).as_str()), (KeyResult::Handled, "li"));
+}

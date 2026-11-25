@@ -16,7 +16,7 @@ use std::time::Duration;
 use std::rc::Rc;
 
 use crate::prompt::{CallbackResult, Fire, KeyResult, Prompt, PromptEnv};
-use crate::prompt_draw::{prompt_draw, prompt_setup};
+use crate::prompt_draw::{prompt_draw, prompt_layout, prompt_setup};
 use crate::prompt_history::{
     HistoryPositions, prompt_history_add, prompt_history_down, prompt_history_up,
 };
@@ -130,14 +130,28 @@ pub unsafe fn status_line_size(c: *mut client) -> u32 {
 unsafe fn status_prompt_line_at(c: *mut client) -> u32 {
     unsafe {
         let s = client_get_session(c);
-
-        if (*c)
-            .flags
-            .intersects(client_flag::STATUSOFF | client_flag::CONTROL)
-        {
-            return 1;
+        let lines = status_line_size(c);
+        if lines == 0 {
+            return 0;
         }
-        options_get_number_((*s).options, "message-line") as u32
+        let line = options_get_number_((*s).options, "message-line") as u32;
+        line.min(lines - 1)
+    }
+}
+
+/// The terminal line the prompt is drawn on (3.8's
+/// `status_prompt_screen_line`).
+///
+/// # Safety
+/// `c` must be a valid client with a session.
+pub unsafe fn status_prompt_screen_line(c: *mut client) -> u32 {
+    unsafe {
+        let sy = (*c).tty.sy;
+        if options_get_number_((*client_get_session(c)).options, "status-position") == 0 {
+            return status_prompt_line_at(c);
+        }
+        let n = status_line_size(c) - status_prompt_line_at(c);
+        if n <= sy { sy - n } else { sy - 1 }
     }
 }
 
@@ -155,23 +169,6 @@ pub unsafe fn status_get_range(c: *mut client, x: u32, y: u32) -> *mut style_ran
             }
         }
         null_mut()
-    }
-}
-
-/// Free all ranges.
-unsafe fn status_free_ranges(srs: *mut style_ranges) {
-    unsafe {
-        (*srs).clear();
-    }
-}
-
-/// Drop ranges Vec (for use when the owning struct is being freed).
-/// After dropping, writes an empty Vec so a later automatic Drop
-/// (e.g. when the owning `client` Box is freed) is a no-op.
-unsafe fn status_drop_ranges(srs: *mut style_ranges) {
-    unsafe {
-        std::ptr::drop_in_place(srs);
-        std::ptr::write(srs, Vec::new());
     }
 }
 
@@ -223,7 +220,8 @@ pub unsafe fn status_free(c: *mut client) {
         let sl = &raw mut (*c).status;
 
         for i in 0..(*sl).entries.len() {
-            status_drop_ranges(&raw mut (*sl).entries[i].ranges);
+            // Leave an empty Vec, the client is dropped again later.
+            drop(std::mem::take(&mut (*sl).entries[i].ranges));
             free_((*sl).entries[i].expanded);
         }
 
@@ -339,7 +337,7 @@ pub unsafe fn status_redraw(c: *mut client) -> i32 {
                 }
                 screen_write_cursormove(&raw mut ctx, 0, i as i32, 0);
 
-                status_free_ranges(&raw mut (*sle).ranges);
+                (*sle).ranges.clear();
                 format_draw(
                     &raw mut ctx,
                     &raw mut gc,
@@ -687,17 +685,44 @@ unsafe fn status_prompt_fire(c: *mut client, fire: Fire, result: KeyResult) -> K
     }
 }
 
-/// Handle a key in the prompt.
-pub unsafe fn status_prompt_key(c: *mut client, key: key_code) -> KeyResult {
+/// Handle a key in the prompt. A mouse key is a left click on the
+/// prompt's line or not handled (3.8's `status_prompt_key`).
+///
+/// # Safety
+/// `c` must be a valid client with a session, `m` null or the key's
+/// mouse event.
+pub unsafe fn status_prompt_key(c: *mut client, key: key_code, m: *const mouse_event) -> KeyResult {
     unsafe {
-        let aliases = if key & KEYC_MASK_KEY == b'\t' as key_code {
-            status_prompt_aliases()
-        } else {
-            Vec::new()
-        };
-        let mut env = StatusPromptEnv { aliases };
-        let Some(out) = (*c).prompt.as_mut().map(|p| p.key(key, &mut env)) else {
+        let Some(pr) = (*c).prompt.as_deref().map(|p| p as *const Prompt) else {
             return KeyResult::NotHandled;
+        };
+        let out = if KEYC_IS_MOUSE(key) {
+            if m.is_null()
+                || MOUSE_BUTTONS((*m).b) != MOUSE_BUTTON_1
+                || MOUSE_DRAG((*m).b)
+                || MOUSE_RELEASE((*m).b)
+                || (*m).y != status_prompt_screen_line(c)
+            {
+                return KeyResult::NotHandled;
+            }
+            let (ax, aw) = status_message_area(c);
+            // The prompt is not changed while it is laid out.
+            let pl = prompt_layout(pr, &raw mut (*c).prompt_state, ax, aw);
+            match (*c).prompt.as_mut() {
+                Some(p) => p.mouse((*m).x, &pl),
+                None => return KeyResult::NotHandled,
+            }
+        } else {
+            let aliases = if key & KEYC_MASK_KEY == b'\t' as key_code {
+                status_prompt_aliases()
+            } else {
+                Vec::new()
+            };
+            let mut env = StatusPromptEnv { aliases };
+            match (*c).prompt.as_mut() {
+                Some(p) => p.key(key, &mut env),
+                None => return KeyResult::NotHandled,
+            }
         };
 
         if let Some((ty, line)) = &out.history {
