@@ -22,7 +22,7 @@ use crate::options_::*;
 use std::rc::Rc;
 
 use crate::paste::paste_get_top;
-use crate::prompt::{Align, CallbackResult, Fire, Layout, Prompt, PromptEnv, PromptLook, PromptSetup};
+use crate::prompt::{Align, CallbackResult, Fire, KeyResult, Layout, Prompt, PromptEnv, PromptLook, PromptSetup};
 use crate::prompt_history::{HistoryPositions, PromptType, prompt_history_down, prompt_history_up};
 use crate::*;
 
@@ -378,6 +378,87 @@ pub unsafe fn prompt_call(
             CallbackResult::Close
         } else {
             CallbackResult::Continue
+        }
+    }
+}
+
+/// A prompt held by a pane or a mode, with what its owner gave it (3.8's
+/// `window_pane_prompt` and `mode_tree_prompt` wrappers). The status line
+/// prompt keeps the same in client fields.
+pub struct OwnedPrompt {
+    pub prompt: Prompt,
+    /// The target, for expanding the message.
+    pub state: cmd_find_state,
+    /// The client passed to the callback: the one that opened the
+    /// prompt, then the one typing during a key and none after it.
+    pub client: Option<ClientId>,
+    pub ty: PromptType,
+    inputcb: prompt_input_cb,
+    freecb: prompt_free_cb,
+    data: *mut c_void,
+}
+
+impl OwnedPrompt {
+    /// A prompt for client `c` (null for none) and target `fs` (null for
+    /// none), whose callback gets `data` and returns 0 to close.
+    ///
+    /// # Safety
+    /// `c` must be null or a valid client, `fs` null or a find state, and
+    /// the callbacks must accept `data`.
+    pub unsafe fn new<T>(
+        setup: PromptSetup,
+        c: *mut client,
+        fs: *mut cmd_find_state,
+        inputcb: unsafe fn(*mut client, NonNull<T>, *const u8, KeyResult) -> i32,
+        freecb: unsafe fn(NonNull<T>),
+        data: *mut T,
+    ) -> Self {
+        unsafe {
+            let ty = setup.ty;
+            Self {
+                prompt: Prompt::new(setup),
+                state: if fs.is_null() { cmd_find_state::default() } else { *fs },
+                client: if c.is_null() { None } else { Some((*c).id) },
+                ty,
+                inputcb: Some(std::mem::transmute::<
+                    unsafe fn(*mut client, NonNull<T>, *const u8, KeyResult) -> i32,
+                    unsafe fn(*mut client, NonNull<c_void>, *const u8, KeyResult) -> i32,
+                >(inputcb)),
+                freecb: Some(std::mem::transmute::<unsafe fn(NonNull<T>), unsafe fn(NonNull<c_void>)>(
+                    freecb,
+                )),
+                data: data.cast(),
+            }
+        }
+    }
+
+    /// The owner's data, which tells two prompts apart.
+    pub fn data(&self) -> *mut c_void {
+        self.data
+    }
+
+    /// The callback and what it gets, to call with [`prompt_call`] after
+    /// the reference to the prompt is gone. The client is looked up, so
+    /// one that went away is null.
+    ///
+    /// # Safety
+    /// The client registry must be usable.
+    pub unsafe fn callback(&self) -> (prompt_input_cb, *mut client, *mut c_void) {
+        unsafe {
+            let c = self.client.and_then(|id| client_from_id(id)).unwrap_or(null_mut());
+            (self.inputcb, c, self.data)
+        }
+    }
+
+    /// Calls the owner's free function: the prompt is gone.
+    ///
+    /// # Safety
+    /// The free function must accept the data, which is not used again.
+    pub unsafe fn release(self) {
+        unsafe {
+            if let (Some(freecb), Some(data)) = (self.freecb, NonNull::new(self.data)) {
+                freecb(data);
+            }
         }
     }
 }

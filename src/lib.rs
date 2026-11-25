@@ -1200,7 +1200,7 @@ struct window_pane {
     control_fg: i32,
 
     /// The pane's prompt (command-prompt -P), drawn over its last line.
-    prompt: Option<Box<pane_prompt::PanePrompt>>,
+    prompt: Option<Box<prompt_draw::OwnedPrompt>>,
     /// The column of the pane prompt's cursor, set when it is drawn.
     prompt_cx: u32,
 }

@@ -1439,16 +1439,16 @@ pub unsafe fn window_customize_set_option(
             });
 
             (*data).references += 1;
-            status_prompt_set(
+            mode_tree_set_prompt(
+                (*data).data,
                 c,
-                null_mut(),
                 prompt,
                 value,
+                PromptType::Command,
+                prompt_flags::PROMPT_NOFORMAT,
                 window_customize_set_option_callback,
                 window_customize_free_item_callback,
                 Box::into_raw(new_item),
-                prompt_flags::PROMPT_NOFORMAT,
-                PromptType::Command,
             );
 
             free_(prompt);
@@ -1604,16 +1604,16 @@ pub unsafe fn window_customize_set_key(
             });
 
             (*data).references += 1;
-            status_prompt_set(
+            mode_tree_set_prompt(
+                (*data).data,
                 c,
-                null_mut(),
                 prompt,
                 value,
+                PromptType::Command,
+                prompt_flags::PROMPT_NOFORMAT,
                 window_customize_set_command_callback,
                 window_customize_free_item_callback,
                 Box::into_raw(new_item),
-                prompt_flags::PROMPT_NOFORMAT,
-                PromptType::Command,
             );
             free_(prompt);
             free_(value);
@@ -1632,16 +1632,16 @@ pub unsafe fn window_customize_set_key(
 
             (*data).references += 1;
             let note_cstr = std::ffi::CString::new((*bd).note.as_deref().unwrap_or("")).unwrap();
-            status_prompt_set(
+            mode_tree_set_prompt(
+                (*data).data,
                 c,
-                null_mut(),
                 prompt,
                 note_cstr.as_ptr().cast(),
+                PromptType::Command,
+                prompt_flags::PROMPT_NOFORMAT,
                 window_customize_set_note_callback,
                 window_customize_free_item_callback,
                 Box::leak(new_item),
-                prompt_flags::PROMPT_NOFORMAT,
-                PromptType::Command,
             );
             free_(prompt);
         }
@@ -1864,16 +1864,16 @@ pub unsafe fn window_customize_key(
                     prompt = format_nul!("Reset {} to default? ", _s((*item).name));
                     (*data).references += 1;
                     (*data).change = window_customize_change::WINDOW_CUSTOMIZE_RESET;
-                    status_prompt_set(
+                    mode_tree_set_prompt(
+                        (*data).data,
                         c,
-                        null_mut(),
                         prompt,
                         c!(""),
+                        PromptType::Command,
+                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
                         window_customize_change_current_callback,
                         window_customize_free_callback,
                         data,
-                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
-                        PromptType::Command,
                     );
                     free_(prompt);
                 }
@@ -1884,16 +1884,16 @@ pub unsafe fn window_customize_key(
                     prompt = format_nul!("Reset {} tagged to default? ", tagged);
                     (*data).references += 1;
                     (*data).change = window_customize_change::WINDOW_CUSTOMIZE_RESET;
-                    status_prompt_set(
+                    mode_tree_set_prompt(
+                        (*data).data,
                         c,
-                        null_mut(),
                         prompt,
                         c!(""),
+                        PromptType::Command,
+                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
                         window_customize_change_tagged_callback,
                         window_customize_free_callback,
                         data,
-                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
-                        PromptType::Command,
                     );
                     free_(prompt);
                 }
@@ -1907,16 +1907,16 @@ pub unsafe fn window_customize_key(
                     };
                     (*data).references += 1;
                     (*data).change = window_customize_change::WINDOW_CUSTOMIZE_UNSET;
-                    status_prompt_set(
+                    mode_tree_set_prompt(
+                        (*data).data,
                         c,
-                        null_mut(),
                         prompt,
                         c!(""),
+                        PromptType::Command,
+                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
                         window_customize_change_current_callback,
                         window_customize_free_callback,
                         data,
-                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
-                        PromptType::Command,
                     );
                     free_(prompt);
                 }
@@ -1927,16 +1927,16 @@ pub unsafe fn window_customize_key(
                     prompt = format_nul!("Unset {} tagged? ", tagged);
                     (*data).references += 1;
                     (*data).change = window_customize_change::WINDOW_CUSTOMIZE_UNSET;
-                    status_prompt_set(
+                    mode_tree_set_prompt(
+                        (*data).data,
                         c,
-                        null_mut(),
                         prompt,
                         c!(""),
+                        PromptType::Command,
+                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
                         window_customize_change_tagged_callback,
                         window_customize_free_callback,
                         data,
-                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
-                        PromptType::Command,
                     );
                     free_(prompt);
                 }

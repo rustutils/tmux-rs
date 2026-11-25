@@ -456,7 +456,6 @@ fn copy_mode_search_prompt_is_in_the_pane() {
 }
 
 #[test]
-#[ignore = "mode prompts are not ported yet (run 13 task 6)"]
 fn mode_tree_prompts_are_in_the_mode() {
     let n = Nested::new(&[]);
     n.run(&["choose-tree", "-t", "0"]);
@@ -476,4 +475,28 @@ fn mode_tree_prompts_are_in_the_mode() {
     n.keys(&["x"]);
     n.wait_line(PANE_LAST, |l| l.starts_with("Kill"));
     n.wait_line(STATUS, |l| l.starts_with("[0]"));
+}
+
+/// 3.8 kills from the prompt callback inside the mode's key handling and
+/// its server crashes here, so this checks tmux-rs only (a deliberate
+/// difference: the kill is queued).
+#[test]
+fn tree_mode_kill_prompt_can_kill_its_own_pane() {
+    if !harness::server_is_tmux_rs() {
+        return;
+    }
+    let n = Nested::new(&[&["split-window", "-h", "sleep 1000"]]);
+    let pane = n.inner.query("#{pane_id}");
+    // Tree mode on the active pane, with the cursor on that pane.
+    n.run(&["choose-tree", "-t", &pane]);
+    n.wait_line(0, |l| l.contains("1 windows"));
+    // Expand to the panes, the cursor stays on the active one.
+    n.keys(&["Right", "Right"]);
+    n.keys(&["x"]);
+    // The mode is in the right pane, after the border.
+    n.wait_line(PANE_LAST, |l| l.contains("\u{2502}Kill pane 1?"));
+    n.keys(&["y"]);
+    n.inner.wait_for("#{window_panes}", |v| v == "1", T);
+    // The server is still there and the other pane is left.
+    assert_ne!(n.inner.query("#{pane_id}"), pane);
 }

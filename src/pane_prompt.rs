@@ -16,32 +16,17 @@
 //! `window_pane_set_prompt` and friends in window.c, and
 //! `redraw_draw_pane_prompt` in screen-redraw.c).
 //!
-//! The pane holds a [`PanePrompt`]: the prompt object and its owner's
+//! The pane holds an [`OwnedPrompt`]: the prompt object and its owner's
 //! callback. Keys come from `server_client.rs`, which offers them to the
 //! active pane's prompt, or the first visible pane with one, after the
 //! status line prompt. Opening and closing fire pane-prompt-opened and
 //! pane-prompt-closed, except when the pane is destroyed.
 
 use crate::events::{events_fire, payload_for_pane};
-use crate::prompt::{KeyResult, Prompt};
-use crate::prompt_draw::{prompt_call, prompt_draw, prompt_env, prompt_layout, prompt_setup};
+use crate::prompt::KeyResult;
+use crate::prompt_draw::{OwnedPrompt, prompt_call, prompt_draw, prompt_env, prompt_layout, prompt_setup};
 use crate::prompt_history::{PromptType, prompt_history_add};
 use crate::*;
-
-/// A pane's prompt and what its owner gave it.
-pub struct PanePrompt {
-    prompt: Prompt,
-    /// The target, for expanding the message.
-    state: cmd_find_state,
-    /// The client passed to the callback: the one that opened the
-    /// prompt, then the one typing during a key and none after it
-    /// (3.8's `wpp->c`).
-    client: Option<ClientId>,
-    inputcb: prompt_input_cb,
-    freecb: prompt_free_cb,
-    data: *mut c_void,
-    ty: PromptType,
-}
 
 /// Fires pane-prompt-opened or pane-prompt-closed for `wp`.
 ///
@@ -81,20 +66,7 @@ pub unsafe fn window_pane_set_prompt<T>(
         window_pane_clear_prompt(wp);
 
         let setup = prompt_setup(s, fs, msg, input, ty, flags);
-        (*wp).prompt = Some(Box::new(PanePrompt {
-            prompt: Prompt::new(setup),
-            state: if fs.is_null() { cmd_find_state::default() } else { *fs },
-            client: if c.is_null() { None } else { Some((*c).id) },
-            inputcb: Some(std::mem::transmute::<
-                unsafe fn(*mut client, NonNull<T>, *const u8, KeyResult) -> i32,
-                unsafe fn(*mut client, NonNull<c_void>, *const u8, KeyResult) -> i32,
-            >(inputcb)),
-            freecb: Some(std::mem::transmute::<unsafe fn(NonNull<T>), unsafe fn(NonNull<c_void>)>(
-                freecb,
-            )),
-            data: data.cast(),
-            ty,
-        }));
+        (*wp).prompt = Some(Box::new(OwnedPrompt::new(setup, c, fs, inputcb, freecb, data)));
         (*wp).flags |= window_pane_flags::PANE_REDRAW;
 
         let pane = PaneId((*wp).id);
@@ -128,11 +100,10 @@ pub unsafe fn window_pane_remove_prompt(wp: *mut window_pane, fire: bool) {
             return;
         };
         (*wp).flags |= window_pane_flags::PANE_REDRAW;
-        if let (Some(freecb), Some(data)) = (pp.freecb, NonNull::new(pp.data)) {
-            freecb(data);
-        }
+        let ty = pp.ty;
+        pp.release();
         if fire && pane_from_id(PaneId((*wp).id)).is_some() {
-            window_fire_pane_prompt("pane-prompt-closed", wp, pp.ty);
+            window_fire_pane_prompt("pane-prompt-closed", wp, ty);
         }
     }
 }
@@ -175,18 +146,16 @@ unsafe fn window_pane_prompt_fire(pane: PaneId, fire: prompt::Fire, result: KeyR
         let Some(wp) = pane_from_id(pane) else {
             return result;
         };
-        let Some((cb, data, client)) = (*wp).prompt.as_ref().map(|pp| (pp.inputcb, pp.data, pp.client))
-        else {
+        let Some((cb, c, data)) = (*wp).prompt.as_ref().map(|pp| pp.callback()) else {
             return result;
         };
-        let c = client.and_then(|id| client_from_id(id)).unwrap_or(null_mut());
         let said = prompt_call(cb, c, data, &fire);
 
         let Some(wp) = pane_from_id(pane) else {
             return result;
         };
         match (*wp).prompt.as_mut() {
-            Some(pp) if pp.data == data => {
+            Some(pp) if pp.data() == data => {
                 let result = pp.prompt.fired(&fire, said, result);
                 (*wp).flags |= window_pane_flags::PANE_REDRAW;
                 result
@@ -230,7 +199,7 @@ pub unsafe fn window_pane_prompt_key(
             return KeyResult::NotHandled;
         };
         pp.client = Some((*c).id);
-        let data = pp.data;
+        let data = pp.data();
 
         let out = if KEYC_IS_MOUSE(key) {
             let mut x = 0;
@@ -271,7 +240,7 @@ pub unsafe fn window_pane_prompt_key(
         let Some(wp) = pane_from_id(pane) else {
             return result;
         };
-        let same = (*wp).prompt.as_ref().is_some_and(|pp| pp.data == data);
+        let same = (*wp).prompt.as_ref().is_some_and(|pp| pp.data() == data);
         if same && let Some(pp) = (*wp).prompt.as_mut() {
             pp.client = None;
         }

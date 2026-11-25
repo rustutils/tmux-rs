@@ -11,6 +11,10 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+use crate::options_::options_get_number_;
+use crate::prompt::{Fire, KeyResult};
+use crate::prompt_draw::{OwnedPrompt, prompt_call, prompt_draw, prompt_env, prompt_layout, prompt_setup};
+use crate::prompt_history::prompt_history_add;
 use crate::*;
 
 pub type mode_tree_build_cb = Option<
@@ -81,6 +85,14 @@ pub struct mode_tree_data {
     filter: *mut u8,
     no_matches: i32,
     search_dir: mode_tree_search_dir,
+
+    /// A prompt open inside the mode, drawn on its last line, or its
+    /// first with the status line at the top.
+    prompt: Option<Box<OwnedPrompt>>,
+    /// The column of the prompt's cursor, set when it is drawn.
+    prompt_cx: u32,
+    /// Whether the prompt is on the first line.
+    prompt_top: bool,
 }
 
 /// A node in the mode tree. Each item can have child items, forming a
@@ -501,6 +513,9 @@ pub unsafe fn mode_tree_start(
             },
             no_matches: Default::default(),
             search_dir: zeroed(),
+            prompt: None,
+            prompt_cx: 0,
+            prompt_top: false,
         });
 
         let sort = args_get_(args, 'O');
@@ -632,6 +647,7 @@ pub unsafe fn mode_tree_free(mtd: *mut mode_tree_data) {
             server_unzoom_window(window_pane_window(wp));
         }
 
+        mode_tree_clear_prompt(mtd);
         mode_tree_free_items(&mut (*mtd).children);
         mode_tree_clear_lines(mtd);
         screen_free(&raw mut (*mtd).screen);
@@ -946,8 +962,195 @@ pub unsafe fn mode_tree_draw(mtd: &mut mode_tree_data) {
             }
         }
         // done:
-        screen_write_cursormove(&raw mut ctx, 0, mtd.current as i32 - mtd.offset as i32, 0);
+        if mtd.prompt.is_some() {
+            mode_tree_draw_prompt(mtd, &raw mut ctx);
+        } else {
+            (*s).mode &= !mode_flag::MODE_CURSOR;
+            screen_write_cursormove(&raw mut ctx, 0, mtd.current as i32 - mtd.offset as i32, 0);
+        }
         screen_write_stop(&raw mut ctx);
+    }
+}
+
+/// Draws the prompt on the mode's last line, or its first with the
+/// status line at the top, and puts the cursor there (3.8's
+/// `mode_tree_draw_prompt`).
+///
+/// # Safety
+/// `ctx` must be a started context on the mode's screen.
+unsafe fn mode_tree_draw_prompt(mtd: &mut mode_tree_data, ctx: *mut screen_write_ctx) {
+    unsafe {
+        let s = &raw mut mtd.screen;
+        let (sx, sy) = (screen_size_x(s), screen_size_y(s));
+        if sx == 0 || sy == 0 {
+            return;
+        }
+        let py = if mtd.prompt_top { 0 } else { sy - 1 };
+        let Some((pr, state)) = mtd.prompt.as_mut().map(|op| (&raw const op.prompt, &raw mut op.state)) else {
+            return;
+        };
+        (*s).mode |= mode_flag::MODE_CURSOR;
+        // The prompt is not changed while it is drawn.
+        mtd.prompt_cx = prompt_draw(pr, state, ctx, 0, sx, py);
+        screen_write_cursormove(ctx, mtd.prompt_cx as i32, py as i32, 0);
+    }
+}
+
+/// Closes the prompt in the mode, if there is one.
+///
+/// # Safety
+/// `mtd` must be a valid mode tree. It may be freed if the prompt held
+/// the last reference.
+pub unsafe fn mode_tree_clear_prompt(mtd: *mut mode_tree_data) {
+    unsafe {
+        let Some(op) = (*mtd).prompt.take() else {
+            return;
+        };
+        (*mtd).screen.mode &= !mode_flag::MODE_CURSOR;
+        op.release();
+        mode_tree_remove_ref(mtd);
+    }
+}
+
+/// Opens a prompt inside the mode for client `c`, replacing any prompt
+/// it has (3.8's `mode_tree_set_prompt`). The prompt holds a reference
+/// to the mode. The callback gets `data` and returns 0 to close, the free
+/// function is called when the prompt goes.
+///
+/// # Safety
+/// `mtd` must be a valid mode tree, `c` null or a valid client, `prompt`
+/// and `input` null or NUL terminated, and the callbacks must accept
+/// `data`.
+#[expect(clippy::too_many_arguments, reason = "3.8's mode_tree_set_prompt")]
+pub unsafe fn mode_tree_set_prompt<T>(
+    mtd: *mut mode_tree_data,
+    c: *mut client,
+    prompt: *const u8,
+    input: *const u8,
+    ty: PromptType,
+    flags: prompt_flags,
+    inputcb: unsafe fn(*mut client, NonNull<T>, *const u8, KeyResult) -> i32,
+    freecb: unsafe fn(NonNull<T>),
+    data: *mut T,
+) {
+    unsafe {
+        let s = if c.is_null() { null_mut() } else { client_get_session(c) };
+        let oo = if s.is_null() { GLOBAL_S_OPTIONS } else { (*s).options };
+
+        mode_tree_clear_prompt(mtd);
+        (*mtd).references += 1;
+        (*mtd).prompt_top = options_get_number_(oo, "status-position") == 0;
+
+        let setup = prompt_setup(s, null_mut(), prompt, input, ty, flags | prompt_flags::PROMPT_ISMODE);
+        (*mtd).prompt = Some(Box::new(OwnedPrompt::new(setup, c, null_mut(), inputcb, freecb, data)));
+
+        mode_tree_draw(&mut *mtd);
+        (*pane_ptr_from_id((*mtd).wp)).flags |= window_pane_flags::PANE_REDRAW;
+    }
+}
+
+/// Fires the callback of the mode's prompt for `fire` and returns the
+/// key's result.
+///
+/// # Safety
+/// `mtd` must be a valid mode tree with a reference held by the caller.
+unsafe fn mode_tree_prompt_fire(mtd: *mut mode_tree_data, fire: Fire, result: KeyResult) -> KeyResult {
+    unsafe {
+        let Some((cb, c, data)) = (*mtd).prompt.as_ref().map(|op| op.callback()) else {
+            return result;
+        };
+        let said = prompt_call(cb, c, data, &fire);
+        match (*mtd).prompt.as_mut() {
+            Some(op) if op.data() == data => op.prompt.fired(&fire, said, result),
+            _ => result,
+        }
+    }
+}
+
+/// Passes a key to the prompt in the mode (the prompt part of 3.8's
+/// `mode_tree_key`). A mouse key is a left click on the prompt line.
+///
+/// # Safety
+/// `mtd` must be a valid mode tree with a prompt and a reference held by
+/// the caller, `c` null or a valid client, `m` null or the key's mouse
+/// event.
+unsafe fn mode_tree_prompt_key(
+    mtd: *mut mode_tree_data,
+    c: *mut client,
+    key: key_code,
+    m: *const mouse_event,
+) -> KeyResult {
+    unsafe {
+        let Some(op) = (*mtd).prompt.as_deref_mut() else {
+            return KeyResult::NotHandled;
+        };
+        op.client = if c.is_null() { None } else { Some((*c).id) };
+        let data = op.data();
+
+        let out = if KEYC_IS_MOUSE(key) {
+            let wp = pane_ptr_from_id((*mtd).wp);
+            let sx = screen_size_x(&raw mut (*mtd).screen);
+            let py = if (*mtd).prompt_top {
+                0
+            } else {
+                screen_size_y(&raw mut (*mtd).screen).saturating_sub(1)
+            };
+            let mut x = 0;
+            let mut y = 0;
+            if m.is_null()
+                || MOUSE_BUTTONS((*m).b) != MOUSE_BUTTON_1
+                || MOUSE_DRAG((*m).b)
+                || MOUSE_RELEASE((*m).b)
+                || cmd_mouse_at(wp, &*m, &raw mut x, &raw mut y, 0) != 0
+                || y != py
+            {
+                None
+            } else {
+                // The prompt is not changed while it is laid out.
+                let Some((pr, state)) =
+                    (*mtd).prompt.as_mut().map(|op| (&raw const op.prompt, &raw mut op.state))
+                else {
+                    return KeyResult::NotHandled;
+                };
+                let pl = prompt_layout(pr, state, 0, sx);
+                (*mtd).prompt.as_mut().map(|op| op.prompt.mouse(x, &pl))
+            }
+        } else {
+            let mut env = prompt_env(key);
+            (*mtd).prompt.as_mut().map(|op| op.prompt.key(key, &mut env))
+        };
+        let Some(out) = out else {
+            if let Some(op) = (*mtd).prompt.as_mut() {
+                op.client = None;
+            }
+            return KeyResult::NotHandled;
+        };
+
+        if let Some((ty, line)) = &out.history {
+            prompt_history_add(*ty, line);
+        }
+        let mut result = out.result;
+        for fire in out.fires {
+            result = mode_tree_prompt_fire(mtd, fire, result);
+        }
+
+        let same = (*mtd).prompt.as_ref().is_some_and(|op| op.data() == data);
+        if same && let Some(op) = (*mtd).prompt.as_mut() {
+            op.client = None;
+        }
+        // Only an explicit close or the prompt marking itself closed ends
+        // it, cursor movement and editing keep it open.
+        if same && (result == KeyResult::Close || (*mtd).prompt.as_ref().is_some_and(|op| op.prompt.closed())) {
+            mode_tree_clear_prompt(mtd);
+        }
+        if (*mtd).dead == 0 && (out.redraw || !same || (*mtd).prompt.is_none()) {
+            mode_tree_draw(&mut *mtd);
+            let wp = pane_ptr_from_id((*mtd).wp);
+            if !wp.is_null() {
+                (*wp).flags |= window_pane_flags::PANE_REDRAW;
+            }
+        }
+        result
     }
 }
 
@@ -1255,6 +1458,19 @@ pub unsafe fn mode_tree_key(
             return 1;
         }
 
+        // A prompt in the mode gets the key first. The mode stays alive
+        // while its callbacks run, they may kill its pane.
+        if (*mtd).prompt.is_some() {
+            (*mtd).references += 1;
+            let result = mode_tree_prompt_key(mtd, c, *key, m);
+            let dead = (*mtd).dead != 0;
+            mode_tree_remove_ref(mtd);
+            if dead || result != KeyResult::NotHandled {
+                *key = KEYC_NONE;
+                return 0;
+            }
+        }
+
         if KEYC_IS_MOUSE(*key) && !m.is_null() {
             if cmd_mouse_at(pane_ptr_from_id((*mtd).wp), &*m, &raw mut x, &raw mut y, 0) != 0 {
                 *key = KEYC_NONE;
@@ -1496,17 +1712,18 @@ pub unsafe fn mode_tree_key(
                 mode_tree_build(mtd);
             }
             code::QUESTION_MARK | code::SLASH | code::S_CTRL => {
+                (*mtd).search_dir = mode_tree_search_dir::MODE_TREE_SEARCH_FORWARD;
                 (*mtd).references += 1;
-                status_prompt_set(
+                mode_tree_set_prompt(
+                    mtd,
                     c,
-                    null_mut(),
                     c!("(search) "),
                     c!(""),
+                    PromptType::Search,
+                    prompt_flags::PROMPT_NOFORMAT,
                     mode_tree_search_callback,
                     mode_tree_search_free,
                     mtd,
-                    prompt_flags::PROMPT_NOFORMAT,
-                    PromptType::Search,
                 );
             }
             code::N => {
@@ -1519,16 +1736,16 @@ pub unsafe fn mode_tree_key(
             }
             code::F => {
                 (*mtd).references += 1;
-                status_prompt_set(
+                mode_tree_set_prompt(
+                    mtd,
                     c,
-                    null_mut(),
                     c!("(filter) "),
                     (*mtd).filter,
+                    PromptType::Search,
+                    prompt_flags::PROMPT_NOFORMAT,
                     mode_tree_filter_callback,
                     mode_tree_filter_free,
                     mtd,
-                    prompt_flags::PROMPT_NOFORMAT,
-                    PromptType::Search,
                 );
             }
             code::V => {

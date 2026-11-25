@@ -12,7 +12,7 @@
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 use crate::*;
-use crate::{cmd_::cmd_queue::cmdq_get_callback1, options_::options_get_number_};
+use crate::options_::options_get_number_;
 
 const WINDOW_TREE_DEFAULT_COMMAND: &str = "switch-client -Zt '%%'";
 const WINDOW_TREE_DEFAULT_FORMAT: &str = concat!(
@@ -1221,6 +1221,36 @@ unsafe fn window_tree_command_done(_: *mut cmdq_item, modedata: *mut c_void) -> 
     }
 }
 
+/// Kills the current item after its prompt said yes, then finishes like
+/// [`window_tree_command_done`]. 3.8 kills from the prompt callback,
+/// which runs inside the mode's key handling now that the prompt is in
+/// the mode, and its server crashes when the pane killed is the one the
+/// mode is in. Queued, the key handling is over before the pane goes.
+unsafe fn window_tree_kill_current_done(item: *mut cmdq_item, modedata: *mut c_void) -> cmd_retval {
+    unsafe {
+        let data: *mut window_tree_modedata = modedata.cast();
+        if (*data).dead == 0 {
+            let current = mode_tree_get_current((*data).data);
+            window_tree_kill_each(NonNull::new_unchecked(data).cast(), current, cmdq_get_client(item), KEYC_NONE);
+            server_renumber_all();
+        }
+        window_tree_command_done(item, modedata)
+    }
+}
+
+/// Kills the tagged items after their prompt said yes, see
+/// [`window_tree_kill_current_done`].
+unsafe fn window_tree_kill_tagged_done(item: *mut cmdq_item, modedata: *mut c_void) -> cmd_retval {
+    unsafe {
+        let data: *mut window_tree_modedata = modedata.cast();
+        if (*data).dead == 0 {
+            mode_tree_each_tagged((*data).data, Some(window_tree_kill_each), cmdq_get_client(item), KEYC_NONE, 1);
+            server_renumber_all();
+        }
+        window_tree_command_done(item, modedata)
+    }
+}
+
 unsafe fn window_tree_command_callback(
     c: *mut client,
     data: NonNull<window_tree_modedata>,
@@ -1302,7 +1332,6 @@ unsafe fn window_tree_kill_current_callback(
     _: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
-        let mtd: *mut mode_tree_data = (*data.as_ptr()).data;
 
         if s.is_null() || *s == b'\0' || (*data.as_ptr()).dead != 0 {
             return 0;
@@ -1311,13 +1340,11 @@ unsafe fn window_tree_kill_current_callback(
             return 0;
         }
 
-        window_tree_kill_each(data.cast(), mode_tree_get_current(mtd), c, KEYC_NONE);
-        server_renumber_all();
-
+        // The kill is queued, see window_tree_kill_current_done.
         (*data.as_ptr()).references += 1;
         cmdq_append(
             c,
-            cmdq_get_callback!(window_tree_command_done, data.as_ptr().cast()).as_ptr(),
+            cmdq_get_callback!(window_tree_kill_current_done, data.as_ptr().cast()).as_ptr(),
         );
 
         0
@@ -1331,7 +1358,6 @@ unsafe fn window_tree_kill_tagged_callback(
     _: crate::prompt::KeyResult,
 ) -> i32 {
     unsafe {
-        let mtd: *mut mode_tree_data = (*data.as_ptr()).data;
 
         if s.is_null() || *s == b'\0' || (*data.as_ptr()).dead != 0 {
             return 0;
@@ -1340,18 +1366,11 @@ unsafe fn window_tree_kill_tagged_callback(
             return 0;
         }
 
-        mode_tree_each_tagged(mtd, Some(window_tree_kill_each), c, KEYC_NONE, 1);
-        server_renumber_all();
-
+        // The kill is queued, see window_tree_kill_current_done.
         (*data.as_ptr()).references += 1;
         cmdq_append(
             c,
-            cmdq_get_callback1(
-                "window_tree_command_done",
-                Some(window_tree_command_done),
-                data.cast().as_ptr(),
-            )
-            .as_ptr(),
+            cmdq_get_callback!(window_tree_kill_tagged_done, data.as_ptr().cast()).as_ptr(),
         );
 
         0
@@ -1522,16 +1541,16 @@ unsafe fn window_tree_key(
                         break;
                     }
                     (*data).references += 1;
-                    status_prompt_set(
+                    mode_tree_set_prompt(
+                        (*data).data,
                         c,
-                        null_mut(),
                         prompt,
                         c!(""),
+                        PromptType::Command,
+                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
                         window_tree_kill_current_callback,
                         window_tree_command_free,
                         data,
-                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
-                        PromptType::Command,
                     );
                     free_(prompt);
                 }
@@ -1542,16 +1561,16 @@ unsafe fn window_tree_key(
                     }
                     prompt = format_nul!("Kill {} tagged? ", tagged);
                     (*data).references += 1;
-                    status_prompt_set(
+                    mode_tree_set_prompt(
+                        (*data).data,
                         c,
-                        null_mut(),
                         prompt,
                         c!(""),
+                        PromptType::Command,
+                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
                         window_tree_kill_tagged_callback,
                         window_tree_command_free,
                         data,
-                        prompt_flags::PROMPT_SINGLE | prompt_flags::PROMPT_NOFORMAT,
-                        PromptType::Command,
                     );
                     free_(prompt);
                 }
@@ -1563,16 +1582,16 @@ unsafe fn window_tree_key(
                         format_nul!("(current) ")
                     };
                     (*data).references += 1;
-                    status_prompt_set(
+                    mode_tree_set_prompt(
+                        (*data).data,
                         c,
-                        null_mut(),
                         prompt,
                         c!(""),
+                        PromptType::Command,
+                        prompt_flags::PROMPT_NOFORMAT,
                         window_tree_command_callback,
                         window_tree_command_free,
                         data,
-                        prompt_flags::PROMPT_NOFORMAT,
-                        PromptType::Command,
                     );
                     free_(prompt);
                 }
