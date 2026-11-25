@@ -32,10 +32,6 @@
 //! the file is done.
 
 #![forbid(unsafe_code)]
-#![expect(
-    dead_code,
-    reason = "list-buffers, paste-buffer and the file commands use the rest, converted next"
-)]
 
 use std::rc::Rc;
 
@@ -80,13 +76,9 @@ pub enum FilePath {
     Format(Vec<u8>),
 }
 
-/// The outcome of reading or writing a client file.
-pub struct FileDone {
-    /// The path the client used.
-    pub path: Vec<u8>,
-    /// What was read (empty after a write), or the error.
-    pub result: Result<Vec<u8>, FileError>,
-}
+/// The outcome of reading or writing a client file: what was read
+/// (empty after a write), or the error.
+pub type FileDone = Result<Vec<u8>, FileError>;
 
 /// A client file that could not be read or written. Shown as tmux 3.8
 /// does, the error first and the path last.

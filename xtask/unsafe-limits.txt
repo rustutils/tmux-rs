@@ -56,7 +56,6 @@
 8 src/cmd_/cmd_list_panes.rs
 2 src/cmd_/cmd_list_sessions.rs
 2 src/cmd_/cmd_list_windows.rs
-4 src/cmd_/cmd_load_buffer.rs
 2 src/cmd_/cmd_lock_server.rs
 2 src/cmd_/cmd_move_window.rs
 2 src/cmd_/cmd_new_session.rs
@@ -72,7 +71,6 @@
 2 src/cmd_/cmd_respawn_window.rs
 2 src/cmd_/cmd_rotate_window.rs
 12 src/cmd_/cmd_run_shell.rs
-4 src/cmd_/cmd_save_buffer.rs
 2 src/cmd_/cmd_select_layout.rs
 4 src/cmd_/cmd_select_pane.rs
 2 src/cmd_/cmd_select_window.rs

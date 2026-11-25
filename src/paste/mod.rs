@@ -47,12 +47,6 @@ pub fn paste_get_name(name: &str) -> Option<PasteBuffer> {
     with_paste(|store| store.get(name).cloned())
 }
 
-/// The buffer called `name`, for a name given as bytes by a client. Names
-/// that are not UTF-8 find nothing, since no buffer can have one.
-pub fn paste_get_name_bytes(name: &[u8]) -> Option<PasteBuffer> {
-    paste_get_name(std::str::from_utf8(name).ok()?)
-}
-
 /// The newest automatic buffer, which commands use when no buffer is
 /// named.
 pub fn paste_get_top() -> Option<PasteBuffer> {

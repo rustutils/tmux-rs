@@ -22,7 +22,7 @@
 
 use crate::cmd_::context::{
     ClientInfo, CmdArgs, CmdCtx, CmdCtxParts, CmdEffect, CmdFlow, CmdResult,
-    FileDone, FileError, FilePath, FileThen, FormatSubject, PaneInfo,
+    FileError, FilePath, FileThen, FormatSubject, PaneInfo,
 };
 use crate::libc::{O_APPEND, O_TRUNC, strerror};
 use crate::paste::{buffer_limit, now, paste_notify};
@@ -272,28 +272,22 @@ unsafe fn cmd_file_done(
     }
     unsafe {
         let FileWait { item, then } = *Box::from_raw(data.cast::<FileWait>());
-        let path = if path.is_null() {
-            Vec::new()
-        } else {
-            CStr::from_ptr(path.cast()).to_bytes().to_vec()
-        };
-        let result = if error != 0 {
+        let done = if error != 0 {
+            let path = if path.is_null() {
+                String::new()
+            } else {
+                String::from_utf8_lossy(CStr::from_ptr(path.cast()).to_bytes()).into_owned()
+            };
             Err(FileError {
                 message: strerror(error).to_string(),
-                path: String::from_utf8_lossy(&path).into_owned(),
+                path,
             })
-        } else if buffer.is_null() {
+        } else if buffer.is_null() || EVBUFFER_LENGTH(buffer) == 0 {
             Ok(Vec::new())
         } else {
             let size = EVBUFFER_LENGTH(buffer);
-            if size == 0 {
-                Ok(Vec::new())
-            } else {
-                let bytes = std::slice::from_raw_parts(EVBUFFER_DATA(buffer).cast::<u8>(), size);
-                Ok(bytes.to_vec())
-            }
+            Ok(std::slice::from_raw_parts(EVBUFFER_DATA(buffer).cast::<u8>(), size).to_vec())
         };
-        let done = FileDone { path, result };
         let retval = cmd_run_converted(item, |ctx| then(ctx, done));
         if retval != cmd_retval::CMD_RETURN_WAIT {
             cmdq_continue(item);

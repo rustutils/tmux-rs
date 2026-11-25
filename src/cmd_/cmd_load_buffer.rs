@@ -11,7 +11,14 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use crate::*;
+//! load-buffer, converted to run in a [`CmdCtx`].
+
+#![forbid(unsafe_code)]
+
+use std::rc::Rc;
+
+use crate::cmd_::context::{CmdCtx, CmdFlow, CmdResult, FileDone, FilePath};
+use crate::{ClientId, CmdExec, args_parse, cmd_entry, cmd_entry_flag, cmd_flag};
 
 pub static CMD_LOAD_BUFFER_ENTRY: cmd_entry = cmd_entry {
     name: "load-buffer",
@@ -23,85 +30,117 @@ pub static CMD_LOAD_BUFFER_ENTRY: cmd_entry = cmd_entry {
     flags: cmd_flag::CMD_AFTERHOOK
         .union(cmd_flag::CMD_CLIENT_TFLAG)
         .union(cmd_flag::CMD_CLIENT_CANFAIL),
-    exec: CmdExec::Old(cmd_load_buffer_exec),
+    exec: CmdExec::Ctx(cmd_load_buffer_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
 
-pub struct cmd_load_buffer_data {
-    pub client: Option<ClientId>,
-    pub item: *mut cmdq_item,
-    pub name: *mut u8,
+/// load-buffer: read a client file (the path expanded as a format) into
+/// the buffer named with -b, or a new automatic one. -w also sends it to
+/// the target client's clipboard.
+fn cmd_load_buffer_exec(ctx: &mut CmdCtx<'_>) -> CmdResult {
+    let args = ctx.args();
+    let name = args.get('b').map(<[u8]>::to_vec);
+    let client = if args.has('w') {
+        ctx.target_client().map(|tc| tc.id)
+    } else {
+        None
+    };
+    let path = args.string(0).unwrap_or_default().to_vec();
+    Ok(CmdFlow::ReadFile {
+        path: FilePath::Format(path),
+        then: Box::new(move |ctx, done| load_done(ctx, done, name.as_deref(), client)),
+    })
 }
 
-unsafe fn cmd_load_buffer_done(
-    _c: *mut client,
-    path: *mut u8,
-    error: i32,
-    closed: i32,
-    buffer: *mut evbuffer,
-    data: *mut c_void,
-) {
-    unsafe {
-        let cdata = data as *mut cmd_load_buffer_data;
-        let tc = (*cdata).client.and_then(|id| client_from_id(id)).unwrap_or(null_mut());
-        let item = (*cdata).item;
-        let bdata = EVBUFFER_DATA(buffer);
-        let bsize = EVBUFFER_LENGTH(buffer);
-
-        if closed == 0 {
-            return;
-        }
-
-        if error != 0 {
-            cmdq_error!(item, "{}: {}", strerror(error), _s(path));
-        } else if bsize != 0 {
-            let copy: std::rc::Rc<[u8]> = std::slice::from_raw_parts(bdata.cast::<u8>(), bsize).into();
-            if let Err(cause) = paste_set(copy.clone(), cstr_to_bytes((*cdata).name)) {
-                cmdq_error!(item, "{}", cause);
-            } else if !tc.is_null()
-                && !client_get_session(tc).is_null()
-                && !(*tc).flags.intersects(client_flag::DEAD)
-            {
-                tty_set_selection(&raw mut (*tc).tty, c!(""), copy.as_ptr(), bsize);
-            }
-            if !tc.is_null() {
-                server_client_unref(tc);
-            }
-        }
-        cmdq_continue(item);
-
-        free_((*cdata).name);
-        drop(Box::from_raw(cdata));
+/// After reading the file: set the buffer to what was read, unless it
+/// was empty.
+fn load_done(
+    ctx: &mut CmdCtx<'_>,
+    done: FileDone,
+    name: Option<&[u8]>,
+    client: Option<ClientId>,
+) -> CmdResult {
+    let data = done?;
+    if data.is_empty() {
+        return Ok(CmdFlow::Done);
     }
+    let data: Rc<[u8]> = data.into();
+    ctx.paste().set(name, data.clone())?;
+    if let Some(client) = client {
+        ctx.set_selection(client, data);
+    }
+    Ok(CmdFlow::Done)
 }
 
-unsafe fn cmd_load_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_);
-        let tc = cmdq_get_target_client(item);
-        let bufname = args_get(args, b'b');
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cmd_::context::testing::{args, ctx, parts, paste_events};
+    use crate::cmd_::context::{ClientInfo, CmdEffect, FileError};
+    use crate::paste::PasteEvent;
 
-        let cdata = Box::into_raw(Box::new(cmd_load_buffer_data {
-            item,
-            name: if !bufname.is_null() { xstrdup(bufname).as_ptr() } else { null_mut() },
-            client: if args_has(args, 'w') && !tc.is_null() {
-                (*tc).references += 1;
-                Some((*tc).id)
-            } else {
-                None
-            },
-        }));
+    /// Runs load-buffer with `flags` and hands its continuation `done`.
+    fn load(flags: &[(char, Option<&str>)], done: FileDone) -> (CmdResult, Vec<CmdEffect>) {
+        let a = args(flags, &["~/f"]);
+        let mut p = parts();
+        p.target_client = Some(ClientInfo {
+            id: ClientId(4),
+            attached: true,
+            control: false,
+        });
+        let mut c = ctx(&a, p);
+        let Ok(CmdFlow::ReadFile {
+            path: FilePath::Format(path),
+            then,
+        }) = cmd_load_buffer_exec(&mut c)
+        else {
+            panic!("expected a read");
+        };
+        assert_eq!(path, b"~/f");
+        assert!(c.take_effects().is_empty(), "nothing happens before the read");
+        let result = then(&mut c, done);
+        (result, c.take_effects())
+    }
 
-        let path = format_single_from_target(item, args_string(args, 0));
-        file_read(
-            cmdq_get_client(item),
-            path,
-            Some(cmd_load_buffer_done),
-            cdata.cast(),
+    #[test]
+    fn sets_the_buffer_and_selection() {
+        let (result, effects) = load(&[('b', Some("f")), ('w', None)], Ok(b"text".to_vec()));
+        assert!(matches!(result, Ok(CmdFlow::Done)));
+        assert_eq!(paste_events(&effects), [PasteEvent::Changed("f".into())]);
+        assert!(matches!(
+            effects.last(),
+            Some(CmdEffect::SetSelection { client: ClientId(4), data }) if &data[..] == b"text"
+        ));
+
+        let (_, effects) = load(&[], Ok(b"text".to_vec()));
+        assert_eq!(paste_events(&effects), [PasteEvent::Changed("buffer0".into())]);
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, CmdEffect::SetSelection { .. })),
+            "no selection without -w"
         );
-        free_(path);
     }
 
-    cmd_retval::CMD_RETURN_WAIT
+    #[test]
+    fn empty_files_and_errors() {
+        let (result, effects) = load(&[('w', None)], Ok(Vec::new()));
+        assert!(matches!(result, Ok(CmdFlow::Done)));
+        assert!(effects.is_empty());
+
+        let failed = Err(FileError {
+            message: "No such file or directory".into(),
+            path: "/x".into(),
+        });
+        let (result, _) = load(&[], failed);
+        assert_eq!(
+            result.err().unwrap().to_string(),
+            "No such file or directory: /x"
+        );
+
+        let (result, effects) = load(&[('b', Some("a\tb")), ('w', None)], Ok(b"x".to_vec()));
+        assert_eq!(result.err().unwrap().to_string(), "invalid buffer name: a\tb");
+        assert!(effects.is_empty(), "no selection when the buffer was not set");
+    }
 }
