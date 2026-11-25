@@ -3926,6 +3926,35 @@ pub unsafe fn format_match(
         if (*fm).argc >= 1 {
             s = *(*fm).argv;
         }
+        // z is a fuzzy match giving "1" or "0", p gives the matched
+        // columns as a comma separated list.
+        let positions = !strchr(s, b'p' as i32).is_null();
+        if positions || !strchr(s, b'z' as i32).is_null() {
+            let pattern = CStr::from_ptr(pattern.cast()).to_bytes();
+            let text = CStr::from_ptr(text.cast()).to_bytes();
+            let width = format_width(&String::from_utf8_lossy(text)).max(1);
+
+            // Each style directive is parsed on top of the last, as C does.
+            let mut sy: style = zeroed();
+            style_set(&raw mut sy, &raw const GRID_DEFAULT_CELL);
+            let parse_style = |inner: &[u8]| {
+                let inner = CString::new(inner).ok()?;
+                (style_parse(&raw mut sy, &raw const GRID_DEFAULT_CELL, inner.as_ptr().cast()) == 0)
+                    .then_some(sy.align)
+            };
+            let result = match crate::fuzzy::fuzzy_match(pattern, text, width, parse_style) {
+                None if positions => String::new(),
+                None => "0".to_string(),
+                Some(_) if !positions => "1".to_string(),
+                Some(m) => (0..width)
+                    .filter(|&i| m.columns.bit_test(i))
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            };
+            let result = CString::new(result).unwrap_or_default();
+            return xstrdup(result.as_ptr().cast()).as_ptr();
+        }
         if strchr(s, b'r' as i32).is_null() {
             if !strchr(s, b'i' as i32).is_null() {
                 flags |= FNM_CASEFOLD;

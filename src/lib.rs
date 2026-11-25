@@ -67,6 +67,7 @@ cfg_pub_mods! {
     mod file;
     mod format;
     mod format_draw_;
+    mod fuzzy;
     mod hook_monitor;
     mod hooks;
     mod global;

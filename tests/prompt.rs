@@ -480,7 +480,6 @@ fn show_and_clear_prompt_history() {
 
 /// #{m/z:} is a fuzzy match, #{m/p:} gives the matched columns.
 #[test]
-#[ignore = "fuzzy.c is not ported yet (run 12 task 3)"]
 fn fuzzy_format_modifiers() {
     let mut tmux = TmuxTestHarness::new();
     tmux.new_session()
@@ -507,6 +506,15 @@ fn fuzzy_format_modifiers() {
         ("#{m/p:zz,dev}", ""),
         ("#{m/p:b,#[fg=red]ab}", "1"),
         ("#{m/p:\u{e9}b,a\u{e9}b}", "1,2"),
+        ("#{m/p:z,abc#[align=right]xyz}", "5"),
+        ("#{m/p:b,a#[align=centre]b}", "1"),
+        ("#{m/p:ab,a a b}", "2,4"),
+        ("#{m/p:^a$,a}", "0"),
+        ("#{m/p:a,\u{4e2d}a}", "2"),
+        ("#{m/p:\u{4e2d},a\u{4e2d}}", "1,2"),
+        ("#{m/z:!,a}", "0"),
+        ("#{m/z:,a}", "1"),
+        ("#{m/p:,a}", ""),
     ];
     for (format, expected) in cases {
         assert_eq!(tmux.query(format), expected, "{format}");
