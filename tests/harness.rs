@@ -52,6 +52,9 @@ fn cargo_bin() -> PathBuf {
 pub struct TmuxTestHarness {
     socket_path: String,
     server_started: bool,
+    /// The binary for every command, set by `with_bin`. Otherwise the
+    /// server and client binaries are used.
+    bin: Option<PathBuf>,
 }
 
 impl Default for TmuxTestHarness {
@@ -69,7 +72,19 @@ impl TmuxTestHarness {
         Self {
             socket_path,
             server_started: false,
+            bin: None,
         }
+    }
+
+    /// A harness whose commands all use `bin`, whatever `TMUX_SERVER_BIN`
+    /// and `TMUX_CLIENT_BIN` say. Tests use it for an outer server running
+    /// /usr/bin/tmux as a reference terminal: a client of the server
+    /// under test is attached in its pane, and capture-pane and the
+    /// cursor formats of the outer pane show what that client drew.
+    pub fn with_bin(bin: impl Into<PathBuf>) -> Self {
+        let mut h = Self::new();
+        h.bin = Some(bin.into());
+        h
     }
 
     /// Start a detached session with the given arguments.
@@ -194,7 +209,7 @@ impl TmuxTestHarness {
     fn server_cmd(&self) -> TmuxCommandBuilder<'_> {
         TmuxCommandBuilder {
             harness: self,
-            bin: server_bin(),
+            bin: self.bin.clone().unwrap_or_else(server_bin),
             extra_args: Vec::new(),
             env_vars: Vec::new(),
             stdin_data: None,
@@ -205,7 +220,7 @@ impl TmuxTestHarness {
     fn client_cmd(&self) -> TmuxCommandBuilder<'_> {
         TmuxCommandBuilder {
             harness: self,
-            bin: client_bin(),
+            bin: self.bin.clone().unwrap_or_else(client_bin),
             extra_args: Vec::new(),
             env_vars: Vec::new(),
             stdin_data: None,

@@ -555,3 +555,55 @@ fn only_command_and_search_types() {
         std::thread::sleep(Duration::from_millis(100));
     }
 }
+
+#[test]
+#[ignore = "command-prompt -e is not ported yet (run 13 task 4)"]
+fn backspace_on_empty_prompt_closes_with_dash_e() {
+    let mut p = Prompt::new(&[]);
+    p.tmux
+        .cmd()
+        .args(["set", "-gu", "@r"])
+        .run()
+        .assert_success();
+    p.open(&["-e", "-p", "E>", "-I", "ab", "set -g @r '[%%]'"], "E> ab");
+    p.keys(&[BSPACE, BSPACE, BSPACE]);
+    // The prompt is closed, so these keys go to the pane (sleep) and
+    // nothing is stored.
+    p.keys(&[b"q", b"\r"]);
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(p.tmux.query("#{@r}"), "");
+
+    // Without -e Backspace on an empty prompt does nothing.
+    p.open(&["-p", "F>", "set -g @r '[%%]'"], "F>");
+    p.keys(&[BSPACE, b"q", b"\r"]);
+    assert_eq!(p.result(), "[q]");
+}
+
+#[test]
+#[ignore = "command-prompt -l is not ported yet (run 13 task 4)"]
+fn dash_l_keeps_commas() {
+    let mut p = Prompt::new(&[]);
+    p.tmux
+        .cmd()
+        .args(["set", "-gu", "@r"])
+        .run()
+        .assert_success();
+    // One prompt with the commas, and no space added after it.
+    p.open(
+        &["-l", "-p", "A>,B>", "-I", "x,y", "set -g @r '[%%|%2]'"],
+        "A>,B>x,y",
+    );
+    p.keys(&[b"\r"]);
+    assert_eq!(p.result(), "[x,y|%2]");
+
+    p.tmux
+        .cmd()
+        .args(["set", "-gu", "@r"])
+        .run()
+        .assert_success();
+    p.open(&["-p", "A>,B>", "-I", "x,y", "set -g @r '[%1|%2]'"], "A> x");
+    p.keys(&[b"\r"]);
+    p.client.wait_for_text("B> y", Duration::from_secs(5));
+    p.keys(&[b"\r"]);
+    assert_eq!(p.result(), "[x|y]");
+}

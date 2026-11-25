@@ -20,6 +20,7 @@ mod options_3_8;
 mod pane;
 mod parity;
 mod prompt;
+mod prompt_draw;
 mod pty_client;
 mod server_access;
 mod session;
