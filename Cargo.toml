@@ -75,6 +75,41 @@ lalrpop      = { version = "0.22.2", default-features = false }
 name = "integration"
 path = "tests/tests.rs"
 
+# Packages for `just package`, built from a static musl binary so they
+# install on any distribution and release. tmux-rs needs the terminfo
+# database at run time, which ncurses-base provides on Debian and Fedora.
+[package.metadata.deb]
+maintainer = "Patrick Elsen"
+copyright = "2007 Nicholas Marriott and the tmux contributors, 2025 Collin Richards and the tmux-rs contributors"
+license-file = "LICENSE"
+section = "admin"
+priority = "optional"
+depends = ""
+recommends = "ncurses-base"
+extended-description = """\
+tmux-rs is a terminal multiplexer, a Rust port of tmux. It aims to be a \
+drop-in replacement for tmux 3.8, with the same commands, options, key \
+bindings, configuration file and client-server protocol. It installs as \
+tmux-rs and uses its own socket directory, so it can sit next to tmux."""
+assets = [
+    ["target/release/tmux-rs", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/tmux-rs/", "644"],
+    ["CHANGELOG.md", "usr/share/doc/tmux-rs/", "644"],
+]
+
+[package.metadata.generate-rpm]
+summary = "A Rust port of tmux"
+auto-req = "disabled"
+assets = [
+    { source = "target/release/tmux-rs", dest = "/usr/bin/tmux-rs", mode = "755" },
+    { source = "README.md", dest = "/usr/share/doc/tmux-rs/README.md", mode = "644", doc = true },
+    { source = "CHANGELOG.md", dest = "/usr/share/doc/tmux-rs/CHANGELOG.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/tmux-rs/LICENSE", mode = "644" },
+]
+
+[package.metadata.generate-rpm.recommends]
+ncurses-base = "*"
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 
