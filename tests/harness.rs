@@ -367,6 +367,11 @@ impl<'a> TmuxCommandBuilder<'a> {
     pub fn run(self) -> TmuxResult {
         let mut cmd = Command::new(&self.bin);
         cmd.args(["-S", &self.harness.socket_path]);
+        // TMUX_TEST_VERBOSE=1 makes every tmux write its -vv logs
+        // (tmux-server-PID.log and so on) in the current directory.
+        if env::var_os("TMUX_TEST_VERBOSE").is_some() {
+            cmd.arg("-vv");
+        }
         // Never load the user's own config when this command starts a
         // server. Each -f adds a file, so a test can still pass its own.
         cmd.arg("-f/dev/null");
@@ -526,6 +531,7 @@ impl PtyClient {
         let bin = client_bin();
         let child = Command::new(&bin)
             .args(["-S", harness.socket_path(), "-f/dev/null"])
+            .args(env::var_os("TMUX_TEST_VERBOSE").map(|_| "-vv"))
             .args(args)
             .env("TERM", "screen")
             .env("SHELL", "/bin/sh")

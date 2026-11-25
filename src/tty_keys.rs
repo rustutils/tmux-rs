@@ -1046,7 +1046,12 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
         if len == 0 {
             return 0;
         }
-        // log_debug("%s: keys are %zu (%.*s)", (*c).name, len, (int)len, buf);
+        log_debug!(
+            "{}: keys are {} ({:?})",
+            _s((*c).name),
+            len,
+            String::from_utf8_lossy(std::slice::from_raw_parts(buf, len))
+        );
 
         let mut start = true;
         'first_key: loop {
@@ -1130,7 +1135,6 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
                             }
 
                             // Is this a mouse key press?
-                            #[expect(unused_assignments)]
                             match tty_keys_mouse(tty, buf.cast(), len, &raw mut size, &raw mut m) {
                                 0 => {
                                     // yes
@@ -1250,7 +1254,11 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
 
                         break 'complete_key;
                     } // partial_key:
-                    // log_debug("%s: partial key %.*s", (*c).name, len as i32, buf);
+                    log_debug!(
+                        "{}: partial key {:?}",
+                        _s((*c).name),
+                        String::from_utf8_lossy(std::slice::from_raw_parts(buf, len))
+                    );
 
                     // If timer is going, check for expiration.
                     if (*tty).flags.intersects(tty_flags::TTY_TIMER) {
@@ -1280,7 +1288,12 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
                     return 0;
                 }
                 // complete_key:
-                // log_debug("%s: complete key %.*s %#llx", (*c).name, (int)size, buf, key);
+                log_debug!(
+                    "{}: complete key {:?} {:#x}",
+                    _s((*c).name),
+                    String::from_utf8_lossy(std::slice::from_raw_parts(buf, size)),
+                    key
+                );
 
                 // Check for backspace key using termios VERASE - the terminfo
                 // kbs entry is extremely unreliable, so cannot be safely
@@ -1327,7 +1340,12 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
             }
             // discard_key:
 
-            // log_debug("%s: discard key %.*s %#llx", c->name, (int)size, buf, key);
+            log_debug!(
+                "{}: discard key {:?} {:#x}",
+                _s((*c).name),
+                String::from_utf8_lossy(std::slice::from_raw_parts(buf, size)),
+                key
+            );
 
             // Remove data from buffer.
             (*tty).in_.drain(size);
