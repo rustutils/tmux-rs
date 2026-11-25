@@ -1040,3 +1040,404 @@ fn buffer_names_that_are_not_utf8() {
     }
     assert_eq!(buffer_names(&tmux), vec!["ok"]);
 }
+
+// ---------------------------------------------------------------------------
+// tmux 3.8 buffer command behaviour (checked against 3.8)
+// ---------------------------------------------------------------------------
+
+/// Starts a session whose pane copies everything it is sent into `path`,
+/// byte for byte (the terminal is raw, so nothing is translated or
+/// echoed). With `bracket` the program first turns on bracketed paste.
+/// Returns once the terminal is raw.
+fn start_recording_pane(tmux: &mut TmuxTestHarness, path: &str, bracket: bool) {
+    let enable = if bracket {
+        "printf '\\033[?2004h'; "
+    } else {
+        ""
+    };
+    let script = format!("{enable}stty raw -echo && printf ready && exec cat > '{path}'");
+    tmux.new_session()
+        .args(["--", "sh", "-c", &script])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    let start = std::time::Instant::now();
+    while !tmux.capture_pane().contains("ready") {
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "the recording pane did not start"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Waits until `path` holds `expected`, and fails with what it holds
+/// otherwise.
+fn wait_for_file(path: &str, expected: &[u8]) {
+    let start = std::time::Instant::now();
+    loop {
+        let contents = std::fs::read(path).unwrap_or_default();
+        if contents == expected {
+            return;
+        }
+        if start.elapsed() > Duration::from_secs(5) {
+            panic!(
+                "expected {:?}, the pane got {:?}",
+                String::from_utf8_lossy(expected),
+                String::from_utf8_lossy(&contents)
+            );
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// paste-buffer escapes control characters with vis since 3.8 (C style
+/// without the backslash, tab and carriage return kept), so pasting
+/// cannot send a program escape sequences. -S pastes the bytes as they
+/// are. Lines are still joined with the separator.
+#[test]
+#[ignore = "3.8 paste escaping is not ported yet (run 11 task 3)"]
+fn paste_buffer_escapes_control_characters() {
+    let mut tmux = TmuxTestHarness::new();
+    let tmp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
+    let path = tmp.path().to_str().unwrap().to_string();
+    start_recording_pane(&mut tmux, &path, false);
+
+    let data = "a\u{1}b\u{1b}c\t\u{e9}\u{7f}\nd";
+    tmux.cmd().args(["set-buffer", data]).run().assert_success();
+    tmux.cmd().args(["paste-buffer"]).run().assert_success();
+    let escaped = "a^Ab^[c\t\u{e9}^?\rd";
+    wait_for_file(&path, escaped.as_bytes());
+
+    tmux.cmd()
+        .args(["paste-buffer", "-S"])
+        .run()
+        .assert_success();
+    let raw = "a\u{1}b\u{1b}c\t\u{e9}\u{7f}\rd";
+    wait_for_file(&path, format!("{escaped}{raw}").as_bytes());
+}
+
+/// -r joins lines with a newline, -s with any separator, and -d deletes
+/// the buffer after pasting it.
+#[test]
+fn paste_buffer_separators() {
+    let mut tmux = TmuxTestHarness::new();
+    let tmp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
+    let path = tmp.path().to_str().unwrap().to_string();
+    start_recording_pane(&mut tmux, &path, false);
+
+    tmux.cmd()
+        .args(["set-buffer", "1\n2\n"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["paste-buffer", "-r"])
+        .run()
+        .assert_success();
+    wait_for_file(&path, b"1\n2\n");
+    tmux.cmd()
+        .args(["paste-buffer", "-d", "-s", "<>"])
+        .run()
+        .assert_success();
+    wait_for_file(&path, b"1\n2\n1<>2<>");
+    assert!(buffer_names(&tmux).is_empty(), "-d deletes the buffer");
+}
+
+/// -p brackets the paste when the program asked for bracketed paste.
+#[test]
+fn paste_buffer_bracketed() {
+    let mut tmux = TmuxTestHarness::new();
+    let tmp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
+    let path = tmp.path().to_str().unwrap().to_string();
+    start_recording_pane(&mut tmux, &path, true);
+
+    tmux.cmd().args(["set-buffer", "x"]).run().assert_success();
+    tmux.cmd()
+        .args(["paste-buffer", "-p"])
+        .run()
+        .assert_success();
+    tmux.cmd().args(["paste-buffer"]).run().assert_success();
+    wait_for_file(&path, b"\x1b[200~x\x1b[201~x");
+}
+
+/// A pane whose program has exited cannot be pasted into.
+#[test]
+fn paste_buffer_into_exited_pane_fails() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd()
+        .args(["set", "-g", "remain-on-exit", "on"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["respawn-pane", "-k", "true"])
+        .run()
+        .assert_success();
+    tmux.wait_for("#{pane_dead}", |v| v == "1", Duration::from_secs(5));
+
+    let result = tmux.cmd().args(["paste-buffer"]).run();
+    result.assert_failure();
+    assert_eq!(result.stderr_str().trim(), "target pane has exited");
+}
+
+/// The error of every buffer command, with C's text.
+#[test]
+fn buffer_command_errors() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    let tmp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
+    let path = tmp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "x").unwrap();
+
+    let check = |args: &[&str], error: &str| {
+        let result = tmux.cmd().args(args).run();
+        result.assert_failure();
+        assert_eq!(result.stderr_str().trim(), error, "{args:?}");
+    };
+
+    // With no buffers at all.
+    check(&["set-buffer"], "no data specified");
+    check(&["set-buffer", "-n", "x"], "no buffer");
+    check(
+        &["set-buffer", "-b", "nope", "-n", "x"],
+        "unknown buffer: nope",
+    );
+    check(&["delete-buffer"], "no buffer");
+    check(&["delete-buffer", "-b", "nope"], "unknown buffer: nope");
+    check(&["show-buffer"], "no buffers");
+    check(&["show-buffer", "-b", "nope"], "no buffer nope");
+    check(&["save-buffer", &path], "no buffers");
+    check(&["save-buffer", "-b", "nope", &path], "no buffer nope");
+    check(&["paste-buffer", "-b", "nope"], "no buffer nope");
+    check(&["list-buffers", "-O", "bogus"], "invalid sort order");
+    check(
+        &["load-buffer", "-b", "a\tb", &path],
+        "invalid buffer name: a\tb",
+    );
+    check(
+        &["set-buffer", "-b", "a\tb", "-a", "x"],
+        "invalid buffer name: a\tb",
+    );
+
+    // Pasting nothing is not an error, and setting nothing adds nothing.
+    tmux.cmd().args(["paste-buffer"]).run().assert_success();
+    tmux.cmd().args(["set-buffer", ""]).run().assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "empty", ""])
+        .run()
+        .assert_success();
+    assert!(buffer_names(&tmux).is_empty());
+}
+
+/// set-buffer -n renames the newest buffer when no -b is given.
+#[test]
+fn set_buffer_n_renames_the_top_buffer() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    tmux.cmd()
+        .args(["set-buffer", "-b", "named", "1"])
+        .run()
+        .assert_success();
+    tmux.cmd().args(["set-buffer", "2"]).run().assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-n", "renamed"])
+        .run()
+        .assert_success();
+    assert_eq!(buffer_names(&tmux), vec!["renamed", "named"]);
+    let content = tmux.cmd().args(["show-buffer", "-b", "renamed"]).run();
+    assert_eq!(content.stdout_str(), "2");
+
+    // delete-buffer without -b deletes the newest automatic buffer, and
+    // renamed buffers are not automatic.
+    tmux.cmd().args(["set-buffer", "3"]).run().assert_success();
+    tmux.cmd().args(["delete-buffer"]).run().assert_success();
+    assert_eq!(buffer_names(&tmux), vec!["renamed", "named"]);
+    let result = tmux.cmd().args(["delete-buffer"]).run();
+    result.assert_failure();
+    assert_eq!(result.stderr_str().trim(), "no buffer");
+}
+
+/// set-buffer -a appends to the named buffer.
+#[test]
+fn set_buffer_append_to_named() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+
+    tmux.cmd()
+        .args(["set-buffer", "-b", "a", "one"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set-buffer", "-a", "-b", "a", " two"])
+        .run()
+        .assert_success();
+    // Without -b, -a makes a new automatic buffer.
+    tmux.cmd()
+        .args(["set-buffer", "-a", "three"])
+        .run()
+        .assert_success();
+    let content = tmux.cmd().args(["show-buffer", "-b", "a"]).run();
+    assert_eq!(content.stdout_str(), "one two");
+    let content = tmux.cmd().args(["show-buffer"]).run();
+    assert_eq!(content.stdout_str(), "three");
+}
+
+/// Base64 as tmux sends it in OSC 52.
+fn base64(data: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in data.chunks(3) {
+        let b = [
+            chunk[0],
+            chunk.get(1).copied().unwrap_or(0),
+            chunk.get(2).copied().unwrap_or(0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(TABLE[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// An attached client whose terminal can set the clipboard (Ms).
+fn clipboard_client(tmux: &mut TmuxTestHarness) -> harness::PtyClient {
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd()
+        .args([
+            "set",
+            "-as",
+            "terminal-overrides",
+            ",*:Ms=\\E]52;%p1%s;%p2%s\\007",
+        ])
+        .run()
+        .assert_success();
+    let mut client = harness::PtyClient::attach(tmux, 80, 24);
+    tmux.wait_for("#{session_attached}", |v| v == "1", Duration::from_secs(5));
+    client.read_raw();
+    client
+}
+
+/// Waits until the client's terminal is sent `data` for its clipboard.
+fn wait_for_selection(client: &mut harness::PtyClient, data: &[u8]) {
+    let expected = format!("\x1b]52;;{}\x07", base64(data));
+    let start = std::time::Instant::now();
+    let mut seen = Vec::new();
+    while start.elapsed() < Duration::from_secs(5) {
+        seen.extend(client.read_raw());
+        if seen
+            .windows(expected.len())
+            .any(|w| w == expected.as_bytes())
+        {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!(
+        "expected {expected:?} on the terminal, got {:?}",
+        String::from_utf8_lossy(&seen)
+    );
+}
+
+/// set-buffer -w also sends the data to the client's clipboard.
+#[test]
+fn set_buffer_w_sets_the_clipboard() {
+    let mut tmux = TmuxTestHarness::new();
+    let mut client = clipboard_client(&mut tmux);
+    tmux.cmd()
+        .args(["set-buffer", "-w", "clip me"])
+        .run()
+        .assert_success();
+    wait_for_selection(&mut client, b"clip me");
+    tmux.cmd()
+        .args(["set-buffer", "-a", "-w", "-b", "buffer0", " more"])
+        .run()
+        .assert_success();
+    wait_for_selection(&mut client, b"clip me more");
+}
+
+/// load-buffer -w sends the file's contents to the client's clipboard.
+#[test]
+fn load_buffer_w_sets_the_clipboard() {
+    let mut tmux = TmuxTestHarness::new();
+    let mut client = clipboard_client(&mut tmux);
+    let tmp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
+    let path = tmp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "from a file").unwrap();
+    tmux.cmd()
+        .args(["load-buffer", "-w", "-b", "f", &path])
+        .run()
+        .assert_success();
+    wait_for_selection(&mut client, b"from a file");
+    let content = tmux.cmd().args(["show-buffer", "-b", "f"]).run();
+    assert_eq!(content.stdout_str(), "from a file");
+}
+
+/// show-buffer in control mode prints the data in the command's output
+/// block instead of writing a client file.
+#[test]
+fn show_buffer_in_control_mode() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session()
+        .args(["sleep 1000"])
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd()
+        .args(["set-buffer", "-b", "c", "line 1\nline 2"])
+        .run()
+        .assert_success();
+    let result = tmux.control_mode("show-buffer -b c\n");
+    let out = result.stdout_str();
+    assert!(
+        out.contains("\nline 1\nline 2\n%end"),
+        "control output: {out:?}"
+    );
+}
+
+/// save-buffer and show-buffer write the data exactly, without adding a
+/// newline.
+#[test]
+fn save_and_show_buffer_write_the_data_exactly() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    let tmp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
+    let path = tmp.path().to_str().unwrap().to_string();
+
+    tmux.cmd()
+        .args(["set-buffer", "a\u{1}\n"])
+        .run()
+        .assert_success();
+    let shown = tmux.cmd().args(["show-buffer"]).run();
+    shown.assert_success();
+    assert_eq!(shown.stdout_str(), "a\u{1}\n");
+    tmux.cmd()
+        .args(["save-buffer", &path])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["save-buffer", "-a", &path])
+        .run()
+        .assert_success();
+    assert_eq!(std::fs::read(&path).unwrap(), b"a\x01\na\x01\n");
+}

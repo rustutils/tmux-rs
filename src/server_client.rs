@@ -3647,11 +3647,15 @@ pub unsafe fn server_client_print(c: *mut client, parse: i32, evb: *mut evbuffer
                 // Hand out an xmalloc'd copy so the `free_(msg)` at the
                 // end of the `parse == 0` path still balances.
                 msg = xstrdup(cs.as_ptr().cast()).as_ptr();
+            } else if size == 0 {
+                msg = c!("").cast_mut();
             } else {
-                msg = EVBUFFER_DATA(evb).cast();
-                if *msg.add(size - 1) != b'\0' {
+                // Adding the NUL can move the data, so the pointer is
+                // taken after it.
+                if *data.add(size - 1) != b'\0' {
                     evbuffer_add(evb, c!("").cast(), 1);
                 }
+                msg = EVBUFFER_DATA(evb).cast();
             }
 
             if c.is_null() {
