@@ -1096,7 +1096,6 @@ fn wait_for_file(path: &str, expected: &[u8]) {
 /// cannot send a program escape sequences. -S pastes the bytes as they
 /// are. Lines are still joined with the separator.
 #[test]
-#[ignore = "3.8 paste escaping is not ported yet (run 11 task 3)"]
 fn paste_buffer_escapes_control_characters() {
     let mut tmux = TmuxTestHarness::new();
     let tmp = tempfile::NamedTempFile::new().expect("failed to create tempfile");
@@ -1114,7 +1113,21 @@ fn paste_buffer_escapes_control_characters() {
         .run()
         .assert_success();
     let raw = "a\u{1}b\u{1b}c\t\u{e9}\u{7f}\rd";
-    wait_for_file(&path, format!("{escaped}{raw}").as_bytes());
+    let mut expected = format!("{escaped}{raw}").into_bytes();
+    wait_for_file(&path, &expected);
+
+    // Bytes that are not UTF-8 are escaped as M-x or M^X.
+    use std::os::unix::ffi::OsStrExt;
+    tmux.cmd()
+        .args([
+            std::ffi::OsStr::new("set-buffer"),
+            std::ffi::OsStr::from_bytes(b"\xe9\xff\xa0"),
+        ])
+        .run()
+        .assert_success();
+    tmux.cmd().args(["paste-buffer"]).run().assert_success();
+    expected.extend_from_slice(b"M-iM^?\\240");
+    wait_for_file(&path, &expected);
 }
 
 /// -r joins lines with a newline, -s with any separator, and -d deletes

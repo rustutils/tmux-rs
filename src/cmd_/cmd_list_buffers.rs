@@ -12,7 +12,13 @@
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
-use crate::*;
+//! list-buffers, converted to run in a [`CmdCtx`].
+
+#![forbid(unsafe_code)]
+
+use crate::cmd_::context::{CmdCtx, CmdFlow, CmdResult, FormatSubject};
+use crate::sort::SortCriteria;
+use crate::{CmdExec, args_parse, cmd_entry, cmd_entry_flag, cmd_flag};
 
 pub static CMD_LIST_BUFFERS_ENTRY: cmd_entry = cmd_entry {
     name: "list-buffers",
@@ -22,55 +28,87 @@ pub static CMD_LIST_BUFFERS_ENTRY: cmd_entry = cmd_entry {
     usage: "[-F format] [-f filter] [-O order]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: CmdExec::Old(cmd_list_buffers_exec),
+    exec: CmdExec::Ctx(cmd_list_buffers_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
 
-unsafe fn cmd_list_buffers_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_);
+/// The line printed for each buffer without -F.
+const LIST_BUFFERS_TEMPLATE: &[u8] = b"#{buffer_name}: #{buffer_size} bytes: \"#{buffer_sample}\"";
 
-        let mut template: *const u8 = args_get(args, b'F');
-        if template.is_null() {
-            template = c!("#{buffer_name}: #{buffer_size} bytes: \"#{buffer_sample}\"");
-        }
-        let filter = args_get(args, b'f');
+/// list-buffers: print a line for each buffer that passes the -f filter,
+/// newest first or in the -O order (-r reverses it).
+fn cmd_list_buffers_exec(ctx: &mut CmdCtx<'_>) -> CmdResult {
+    let args = ctx.args();
+    let template = args.get('F').unwrap_or(LIST_BUFFERS_TEMPLATE);
+    let filter = args.get('f');
+    // An order that is not UTF-8 is not an order name.
+    let order = args.get('O').map(|o| std::str::from_utf8(o).unwrap_or(""));
+    let criteria = SortCriteria::from_args(order, args.has('r'))?;
 
-        let criteria = match args_sort_criteria(args) {
-            Ok(criteria) => criteria,
-            Err(e) => {
-                cmdq_error!(item, "{e}");
-                return cmd_retval::CMD_RETURN_ERROR;
-            }
-        };
+    for pb in ctx.paste().sorted(&criteria) {
+        ctx.print_format(template, filter, FormatSubject::PasteBuffer(pb));
+    }
+    Ok(CmdFlow::Done)
+}
 
-        for pb in sort_get_buffers(&criteria) {
-            let ft = format_create(
-                cmdq_get_client(item),
-                item,
-                FORMAT_NONE,
-                format_flags::empty(),
-            );
-            format_defaults_paste_buffer(ft, pb);
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
 
-            let flag;
-            if !filter.is_null() {
-                let expanded = format_expand(ft, filter);
-                flag = format_true(expanded);
-                free_(expanded);
-            } else {
-                flag = true;
-            }
-            if flag {
-                let line = format_expand(ft, template);
-                cmdq_print!(item, "{}", _s(line));
-                free_(line);
-            }
+    use super::*;
+    use crate::cmd_::context::CmdEffect;
+    use crate::cmd_::context::testing::{args, ctx, parts};
 
-            format_free(ft);
-        }
+    /// The buffer names and templates printed.
+    fn printed(effects: Vec<CmdEffect>) -> Vec<(String, Vec<u8>, Option<Vec<u8>>)> {
+        effects
+            .into_iter()
+            .filter_map(|e| match e {
+                CmdEffect::PrintFormat {
+                    template,
+                    filter,
+                    subject: FormatSubject::PasteBuffer(pb),
+                } => Some((pb.name().to_string(), template, filter)),
+                _ => None,
+            })
+            .collect()
+    }
 
-        cmd_retval::CMD_RETURN_NORMAL
+    #[test]
+    fn lists_in_order_with_the_template() {
+        let a = args(&[], &[]);
+        let mut c = ctx(&a, parts());
+        c.paste().set(Some(b"b"), Rc::from(&b"long"[..])).unwrap();
+        c.paste().set(Some(b"a"), Rc::from(&b"x"[..])).unwrap();
+        c.take_effects();
+
+        let a = args(&[], &[]);
+        let mut c = ctx(&a, parts());
+        cmd_list_buffers_exec(&mut c).unwrap();
+        let lines = printed(c.take_effects());
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].0, "a", "newest first");
+        assert_eq!(lines[0].1, LIST_BUFFERS_TEMPLATE);
+        assert_eq!(lines[0].2, None);
+
+        let a = args(
+            &[('O', Some("name")), ('r', None), ('F', Some("#{buffer_size}")), ('f', Some("1"))],
+            &[],
+        );
+        let mut c = ctx(&a, parts());
+        cmd_list_buffers_exec(&mut c).unwrap();
+        let lines = printed(c.take_effects());
+        let names: Vec<_> = lines.iter().map(|l| l.0.as_str()).collect();
+        assert_eq!(names, ["b", "a"]);
+        assert_eq!(lines[0].1, b"#{buffer_size}");
+        assert_eq!(lines[0].2.as_deref(), Some(&b"1"[..]));
+    }
+
+    #[test]
+    fn invalid_order() {
+        let a = args(&[('O', Some("bogus"))], &[]);
+        let result = cmd_list_buffers_exec(&mut ctx(&a, parts()));
+        assert_eq!(result.err().map(|e| e.to_string()).as_deref(), Some("invalid sort order"));
     }
 }

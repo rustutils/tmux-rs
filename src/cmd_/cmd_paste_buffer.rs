@@ -11,98 +11,208 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use crate::*;
+//! paste-buffer, converted to run in a [`CmdCtx`].
+
+#![forbid(unsafe_code)]
+
+use crate::cmd_::context::{CmdCtx, CmdFlow, CmdResult};
+use crate::compat::vis_flags;
+use crate::utf8::utf8_strvis_;
+use crate::{
+    CmdExec, args_parse, cmd_entry, cmd_entry_flag, cmd_find_flags, cmd_find_type, cmd_flag,
+};
 
 pub static CMD_PASTE_BUFFER_ENTRY: cmd_entry = cmd_entry {
     name: "paste-buffer",
     alias: Some("pasteb"),
 
-    args: args_parse::new("db:prs:t:", 0, 0, None),
-    usage: "[-dpr] [-s separator] [-b buffer-name] [-t target-pane]",
+    args: args_parse::new("db:prSs:t:", 0, 0, None),
+    usage: "[-dprS] [-s separator] [-b buffer-name] [-t target-pane]",
 
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: CmdExec::Old(cmd_paste_buffer_exec),
+    exec: CmdExec::Ctx(cmd_paste_buffer_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
-unsafe fn cmd_paste_buffer_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_);
-        let target = cmdq_get_target(item);
-        let wp = (*target).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
-        let bracket = args_has(args, 'p');
+/// Errors of paste-buffer, with C's messages.
+#[derive(Debug, thiserror::Error)]
+pub enum PasteBufferError {
+    /// The target pane's program has exited.
+    #[error("target pane has exited")]
+    PaneExited,
+    /// -b names a buffer that does not exist.
+    #[error("no buffer {0}")]
+    NoBuffer(String),
+}
 
-        if window_pane_exited(wp) {
-            cmdq_error!(item, "target pane has exited");
-            return cmd_retval::CMD_RETURN_ERROR;
-        }
-
-        let mut bufname = None;
-        if args_has(args, 'b') {
-            bufname = cstr_to_bytes(args_get(args, b'b'));
-        }
-
-        let pb;
-        if let Some(bufname) = bufname {
-            pb = paste_get_name_bytes(bufname);
-            if pb.is_none() {
-                cmdq_error!(item, "no buffer {}", String::from_utf8_lossy(bufname));
-                return cmd_retval::CMD_RETURN_ERROR;
-            }
+/// What paste-buffer writes to the pane for `data`: each line followed
+/// by `separator` instead of its newline. Since 3.8 control characters
+/// are escaped with vis (as ^X, tab and carriage return kept) unless
+/// `raw` (-S). `bracket` wraps it all in bracketed paste markers.
+fn paste_bytes(data: &[u8], separator: &[u8], raw: bool, bracket: bool) -> Vec<u8> {
+    let mut out = Vec::with_capacity(data.len() + 12);
+    let add = |out: &mut Vec<u8>, line: &[u8]| {
+        if raw {
+            out.extend_from_slice(line);
         } else {
-            pb = paste_get_top();
+            utf8_strvis_(out, line, vis_flags::VIS_SAFE | vis_flags::VIS_NOSLASH);
         }
+    };
 
-        if let Some(pb) = &pb
-            && !(*wp).flags.intersects(window_pane_flags::PANE_INPUTOFF)
-        {
-            let mut sepstr = args_get(args, b's');
-            if sepstr.is_null() {
-                if args_has(args, 'r') {
-                    sepstr = c!("\n");
-                } else {
-                    sepstr = c!("\r");
-                }
-            }
-            let seplen = strlen(sepstr);
+    if bracket {
+        out.extend_from_slice(b"\x1b[200~");
+    }
+    let mut rest = data;
+    while let Some(end) = memchr::memchr(b'\n', rest) {
+        add(&mut out, &rest[..end]);
+        out.extend_from_slice(separator);
+        rest = &rest[end + 1..];
+    }
+    if !rest.is_empty() {
+        add(&mut out, rest);
+    }
+    if bracket {
+        out.extend_from_slice(b"\x1b[201~");
+    }
+    out
+}
 
-            if bracket
-                && (*(*wp).screen)
-                    .mode
-                    .intersects(mode_flag::MODE_BRACKETPASTE)
-            {
-                window_pane_write_to_pty(wp, c!("\x1b[200~").cast(), 6);
-            }
+/// paste-buffer: write the buffer named with -b (or the newest automatic
+/// one) to the target pane, then delete it with -d. -r and -s change the
+/// line separator, -p brackets the paste if the program asked for it.
+fn cmd_paste_buffer_exec(ctx: &mut CmdCtx<'_>) -> CmdResult {
+    let args = ctx.args();
+    // The queue only runs the command once it found the target pane.
+    let Some(wp) = ctx.target_pane() else {
+        debug_assert!(false, "paste-buffer without a target pane");
+        return Err(PasteBufferError::PaneExited.into());
+    };
+    if wp.exited {
+        return Err(PasteBufferError::PaneExited.into());
+    }
 
-            // Each line is written followed by the separator instead of
-            // its newline.
-            let mut rest: &[u8] = pb.data();
-            while let Some(end) = memchr::memchr(b'\n', rest) {
-                window_pane_write_to_pty(wp, rest.as_ptr().cast(), end);
-                window_pane_write_to_pty(wp, sepstr.cast(), seplen);
-                rest = &rest[end + 1..];
-            }
-            if !rest.is_empty() {
-                window_pane_write_to_pty(wp, rest.as_ptr().cast(), rest.len());
-            }
+    let pb = match args.get('b') {
+        Some(name) => Some(
+            ctx.paste()
+                .get(name)
+                .ok_or_else(|| PasteBufferError::NoBuffer(String::from_utf8_lossy(name).into()))?,
+        ),
+        None => ctx.paste().top(),
+    };
 
-            if bracket
-                && (*(*wp).screen)
-                    .mode
-                    .intersects(mode_flag::MODE_BRACKETPASTE)
-            {
-                window_pane_write_to_pty(wp, c!("\x1b[201~").cast(), 6);
-            }
+    if let Some(pb) = &pb
+        && !wp.input_off
+    {
+        let separator: &[u8] = match args.get('s') {
+            Some(separator) => separator,
+            None if args.has('r') => b"\n",
+            None => b"\r",
+        };
+        let bracket = args.has('p') && wp.bracket_paste;
+        let data = paste_bytes(pb.data(), separator, args.has('S'), bracket);
+        if !data.is_empty() {
+            ctx.write_pane(wp.id, data);
         }
+    }
 
-        if let Some(pb) = pb
-            && args_has(args, 'd')
-        {
-            paste_free(pb.name());
+    if let Some(pb) = pb
+        && args.has('d')
+    {
+        ctx.paste().delete(pb.name());
+    }
+    Ok(CmdFlow::Done)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use super::*;
+    use crate::PaneId;
+    use crate::cmd_::context::testing::{args, ctx, parts, paste_events};
+    use crate::cmd_::context::{CmdEffect, CmdCtxParts, PaneInfo};
+    use crate::paste::PasteEvent;
+
+    // Valid UTF-8 passes through only under a UTF-8 locale (mbtowc), so
+    // these use ASCII and invalid bytes. tests/buffers.rs has the rest.
+    #[test]
+    fn escapes_unless_raw() {
+        let data = b"a\x01b\x1bc\t\x7f\r\nd\xff";
+        assert_eq!(paste_bytes(data, b"\r", false, false), b"a^Ab^[c\t^?\r\rdM^?");
+        assert_eq!(paste_bytes(data, b"<>", true, false), b"a\x01b\x1bc\t\x7f\r<>d\xff");
+        assert_eq!(paste_bytes(b"1\n2\n", b",", false, true), b"\x1b[200~1,2,\x1b[201~");
+        assert_eq!(paste_bytes(b"", b",", false, false), b"");
+    }
+
+    fn pane_parts(pane: PaneInfo) -> CmdCtxParts {
+        let mut p = parts();
+        p.target_pane = Some(pane);
+        p
+    }
+
+    fn pane() -> PaneInfo {
+        PaneInfo {
+            id: PaneId(3),
+            exited: false,
+            input_off: false,
+            bracket_paste: true,
         }
+    }
 
-        cmd_retval::CMD_RETURN_NORMAL
+    fn written(effects: &[CmdEffect]) -> Vec<Vec<u8>> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                CmdEffect::WritePane { pane: PaneId(3), data } => Some(data.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pastes_and_deletes() {
+        let a = args(&[], &[]);
+        let mut c = ctx(&a, pane_parts(pane()));
+        c.paste().set(Some(b"n"), Rc::from(&b"x\ny"[..])).unwrap();
+        c.paste().set(None, Rc::from(&b"top"[..])).unwrap();
+        c.take_effects();
+
+        let a = args(&[('b', Some("n")), ('d', None), ('p', None), ('r', None)], &[]);
+        let mut c = ctx(&a, pane_parts(pane()));
+        cmd_paste_buffer_exec(&mut c).unwrap();
+        let effects = c.take_effects();
+        assert_eq!(written(&effects), [b"\x1b[200~x\ny\x1b[201~".to_vec()]);
+        assert_eq!(paste_events(&effects), [PasteEvent::Deleted("n".into())]);
+
+        // Without -b the newest automatic buffer. Input turned off pastes
+        // nothing, but -d still deletes.
+        let a = args(&[('d', None)], &[]);
+        let mut p = pane();
+        p.input_off = true;
+        let mut c = ctx(&a, pane_parts(p));
+        cmd_paste_buffer_exec(&mut c).unwrap();
+        let effects = c.take_effects();
+        assert!(written(&effects).is_empty());
+        assert_eq!(paste_events(&effects), [PasteEvent::Deleted("buffer0".into())]);
+
+        // No buffers at all is not an error.
+        let a = args(&[], &[]);
+        let mut c = ctx(&a, pane_parts(pane()));
+        cmd_paste_buffer_exec(&mut c).unwrap();
+        assert!(c.take_effects().is_empty());
+    }
+
+    #[test]
+    fn errors() {
+        let a = args(&[], &[]);
+        let mut p = pane();
+        p.exited = true;
+        let result = cmd_paste_buffer_exec(&mut ctx(&a, pane_parts(p)));
+        assert_eq!(result.err().unwrap().to_string(), "target pane has exited");
+        let a = args(&[('b', Some("nope"))], &[]);
+        let result = cmd_paste_buffer_exec(&mut ctx(&a, pane_parts(pane())));
+        assert_eq!(result.err().unwrap().to_string(), "no buffer nope");
     }
 }

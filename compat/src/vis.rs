@@ -52,6 +52,9 @@ bitflags::bitflags! {
         /// tmux-rs considers this flag to be set unconditionally.
         const VIS_CSTYLE  = 0x0002;
 
+        /// encode space
+        const VIS_SP      = 0x0004;
+
         /// encode tab
         const VIS_TAB     = 0x0008;
 
@@ -62,6 +65,12 @@ bitflags::bitflags! {
         /// (that is, control characters are represented by ‘^C’ and meta characters as ‘M-C’).
         /// with this flag set, the encoding is ambiguous and non-invertible.
         const VIS_NOSLASH = 0x0040;
+
+        /// only encode "unsafe" characters: backspace, bell and carriage
+        /// return are kept as they are.
+        ///
+        /// Only used without VIS_OCTAL and VIS_CSTYLE.
+        const VIS_SAFE    = 0x0020;
 
         /// encode double quote
         const VIS_DQ      = 0x0200;
@@ -89,6 +98,10 @@ pub unsafe fn vis_(dst: *mut u8, c: c_int, flag: vis_flags, nextc: c_int) -> *mu
 }
 
 pub fn vis__(dst: &mut Vec<u8>, c: c_int, flag: vis_flags, nextc: c_int) {
+    if !flag.intersects(vis_flags::VIS_OCTAL | vis_flags::VIS_CSTYLE) {
+        vis_caret(dst, c as u8, flag);
+        return;
+    }
     match c as u8 {
         b'\0' if !matches!(nextc as u8, b'0'..=b'7') => encode_cstyle_(dst, b'0'),
         b'\t' if flag.intersects(vis_flags::VIS_TAB) => encode_cstyle_(dst, b't'),
@@ -101,6 +114,48 @@ pub fn vis__(dst: &mut Vec<u8>, c: c_int, flag: vis_flags, nextc: c_int) {
         }
         0..7 | 14..32 | 127.. => encode_octal_(dst, c),
         _ => encode_passthrough_(dst, c),
+    }
+}
+
+/// OpenBSD vis(3) without VIS_OCTAL and VIS_CSTYLE: control characters
+/// become ^X, bytes with the top bit set M-x or M^X, each with a
+/// backslash in front unless VIS_NOSLASH. Space-like bytes (0x20 and
+/// 0xa0) that need encoding are octal. Only ASCII counts as printable,
+/// since callers pass valid UTF-8 through before calling this.
+fn vis_caret(dst: &mut Vec<u8>, c: u8, flag: vis_flags) {
+    let graph = c.is_ascii_graphic();
+    let visible = graph
+        || (!flag.intersects(vis_flags::VIS_SP) && c == b' ')
+        || (!flag.intersects(vis_flags::VIS_TAB) && c == b'\t')
+        || (!flag.intersects(vis_flags::VIS_NL) && c == b'\n')
+        || (flag.intersects(vis_flags::VIS_SAFE) && matches!(c, 0x08 | 0x07 | b'\r'));
+    if visible {
+        if (c == b'"' && flag.intersects(vis_flags::VIS_DQ))
+            || (c == b'\\' && !flag.intersects(vis_flags::VIS_NOSLASH))
+        {
+            dst.push(b'\\');
+        }
+        dst.push(c);
+        return;
+    }
+    if c & 0x7f == b' ' {
+        encode_octal_(dst, i32::from(c));
+        return;
+    }
+    if !flag.intersects(vis_flags::VIS_NOSLASH) {
+        dst.push(b'\\');
+    }
+    let mut c = c;
+    if c & 0x80 != 0 {
+        c &= 0x7f;
+        dst.push(b'M');
+    }
+    if c.is_ascii_control() {
+        dst.push(b'^');
+        dst.push(if c == 0x7f { b'?' } else { c + b'@' });
+    } else {
+        dst.push(b'-');
+        dst.push(c);
     }
 }
 
@@ -261,5 +316,47 @@ mod test {
                 }
             }
         }
+    }
+
+    /// The form tmux 3.8 pastes with (VIS_SAFE | VIS_NOSLASH), checked
+    /// against OpenBSD's vis.c by hand.
+    #[test]
+    fn caret_form() {
+        let vis = |c: u8, flag: vis_flags| {
+            let mut out = Vec::new();
+            vis__(&mut out, i32::from(c), flag, 0);
+            out
+        };
+        let paste = vis_flags::VIS_SAFE | vis_flags::VIS_NOSLASH;
+        let cases: [(u8, &[u8]); 13] = [
+            (b'a', b"a"),
+            (b'\\', b"\\"),
+            (b' ', b" "),
+            (b'\t', b"\t"),
+            (b'\n', b"\n"),
+            (b'\r', b"\r"),
+            (0x07, b"\x07"),
+            (0x08, b"\x08"),
+            (0x01, b"^A"),
+            (0x1b, b"^["),
+            (0x7f, b"^?"),
+            (0xe9, b"M-i"),
+            (0xa0, b"\\240"),
+        ];
+        for (c, expected) in cases {
+            assert_eq!(vis(c, paste), expected, "{c:#x}");
+        }
+        assert_eq!(vis(0xff, paste), b"M^?");
+        assert_eq!(vis(0x01, vis_flags::empty()), b"\\^A");
+        assert_eq!(vis(b'\\', vis_flags::empty()), b"\\\\");
+        assert_eq!(
+            vis(0x0d, vis_flags::empty()),
+            b"\\^M",
+            "\\r without VIS_SAFE"
+        );
+        assert_eq!(
+            vis(b'\t', vis_flags::VIS_TAB | vis_flags::VIS_NOSLASH),
+            b"^I"
+        );
     }
 }

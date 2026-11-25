@@ -51,7 +51,6 @@
 2 src/cmd_/cmd_kill_server.rs
 2 src/cmd_/cmd_kill_session.rs
 2 src/cmd_/cmd_kill_window.rs
-2 src/cmd_/cmd_list_buffers.rs
 2 src/cmd_/cmd_list_clients.rs
 10 src/cmd_/cmd_list_keys.rs
 8 src/cmd_/cmd_list_panes.rs
@@ -62,7 +61,6 @@
 2 src/cmd_/cmd_move_window.rs
 2 src/cmd_/cmd_new_session.rs
 2 src/cmd_/cmd_new_window.rs
-2 src/cmd_/cmd_paste_buffer.rs
 8 src/cmd_/cmd_pipe_pane.rs
 81 src/cmd_/cmd_queue.rs
 12 src/cmd_/cmd_refresh_client.rs

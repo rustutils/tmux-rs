@@ -203,7 +203,6 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("differs:move-pane", "Track 3: new command flags"),
     ("differs:new-session", "Track 3: new command flags"),
     ("differs:new-window", "Track 3: new command flags"),
-    ("differs:paste-buffer", "Track 3: new command flags"),
     ("differs:resize-pane", "Track 3: new command flags"),
     ("differs:respawn-pane", "Track 3: new command flags"),
     ("differs:respawn-window", "Track 3: new command flags"),
