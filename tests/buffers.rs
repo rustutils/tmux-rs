@@ -1441,3 +1441,23 @@ fn save_and_show_buffer_write_the_data_exactly() {
         .assert_success();
     assert_eq!(std::fs::read(&path).unwrap(), b"a\x01\na\x01\n");
 }
+
+/// Command output is printed as it is since 3.8, control characters
+/// included. 3.5a escaped them with vis.
+#[test]
+fn command_output_is_not_escaped() {
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd().args(["set-buffer", "xy"]).run().assert_success();
+
+    let result = tmux.cmd().args(["display", "-p", "a\u{1}b\tc"]).run();
+    result.assert_success();
+    assert_eq!(result.stdout_str(), "a\u{1}b\tc\n");
+    let result = tmux
+        .cmd()
+        .args(["list-buffers", "-F", "\u{1b}#{buffer_size}\\"])
+        .run();
+    result.assert_success();
+    assert_eq!(result.stdout_str(), "\u{1b}2\\\n");
+}
