@@ -397,6 +397,9 @@ fn wait_for_survives_killed_client() {
             .env_remove("TMUX")
             .env_remove("VISUAL")
             .env_remove("EDITOR")
+            .env("LANG", "C.UTF-8")
+            .env_remove("LC_ALL")
+            .env_remove("LC_CTYPE")
             .spawn()
             .unwrap()
     };

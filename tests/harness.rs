@@ -389,6 +389,11 @@ impl<'a> TmuxCommandBuilder<'a> {
         // EDITOR mentions vi, so a developer's vim would change key tests.
         cmd.env_remove("VISUAL");
         cmd.env_remove("EDITOR");
+        // Pin a UTF-8 locale, so tests that type or draw UTF-8 do not
+        // depend on the developer's LANG. A test can still set its own.
+        cmd.env("LANG", "C.UTF-8");
+        cmd.env_remove("LC_ALL");
+        cmd.env_remove("LC_CTYPE");
         cmd.env_remove("TMUX_CONF");
         cmd.env_remove("TMUX_TMPDIR");
 
@@ -540,6 +545,9 @@ impl PtyClient {
             .env_remove("TMUX")
             .env_remove("VISUAL")
             .env_remove("EDITOR")
+            .env("LANG", "C.UTF-8")
+            .env_remove("LC_ALL")
+            .env_remove("LC_CTYPE")
             .env_remove("TMUX_CONF")
             .env_remove("TMUX_TMPDIR")
             .stdin(Stdio::from(slave_stdin))
