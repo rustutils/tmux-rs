@@ -28,7 +28,7 @@ pub static CMD_MOVE_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_move_window_exec,
+    exec: CmdExec::Old(cmd_move_window_exec),
     target: cmd_entry_flag::zeroed(),
 };
 
@@ -46,7 +46,7 @@ pub static CMD_LINK_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_move_window_exec,
+    exec: CmdExec::Old(cmd_move_window_exec),
     target: cmd_entry_flag::zeroed(),
 };
 

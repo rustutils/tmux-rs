@@ -104,17 +104,6 @@ pub unsafe fn paste_set(data: impl Into<Rc<[u8]>>, name: Option<&[u8]>) -> Resul
     Ok(())
 }
 
-/// Rename buffer `old` to `new`, replacing any buffer called `new`.
-///
-/// # Safety
-/// Raises notifications.
-pub unsafe fn paste_rename(old: &str, new: &[u8]) -> Result<(), PasteError> {
-    let events = with_paste(|store| store.rename(old, new))?;
-    // SAFETY: the caller upholds events_fire's requirements.
-    unsafe { paste_notify(events) };
-    Ok(())
-}
-
 /// Replace the contents of buffer `name`. Returns false if there is none.
 ///
 /// # Safety
@@ -131,7 +120,7 @@ pub unsafe fn paste_replace(name: &str, data: impl Into<Rc<[u8]>>) -> bool {
 ///
 /// # Safety
 /// See [`events_fire`].
-unsafe fn paste_notify(events: impl IntoIterator<Item = PasteEvent>) {
+pub(crate) unsafe fn paste_notify(events: impl IntoIterator<Item = PasteEvent>) {
     for event in events {
         let (event_name, name) = match event {
             PasteEvent::Changed(name) => ("paste-buffer-changed", name),
@@ -148,14 +137,14 @@ unsafe fn paste_notify(events: impl IntoIterator<Item = PasteEvent>) {
 ///
 /// # Safety
 /// The global options must exist.
-unsafe fn buffer_limit() -> u32 {
+pub(crate) unsafe fn buffer_limit() -> u32 {
     // SAFETY: the caller guarantees GLOBAL_OPTIONS is valid.
     let limit = unsafe { options_get_number_(GLOBAL_OPTIONS, "buffer-limit") };
     u32::try_from(limit.max(0)).unwrap_or(u32::MAX)
 }
 
 /// The current time in seconds since the epoch.
-fn now() -> i64 {
+pub(crate) fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)

@@ -29,7 +29,7 @@ pub static CMD_NEW_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_new_window_exec,
+    exec: CmdExec::Old(cmd_new_window_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

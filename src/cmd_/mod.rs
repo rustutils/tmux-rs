@@ -80,6 +80,8 @@ pub mod cmd_swap_window;
 pub mod cmd_switch_client;
 pub mod cmd_unbind_key;
 pub mod cmd_wait_for;
+pub mod context;
+pub mod run;
 
 use cmd_attach_session::CMD_ATTACH_SESSION_ENTRY;
 use cmd_bind_key::CMD_BIND_KEY_ENTRY;

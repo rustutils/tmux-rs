@@ -28,7 +28,7 @@ pub static CMD_RESIZE_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_resize_window_exec,
+    exec: CmdExec::Old(cmd_resize_window_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

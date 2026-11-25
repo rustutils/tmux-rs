@@ -25,7 +25,7 @@ pub static CMD_SELECT_PANE_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::empty(),
-    exec: cmd_select_pane_exec,
+    exec: CmdExec::Old(cmd_select_pane_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
@@ -43,7 +43,7 @@ pub static CMD_LAST_PANE_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_select_pane_exec,
+    exec: CmdExec::Old(cmd_select_pane_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

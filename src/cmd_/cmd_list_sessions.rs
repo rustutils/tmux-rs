@@ -21,7 +21,7 @@ pub static CMD_LIST_SESSIONS_ENTRY: cmd_entry = cmd_entry {
     usage: "[-r] [-F format] [-f filter] [-O order]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_list_sessions_exec,
+    exec: CmdExec::Old(cmd_list_sessions_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

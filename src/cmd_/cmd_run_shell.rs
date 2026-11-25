@@ -31,7 +31,7 @@ pub static CMD_RUN_SHELL_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_run_shell_exec,
+    exec: CmdExec::Old(cmd_run_shell_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

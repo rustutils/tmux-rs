@@ -23,7 +23,7 @@ pub static CMD_KILL_SERVER_ENTRY: cmd_entry = cmd_entry {
     usage: "",
 
     flags: cmd_flag::empty(),
-    exec: cmd_kill_server_exec,
+    exec: CmdExec::Old(cmd_kill_server_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
@@ -34,7 +34,7 @@ pub static CMD_START_SERVER_ENTRY: cmd_entry = cmd_entry {
     args: args_parse::new("", 0, 0, None),
     usage: "",
     flags: cmd_flag::CMD_STARTSERVER,
-    exec: cmd_kill_server_exec,
+    exec: CmdExec::Old(cmd_kill_server_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

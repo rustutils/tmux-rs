@@ -28,7 +28,7 @@ pub static CMD_SELECT_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_select_window_exec,
+    exec: CmdExec::Old(cmd_select_window_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
@@ -46,7 +46,7 @@ pub static CMD_NEXT_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_select_window_exec,
+    exec: CmdExec::Old(cmd_select_window_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
@@ -64,7 +64,7 @@ pub static CMD_PREVIOUS_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_select_window_exec,
+    exec: CmdExec::Old(cmd_select_window_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
@@ -82,7 +82,7 @@ pub static CMD_LAST_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_select_window_exec,
+    exec: CmdExec::Old(cmd_select_window_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

@@ -23,7 +23,7 @@ pub static CMD_LOAD_BUFFER_ENTRY: cmd_entry = cmd_entry {
     flags: cmd_flag::CMD_AFTERHOOK
         .union(cmd_flag::CMD_CLIENT_TFLAG)
         .union(cmd_flag::CMD_CLIENT_CANFAIL),
-    exec: cmd_load_buffer_exec,
+    exec: CmdExec::Old(cmd_load_buffer_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

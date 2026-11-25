@@ -638,7 +638,10 @@ pub unsafe fn cmdq_fire_command(item: *mut cmdq_item) -> cmd_retval {
 
             // log_debug_!("entry_name: {}", PercentS((*entry).name));
 
-            retval = (entry.exec)(cmd, item);
+            retval = match entry.exec {
+                CmdExec::Old(exec) => exec(cmd, item),
+                CmdExec::Ctx(exec) => crate::cmd_::run::cmd_run_converted(item, exec),
+            };
             if retval == cmd_retval::CMD_RETURN_ERROR {
                 break 'out;
             }

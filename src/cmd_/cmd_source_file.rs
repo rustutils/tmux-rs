@@ -28,7 +28,7 @@ pub static CMD_SOURCE_FILE_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_source_file_exec,
+    exec: CmdExec::Old(cmd_source_file_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

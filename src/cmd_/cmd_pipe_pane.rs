@@ -29,7 +29,7 @@ pub static CMD_PIPE_PANE_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_pipe_pane_exec,
+    exec: CmdExec::Old(cmd_pipe_pane_exec),
 };
 
 pub unsafe fn cmd_pipe_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

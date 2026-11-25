@@ -27,7 +27,7 @@ pub static CMD_SET_ENVIRONMENT_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_set_environment_exec,
+    exec: CmdExec::Old(cmd_set_environment_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

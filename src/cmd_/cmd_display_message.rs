@@ -34,7 +34,7 @@ pub static CMD_DISPLAY_MESSAGE_ENTRY: cmd_entry = cmd_entry {
     flags: cmd_flag::CMD_AFTERHOOK
         .union(cmd_flag::CMD_CLIENT_CFLAG)
         .union(cmd_flag::CMD_CLIENT_CANFAIL),
-    exec: cmd_display_message_exec,
+    exec: CmdExec::Old(cmd_display_message_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

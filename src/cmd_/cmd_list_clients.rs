@@ -32,7 +32,7 @@ pub static CMD_LIST_CLIENTS_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_READONLY.union(cmd_flag::CMD_AFTERHOOK),
-    exec: cmd_list_clients_exec,
+    exec: CmdExec::Old(cmd_list_clients_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

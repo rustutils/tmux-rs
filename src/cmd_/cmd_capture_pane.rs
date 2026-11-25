@@ -26,7 +26,7 @@ pub static CMD_CAPTURE_PANE_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_capture_pane_exec,
+    exec: CmdExec::Old(cmd_capture_pane_exec),
 };
 
 pub static CMD_CLEAR_HISTORY_ENTRY: cmd_entry = cmd_entry {
@@ -44,7 +44,7 @@ pub static CMD_CLEAR_HISTORY_ENTRY: cmd_entry = cmd_entry {
     },
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_capture_pane_exec,
+    exec: CmdExec::Old(cmd_capture_pane_exec),
 };
 
 unsafe fn cmd_capture_pane_append(

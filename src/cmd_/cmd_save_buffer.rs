@@ -22,7 +22,7 @@ pub static CMD_SAVE_BUFFER_ENTRY: cmd_entry = cmd_entry {
     usage: "[-a] [-b buffer-name] path",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_save_buffer_exec,
+    exec: CmdExec::Old(cmd_save_buffer_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
@@ -35,7 +35,7 @@ pub static CMD_SHOW_BUFFER_ENTRY: cmd_entry = cmd_entry {
     usage: "[-b buffer-name]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_save_buffer_exec,
+    exec: CmdExec::Old(cmd_save_buffer_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

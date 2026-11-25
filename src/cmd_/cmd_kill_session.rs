@@ -28,7 +28,7 @@ pub static CMD_KILL_SESSION_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::empty(),
-    exec: cmd_kill_session_exec,
+    exec: CmdExec::Old(cmd_kill_session_exec),
 };
 
 unsafe fn cmd_kill_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

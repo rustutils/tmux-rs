@@ -29,7 +29,7 @@ pub static CMD_BREAK_PANE_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_break_pane_exec,
+    exec: CmdExec::Old(cmd_break_pane_exec),
 };
 
 pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

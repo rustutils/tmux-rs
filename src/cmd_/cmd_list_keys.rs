@@ -37,7 +37,7 @@ pub static CMD_LIST_KEYS_ENTRY: cmd_entry = cmd_entry {
     usage: "[-1aNr] [-F format] [-O order] [-P prefix-string][-T key-table] [key]",
 
     flags: cmd_flag::CMD_STARTSERVER.union(cmd_flag::CMD_AFTERHOOK),
-    exec: cmd_list_keys_exec,
+    exec: CmdExec::Old(cmd_list_keys_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
@@ -50,7 +50,7 @@ pub static CMD_LIST_COMMANDS_ENTRY: cmd_entry = cmd_entry {
     usage: "[-F format] [command]",
 
     flags: cmd_flag::CMD_STARTSERVER.union(cmd_flag::CMD_AFTERHOOK),
-    exec: cmd_list_keys_exec,
+    exec: CmdExec::Old(cmd_list_keys_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

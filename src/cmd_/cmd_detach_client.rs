@@ -28,7 +28,7 @@ pub static CMD_DETACH_CLIENT_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_READONLY.union(cmd_flag::CMD_CLIENT_TFLAG),
-    exec: cmd_detach_client_exec,
+    exec: CmdExec::Old(cmd_detach_client_exec),
     target: cmd_entry_flag::zeroed(),
 };
 
@@ -40,7 +40,7 @@ pub static CMD_SUSPEND_CLIENT_ENTRY: cmd_entry = cmd_entry {
     usage: "[-t target-client]",
 
     flags: cmd_flag::CMD_CLIENT_TFLAG,
-    exec: cmd_detach_client_exec,
+    exec: CmdExec::Old(cmd_detach_client_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

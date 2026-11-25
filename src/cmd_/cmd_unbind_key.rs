@@ -22,7 +22,7 @@ pub static CMD_UNBIND_KEY_ENTRY: cmd_entry = cmd_entry {
     usage: "[-anq] [-T key-table] key",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_unbind_key_exec,
+    exec: CmdExec::Old(cmd_unbind_key_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

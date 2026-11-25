@@ -21,7 +21,7 @@ pub static CMD_SHOW_PROMPT_HISTORY_ENTRY: cmd_entry = cmd_entry {
     usage: "[-T type]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_show_prompt_history_exec,
+    exec: CmdExec::Old(cmd_show_prompt_history_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
@@ -34,7 +34,7 @@ pub static CMD_CLEAR_PROMPT_HISTORY_ENTRY: cmd_entry = cmd_entry {
     usage: "[-T type]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_show_prompt_history_exec,
+    exec: CmdExec::Old(cmd_show_prompt_history_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

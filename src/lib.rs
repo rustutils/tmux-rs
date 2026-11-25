@@ -2225,7 +2225,15 @@ struct cmd_entry {
 
     flags: cmd_flag,
 
-    exec: unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval,
+    exec: CmdExec,
+}
+
+/// A command's exec function: either still C-shaped, or converted to run
+/// in a [`cmd_::context::CmdCtx`]. Commands convert one at a time.
+#[derive(Clone, Copy)]
+pub(crate) enum CmdExec {
+    Old(unsafe fn(*mut cmd, *mut cmdq_item) -> cmd_retval),
+    Ctx(cmd_::context::CmdExecFn),
 }
 
 // Status line.

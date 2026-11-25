@@ -31,7 +31,7 @@ pub static CMD_NEW_SESSION_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_STARTSERVER,
-    exec: cmd_new_session_exec,
+    exec: CmdExec::Old(cmd_new_session_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
@@ -49,7 +49,7 @@ pub static CMD_HAS_SESSION_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_new_session_exec,
+    exec: CmdExec::Old(cmd_new_session_exec),
 
     source: cmd_entry_flag::zeroed(),
 };

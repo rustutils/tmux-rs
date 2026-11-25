@@ -28,7 +28,7 @@ pub static CMD_RESPAWN_WINDOW_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::empty(),
-    exec: cmd_respawn_window_exec,
+    exec: CmdExec::Old(cmd_respawn_window_exec),
 };
 
 unsafe fn cmd_respawn_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

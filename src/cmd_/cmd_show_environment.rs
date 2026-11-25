@@ -28,7 +28,7 @@ pub static CMD_SHOW_ENVIRONMENT_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_show_environment_exec,
+    exec: CmdExec::Old(cmd_show_environment_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

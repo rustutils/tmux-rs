@@ -22,7 +22,7 @@ pub static CMD_REFRESH_CLIENT_ENTRY: cmd_entry = cmd_entry {
     usage: "[-cDlLRSU] [-A pane:state] [-B name:what:format] [-C XxY] [-f flags] [-r pane:report] [-t target-client] [adjustment]",
 
     flags: cmd_flag::CMD_AFTERHOOK.union(cmd_flag::CMD_CLIENT_TFLAG),
-    exec: cmd_refresh_client_exec,
+    exec: CmdExec::Old(cmd_refresh_client_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

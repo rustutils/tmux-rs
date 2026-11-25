@@ -24,7 +24,7 @@ pub static CMD_RESPAWN_PANE_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::empty(),
-    exec: cmd_respawn_pane_exec,
+    exec: CmdExec::Old(cmd_respawn_pane_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

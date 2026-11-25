@@ -40,7 +40,12 @@ fn timestamp(tv: &timeval) -> Timestamp {
 
 /// Paste buffers, newest first unless sorted otherwise.
 pub fn sort_get_buffers(criteria: &SortCriteria) -> Vec<PasteBuffer> {
-    let mut l: Vec<(BufferKey, PasteBuffer)> = paste_list()
+    sort_buffers(paste_list(), criteria)
+}
+
+/// Sorts `buffers`, given newest first, by `criteria`.
+pub fn sort_buffers(buffers: Vec<PasteBuffer>, criteria: &SortCriteria) -> Vec<PasteBuffer> {
+    let mut l: Vec<(BufferKey, PasteBuffer)> = buffers
         .into_iter()
         .map(|pb| {
             let key = BufferKey {

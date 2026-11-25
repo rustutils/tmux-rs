@@ -22,7 +22,7 @@ pub static CMD_LIST_BUFFERS_ENTRY: cmd_entry = cmd_entry {
     usage: "[-F format] [-f filter] [-O order]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_list_buffers_exec,
+    exec: CmdExec::Old(cmd_list_buffers_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

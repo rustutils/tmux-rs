@@ -22,7 +22,7 @@ pub static CMD_BIND_KEY_ENTRY: cmd_entry = cmd_entry {
     usage: "[-nr] [-T key-table] [-N note] key [command [arguments]]",
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_bind_key_exec,
+    exec: CmdExec::Old(cmd_bind_key_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

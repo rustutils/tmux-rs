@@ -29,7 +29,7 @@ pub static CMD_RENAME_SESSION_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_rename_session_exec,
+    exec: CmdExec::Old(cmd_rename_session_exec),
 };
 
 unsafe fn cmd_rename_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

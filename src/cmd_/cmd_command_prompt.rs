@@ -21,7 +21,7 @@ pub static CMD_COMMAND_PROMPT_ENTRY: cmd_entry = cmd_entry {
     usage: "[-1bFkiN] [-I inputs] [-p prompts] [-t target-pane] [-T type] [template]",
 
     flags: cmd_flag::CMD_CLIENT_TFLAG,
-    exec: cmd_command_prompt_exec,
+    exec: CmdExec::Old(cmd_command_prompt_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

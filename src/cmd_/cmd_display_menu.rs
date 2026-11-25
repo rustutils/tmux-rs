@@ -29,7 +29,7 @@ pub static CMD_DISPLAY_MENU_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::CMD_AFTERHOOK.union(cmd_flag::CMD_CLIENT_CFLAG),
-    exec: cmd_display_menu_exec,
+    exec: CmdExec::Old(cmd_display_menu_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
@@ -42,7 +42,7 @@ pub static CMD_DISPLAY_POPUP_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::CMD_AFTERHOOK.union(cmd_flag::CMD_CLIENT_CFLAG),
-    exec: cmd_display_popup_exec,
+    exec: CmdExec::Old(cmd_display_popup_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

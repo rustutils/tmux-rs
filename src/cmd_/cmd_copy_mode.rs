@@ -25,7 +25,7 @@ pub static CMD_COPY_MODE_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_copy_mode_exec,
+    exec: CmdExec::Old(cmd_copy_mode_exec),
 };
 
 pub static CMD_CLOCK_MODE_ENTRY: cmd_entry = cmd_entry {
@@ -39,7 +39,7 @@ pub static CMD_CLOCK_MODE_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_copy_mode_exec,
+    exec: CmdExec::Old(cmd_copy_mode_exec),
 };
 
 unsafe fn cmd_copy_mode_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

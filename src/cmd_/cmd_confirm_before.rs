@@ -21,7 +21,7 @@ pub static CMD_CONFIRM_BEFORE_ENTRY: cmd_entry = cmd_entry {
     usage: "[-by] [-c confirm_key] [-p prompt] [-t target-pane] command",
 
     flags: cmd_flag::CMD_CLIENT_TFLAG,
-    exec: cmd_confirm_before_exec,
+    exec: CmdExec::Old(cmd_confirm_before_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

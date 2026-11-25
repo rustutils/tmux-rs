@@ -25,7 +25,7 @@ pub static CMD_SERVER_ACCESS_ENTRY: cmd_entry = cmd_entry {
     usage: "[-adglrw] [-t target-pane] [user|group]",
 
     flags: cmd_flag::CMD_CLIENT_CANFAIL,
-    exec: cmd_server_access_exec,
+    exec: CmdExec::Old(cmd_server_access_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

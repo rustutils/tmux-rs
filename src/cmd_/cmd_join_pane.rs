@@ -30,7 +30,7 @@ pub static CMD_JOIN_PANE_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::empty(),
-    exec: cmd_join_pane_exec,
+    exec: CmdExec::Old(cmd_join_pane_exec),
 };
 
 pub static CMD_MOVE_PANE_ENTRY: cmd_entry = cmd_entry {
@@ -48,7 +48,7 @@ pub static CMD_MOVE_PANE_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::empty(),
-    exec: cmd_join_pane_exec,
+    exec: CmdExec::Old(cmd_join_pane_exec),
 };
 
 unsafe fn cmd_join_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

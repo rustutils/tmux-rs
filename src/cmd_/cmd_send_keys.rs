@@ -27,7 +27,7 @@ pub static CMD_SEND_KEYS_ENTRY: cmd_entry = cmd_entry {
     flags: cmd_flag::CMD_AFTERHOOK
         .union(cmd_flag::CMD_CLIENT_CFLAG)
         .union(cmd_flag::CMD_CLIENT_CANFAIL),
-    exec: cmd_send_keys_exec,
+    exec: CmdExec::Old(cmd_send_keys_exec),
 
     source: cmd_entry_flag::zeroed(),
 };
@@ -42,7 +42,7 @@ pub static CMD_SEND_PREFIX_ENTRY: cmd_entry = cmd_entry {
     target: cmd_entry_flag::new(b't', cmd_find_type::CMD_FIND_PANE, cmd_find_flags::empty()),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_send_keys_exec,
+    exec: CmdExec::Old(cmd_send_keys_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

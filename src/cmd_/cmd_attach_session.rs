@@ -23,7 +23,7 @@ pub static CMD_ATTACH_SESSION_ENTRY: cmd_entry = cmd_entry {
     usage: "[-dErx] [-c working-directory] [-f flags] [-t target-session]",
 
     flags: cmd_flag::CMD_STARTSERVER.union(cmd_flag::CMD_READONLY),
-    exec: cmd_attach_session_exec,
+    exec: CmdExec::Old(cmd_attach_session_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

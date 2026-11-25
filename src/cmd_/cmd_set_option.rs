@@ -30,7 +30,7 @@ pub static CMD_SET_OPTION_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_set_option_exec,
+    exec: CmdExec::Old(cmd_set_option_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
@@ -48,7 +48,7 @@ pub static CMD_SET_WINDOW_OPTION_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_set_option_exec,
+    exec: CmdExec::Old(cmd_set_option_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
@@ -66,7 +66,7 @@ pub static CMD_SET_HOOK_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: cmd_set_option_exec,
+    exec: CmdExec::Old(cmd_set_option_exec),
     source: cmd_entry_flag::zeroed(),
 };
 

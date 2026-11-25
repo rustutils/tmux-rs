@@ -22,7 +22,7 @@ pub static CMD_DISPLAY_PANES_ENTRY: cmd_entry = cmd_entry {
     usage: "[-bN] [-d duration] [-t target-client] [template]",
 
     flags: cmd_flag::CMD_AFTERHOOK.union(cmd_flag::CMD_CLIENT_TFLAG),
-    exec: cmd_display_panes_exec,
+    exec: CmdExec::Old(cmd_display_panes_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

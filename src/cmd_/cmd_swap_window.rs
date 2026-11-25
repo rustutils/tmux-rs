@@ -33,7 +33,7 @@ pub static CMD_SWAP_WINDOW_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::empty(),
-    exec: cmd_swap_window_exec,
+    exec: CmdExec::Old(cmd_swap_window_exec),
 };
 
 unsafe fn cmd_swap_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {

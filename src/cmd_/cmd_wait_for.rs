@@ -39,7 +39,7 @@ pub static CMD_WAIT_FOR_ENTRY: cmd_entry = cmd_entry {
     usage: "[-ELSUlv] [-F format] [-w waiter] name",
 
     flags: cmd_flag::empty(),
-    exec: cmd_wait_for_exec,
+    exec: CmdExec::Old(cmd_wait_for_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

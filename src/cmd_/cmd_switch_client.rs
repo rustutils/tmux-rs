@@ -22,7 +22,7 @@ pub static CMD_SWITCH_CLIENT_ENTRY: cmd_entry = cmd_entry {
     usage: "[-ElnprZ] [-c target-client] [-t target-session] [-T key-table] [-O order]",
 
     flags: cmd_flag::CMD_READONLY.union(cmd_flag::CMD_CLIENT_CFLAG),
-    exec: cmd_switch_client_exec,
+    exec: CmdExec::Old(cmd_switch_client_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };

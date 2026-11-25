@@ -25,7 +25,7 @@ pub static CMD_CHOOSE_TREE_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::empty(),
-    exec: cmd_choose_tree_exec,
+    exec: CmdExec::Old(cmd_choose_tree_exec),
 };
 
 pub static CMD_CHOOSE_CLIENT_ENTRY: cmd_entry = cmd_entry {
@@ -39,7 +39,7 @@ pub static CMD_CHOOSE_CLIENT_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::empty(),
-    exec: cmd_choose_tree_exec,
+    exec: CmdExec::Old(cmd_choose_tree_exec),
 };
 
 pub static CMD_CHOOSE_BUFFER_ENTRY: cmd_entry = cmd_entry {
@@ -53,7 +53,7 @@ pub static CMD_CHOOSE_BUFFER_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::empty(),
-    exec: cmd_choose_tree_exec,
+    exec: CmdExec::Old(cmd_choose_tree_exec),
 };
 
 pub static CMD_CUSTOMIZE_MODE_ENTRY: cmd_entry = cmd_entry {
@@ -67,7 +67,7 @@ pub static CMD_CUSTOMIZE_MODE_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 
     flags: cmd_flag::empty(),
-    exec: cmd_choose_tree_exec,
+    exec: CmdExec::Old(cmd_choose_tree_exec),
 };
 
 unsafe fn cmd_choose_tree_args_parse(_args: *mut args, _idx: u32) -> args_parse_type {
