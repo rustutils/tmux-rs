@@ -2,7 +2,8 @@
 //! modes, checked against tmux 3.8.
 //!
 //! The client of the server under test runs in a pane of an outer server,
-//! which is always /usr/bin/tmux and serves as the terminal: capture-pane
+//! which is always C tmux 3.8 (see `harness::reference_bin`) and serves as
+//! the terminal: capture-pane
 //! and the cursor formats of the outer pane show what the client drew.
 //! Keys are sent to the outer pane, so they reach the client as typed
 //! keys. The outer pane runs the tmux client, never a shell.
@@ -44,7 +45,7 @@ impl Nested {
             inner.cmd().args(*args).run().assert_success();
         }
 
-        let mut outer = TmuxTestHarness::with_bin("/usr/bin/tmux");
+        let mut outer = TmuxTestHarness::with_bin(harness::reference_bin());
         let attach = format!(
             "env TERM=tmux-256color {} -S {} attach",
             harness::client_bin().display(),

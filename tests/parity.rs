@@ -7,9 +7,9 @@
 //! tests fail on any difference that is not listed, and also on a listed
 //! difference that has gone away, so the tables only ever shrink.
 //!
-//! The C binary is /usr/bin/tmux, or `TMUX_REFERENCE_BIN` if set. The tests
-//! are skipped when it is missing or not tmux 3.8. They always use the
-//! cargo-built tmux-rs, whatever `TMUX_SERVER_BIN` and `TMUX_CLIENT_BIN` say.
+//! The C binary comes from `harness::reference_bin`, and the tests fail
+//! when it is missing or not tmux 3.8. They always use the cargo-built
+//! tmux-rs, whatever `TMUX_SERVER_BIN` and `TMUX_CLIENT_BIN` say.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -20,24 +20,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod known;
 
 static SERVER_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// The C tmux 3.8 binary to compare against, or None to skip.
-fn reference_bin() -> Option<PathBuf> {
-    let bin = std::env::var_os("TMUX_REFERENCE_BIN")
-        .map_or_else(|| PathBuf::from("/usr/bin/tmux"), PathBuf::from);
-    let out = Command::new(&bin).arg("-V").output().ok()?;
-    let version = String::from_utf8_lossy(&out.stdout);
-    if version.trim() == "tmux 3.8" {
-        Some(bin)
-    } else {
-        eprintln!(
-            "skipping parity test: {} is {:?}, not tmux 3.8",
-            bin.display(),
-            version.trim()
-        );
-        None
-    }
-}
 
 /// A server started with an empty config on its own socket, killed on drop.
 struct Server {
@@ -91,13 +73,11 @@ impl Drop for Server {
     }
 }
 
-/// Start a tmux-rs server and a C tmux server, or None if there is no C
-/// tmux 3.8 to compare with.
-fn servers() -> Option<(Server, Server)> {
-    let reference = reference_bin()?;
+/// Start a tmux-rs server and a C tmux 3.8 server.
+fn servers() -> (Server, Server) {
     let rust = Server::start(env!("CARGO_BIN_EXE_tmux-rs").into());
-    let c = Server::start(reference);
-    Some((rust, c))
+    let c = Server::start(super::harness::reference_bin());
+    (rust, c)
 }
 
 /// Compare two maps and describe each difference as a key: "missing:K"
@@ -165,7 +145,7 @@ fn parse_options(out: &str) -> BTreeMap<String, String> {
 
 #[test]
 fn options_match_tmux_3_8() {
-    let Some((rust, c)) = servers() else { return };
+    let (rust, c) = servers();
     let mut r = BTreeMap::new();
     let mut cc = BTreeMap::new();
     for scope in ["-s", "-g", "-gw"] {
@@ -184,7 +164,7 @@ fn options_match_tmux_3_8() {
 /// because show-options leaves hooks out.
 #[test]
 fn hooks_match_tmux_3_8() {
-    let Some((rust, c)) = servers() else { return };
+    let (rust, c) = servers();
     for scope in ["-g", "-gw"] {
         assert_eq!(
             rust.run(&["show-hooks", scope]),
@@ -196,7 +176,7 @@ fn hooks_match_tmux_3_8() {
 
 #[test]
 fn commands_match_tmux_3_8() {
-    let Some((rust, c)) = servers() else { return };
+    let (rust, c) = servers();
     let parse = |out: String| -> BTreeMap<String, String> {
         out.lines()
             .map(|l| {
@@ -213,7 +193,7 @@ fn commands_match_tmux_3_8() {
 
 #[test]
 fn key_bindings_match_tmux_3_8() {
-    let Some((rust, c)) = servers() else { return };
+    let (rust, c) = servers();
     // "bind-key [-r] -T table key command": key the map by table and key,
     // and compare the repeat flag and command with whitespace collapsed.
     let parse = |out: String| -> BTreeMap<String, String> {

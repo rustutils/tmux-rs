@@ -28,9 +28,14 @@ memory leaks are expected at the moment, these will be addressed later)
 
 ## Compatibility with C tmux
 
-The integration tests can run against C tmux to check that tmux-rs behaves
-the same and speaks the same protocol. The target is tmux 3.8. Point the
-tests at a C tmux binary for the client, the server or both:
+The tests need C tmux 3.8. The parity tests compare options, commands and
+key bindings with it, and the prompt drawing tests use it as the terminal.
+They use `TMUX_REFERENCE_BIN`, or `tmux` on PATH, and fail when it is
+missing or another version.
+
+The integration tests can also run against C tmux to check that tmux-rs
+behaves the same and speaks the same protocol. Point them at a C tmux
+binary for the client, the server or both:
 
     TMUX_CLIENT_BIN=/usr/bin/tmux cargo nextest run --tests
     TMUX_SERVER_BIN=/usr/bin/tmux cargo nextest run --tests

@@ -35,6 +35,35 @@ pub fn server_is_tmux_rs() -> bool {
     server_bin() == cargo_bin()
 }
 
+/// The C tmux 3.8 binary that parity tests compare with and that nested
+/// tests use as their terminal: `TMUX_REFERENCE_BIN`, or `tmux` on PATH.
+///
+/// Panics when it is missing or not tmux 3.8. The tests that use it are
+/// part of the suite, so a machine without 3.8 must fail them rather than
+/// leave them unchecked.
+pub fn reference_bin() -> PathBuf {
+    let bin = env::var_os("TMUX_REFERENCE_BIN")
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::split_paths(&env::var_os("PATH")?)
+                .map(|dir| dir.join("tmux"))
+                .find(|path| path.is_file())
+        })
+        .expect("no tmux on PATH, the tests need tmux 3.8 (or set TMUX_REFERENCE_BIN)");
+    let version = Command::new(&bin)
+        .arg("-V")
+        .output()
+        .unwrap_or_else(|e| panic!("cannot run reference tmux {}: {e}", bin.display()));
+    let version = String::from_utf8_lossy(&version.stdout);
+    assert_eq!(
+        version.trim(),
+        "tmux 3.8",
+        "the tests need tmux 3.8 as the reference, {} is not (set TMUX_REFERENCE_BIN)",
+        bin.display()
+    );
+    bin
+}
+
 /// Returns the path to the cargo-built tmux-rs binary.
 fn cargo_bin() -> PathBuf {
     // cargo sets this for integration tests
@@ -133,7 +162,7 @@ impl TmuxTestHarness {
 
     /// A harness whose commands all use `bin`, whatever `TMUX_SERVER_BIN`
     /// and `TMUX_CLIENT_BIN` say. Tests use it for an outer server running
-    /// /usr/bin/tmux as a reference terminal: a client of the server
+    /// C tmux 3.8 as a reference terminal: a client of the server
     /// under test is attached in its pane, and capture-pane and the
     /// cursor formats of the outer pane show what that client drew.
     pub fn with_bin(bin: impl Into<PathBuf>) -> Self {
@@ -317,7 +346,9 @@ impl TmuxTestHarness {
 
     /// Kill the server.
     pub fn kill_server(&self) {
-        let _ = self.cmd().args(["kill-server"]).run();
+        // Never panic here. This runs from Drop, often while a failed test
+        // is already unwinding, and a second panic aborts the test binary.
+        let _ = self.cmd().args(["kill-server"]).try_run();
     }
 
     pub fn socket_path(&self) -> &str {
@@ -365,6 +396,11 @@ impl<'a> TmuxCommandBuilder<'a> {
     }
 
     pub fn run(self) -> TmuxResult {
+        self.try_run().expect("failed to run tmux")
+    }
+
+    /// Like `run`, but returns an error if tmux cannot be started.
+    pub fn try_run(self) -> std::io::Result<TmuxResult> {
         let mut cmd = Command::new(&self.bin);
         cmd.args(["-S", &self.harness.socket_path]);
         // TMUX_TEST_VERBOSE=1 makes every tmux write its -vv logs
@@ -403,24 +439,16 @@ impl<'a> TmuxCommandBuilder<'a> {
 
         if let Some(ref data) = self.stdin_data {
             cmd.stdin(Stdio::piped());
-            let mut child = cmd
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .expect("failed to spawn tmux");
+            let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
             use std::io::Write;
             // A write error means tmux exited early, which the output shows.
             let _ = child.stdin.as_mut().unwrap().write_all(data.as_bytes());
-            let output = child.wait_with_output().expect("failed to wait on tmux");
-            TmuxResult { output }
+            let output = child.wait_with_output()?;
+            Ok(TmuxResult { output })
         } else {
             cmd.stdin(Stdio::null());
-            let output = cmd
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .expect("failed to run tmux");
-            TmuxResult { output }
+            let output = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).output()?;
+            Ok(TmuxResult { output })
         }
     }
 }
