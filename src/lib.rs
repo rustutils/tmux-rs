@@ -1650,8 +1650,6 @@ struct session {
     /// Shared, so a command can take a snapshot cheaply. Changed with
     /// `Rc::make_mut`.
     environ: Rc<Environ>,
-
-    references: i32,
 }
 type sessions = BTreeMap<String, *mut session>;
 

@@ -161,10 +161,9 @@ pub unsafe fn cmd_run_shell_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             (*cdata).cwd = xstrdup(pc.as_ptr().cast()).as_ptr();
         }
 
+        // An ID, not a reference: if the session is killed before the job
+        // starts, the job runs without it.
         (*cdata).s = if s.is_null() { None } else { Some(SessionId((*s).id)) };
-        if !s.is_null() {
-            session_add_ref(s, __func__);
-        }
 
         let duration = if !delay.is_null() {
             let secs = d as u64;
@@ -326,10 +325,6 @@ pub unsafe fn cmd_run_shell_free(data: *mut c_void) {
         let cdata = data as *mut cmd_run_shell_data;
 
         std::ptr::drop_in_place(&raw mut (*cdata).timer);
-        let cs = (*cdata).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-        if !cs.is_null() {
-            session_remove_ref(cs, __func__);
-        }
         if let Some(c) = (*cdata).client.and_then(|id| client_from_id(id)) {
             server_client_unref(c);
         }

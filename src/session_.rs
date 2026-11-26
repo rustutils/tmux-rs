@@ -137,7 +137,6 @@ impl session {
     ) -> Box<Self> {
         unsafe {
             let mut s: Box<session> = Box::new(MaybeUninit::<session>::zeroed().assume_init_read());
-            s.references = 1;
             s.flags = 0;
 
             // xcalloc'd zero bytes are NOT a guaranteed-valid Option<PathBuf>::None,
@@ -214,42 +213,10 @@ pub unsafe fn session_create(
     }
 }
 
-/// Add a reference to a session.
-pub unsafe fn session_add_ref(s: *mut session, from: *const u8) {
-    let __func__ = "session_add_ref";
-    unsafe {
-        (*s).references += 1;
-        log_debug!(
-            "{}: {} {}, now {}",
-            __func__,
-            (*s).name,
-            _s(from),
-            (*s).references
-        );
-    }
-}
-
-/// Remove a reference from a session.
-pub unsafe fn session_remove_ref(s: *mut session, from: *const u8) {
-    let __func__ = "session_remove_ref";
-    unsafe {
-        (*s).references -= 1;
-        log_debug!(
-            "{}: {} {}, now {}",
-            __func__,
-            (*s).name,
-            _s(from),
-            (*s).references
-        );
-
-        if (*s).references == 0 {
-            let sid = SessionId((*s).id);
-            defer(Box::new(move || session_free_deferred(sid)));
-        }
-    }
-}
-
-/// Free session.
+/// Free a destroyed session, from the event loop after the destroy, so
+/// pointers the code that destroyed it still holds stay valid until it
+/// returns. Nothing keeps a session across the loop: everything else
+/// holds its ID, and a stale ID finds nothing.
 ///
 /// Removes the session from `SESSION_REGISTRY`, which drops the `Box<session>`
 /// and deallocates the memory.
@@ -257,21 +224,13 @@ unsafe fn session_free_deferred(sid: SessionId) {
     unsafe {
         let Some(s) = session_from_id(sid) else { return };
 
-        log_debug!(
-            "session {} freed ({} references)",
-            (*s).name,
-            (*s).references
-        );
+        log_debug!("session {} freed", (*s).name);
 
-        if (*s).references == 0 {
-            // environ: Box<Environ> dropped automatically by registry removal
-            options_free((*s).options);
-            (*s).name = Cow::Borrowed("");
-            // Drop the Box from the registry. Box drop runs Drop on all fields,
-            // including `cwd: Option<PathBuf>`. (The Vec and BTreeMap fields were
-            // already emptied in session_destroy, and the Cow name was replaced above.)
-            let _ = (*(&raw mut SESSION_REGISTRY)).remove(&sid);
-        }
+        options_free((*s).options);
+        (*s).name = Cow::Borrowed("");
+        // Drop the Box from the registry. Box drop runs Drop on all fields,
+        // including `cwd: Option<PathBuf>` and the environment.
+        let _ = (*(&raw mut SESSION_REGISTRY)).remove(&sid);
     }
 }
 
@@ -308,9 +267,7 @@ pub unsafe fn session_destroy(s: *mut session, notify: i32, from: *const u8) {
         let sid = (*s).sid();
         with_links(|l| l.remove_session(sid));
 
-        // `cwd` is `Option<PathBuf>`, dropped automatically by Box drop in session_free.
-
-        session_remove_ref(s, __func__);
+        defer(Box::new(move || session_free_deferred(sid)));
     }
 }
 

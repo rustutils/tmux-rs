@@ -368,6 +368,39 @@ fn swap_window_keeps_the_marked_pane() {
     assert_eq!(lines, ["0:0", "1:0", "2:1", "5:0"]);
 }
 
+/// A delayed run-shell job whose session is killed during the delay.
+/// 3.8 keeps the killed session alive with a reference, so the job gets
+/// its environment. tmux-rs has no session reference counts and the job
+/// gets the global environment, a deliberate difference (PLAN.md,
+/// "Deliberate differences from tmux 3.8").
+#[test]
+fn run_shell_delay_with_killed_session() {
+    let tmux = server();
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out");
+    run(&tmux, &["new-session", "-d", "-s", "v", "sleep 1000"]);
+    run(&tmux, &["set-environment", "-t", "v", "FOO", "bar"]);
+    let cmd = format!("echo \"FOO=$FOO\" > {}", out.display());
+    run(&tmux, &["run-shell", "-b", "-d", "0.5", "-t", "v", &cmd]);
+    run(&tmux, &["kill-session", "-t", "v"]);
+    let start = std::time::Instant::now();
+    let got = loop {
+        if let Ok(s) = std::fs::read_to_string(&out)
+            && s.ends_with('\n')
+        {
+            break s;
+        }
+        assert!(start.elapsed() < T, "job did not run");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let want = if harness::server_is_tmux_rs() {
+        "FOO=\n"
+    } else {
+        "FOO=bar\n"
+    };
+    assert_eq!(got, want);
+}
+
 /// run-shell -t keeps working when its session is killed while the
 /// command runs.
 #[test]
