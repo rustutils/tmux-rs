@@ -541,12 +541,12 @@ fn respawn_window_kill_flag() {
         .run()
         .assert_success();
 
-    std::thread::sleep(Duration::from_millis(200));
-
-    let cmd = tmux.query("#{pane_current_command}");
-    assert_eq!(
-        cmd, "sleep",
-        "respawned command should be 'sleep', got: {cmd}"
+    // The new child shows as tmux-rs until it has exec'd sleep, which can
+    // take a while when the machine is busy.
+    tmux.wait_for(
+        "#{pane_current_command}",
+        |cmd| cmd == "sleep",
+        Duration::from_secs(5),
     );
 }
 
