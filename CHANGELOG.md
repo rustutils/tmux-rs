@@ -24,6 +24,13 @@
   or bytes that are not UTF-8 are refused with `invalid session name`, and
   such group names with `invalid session group name`.
 
+### Differences from tmux 3.8
+
+- `run-shell -d` with a target session that is killed during the delay
+  runs the command with the global environment. tmux 3.8 (and earlier
+  tmux-rs) kept the killed session until then and used its environment.
+  See "Differences on purpose" in the README.
+
 ### Fixes
 
 - A variable removed with `set-environment -u` or `-r` no longer reaches

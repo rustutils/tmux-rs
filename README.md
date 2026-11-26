@@ -80,6 +80,11 @@ is left.
   way around, give both the same socket with `-S`.
 - A few edge cases where tmux 3.8 reads uninitialised memory or writes
   outside a buffer behave in a defined way in tmux-rs.
+- `run-shell -d` with a target session that is killed during the delay:
+  tmux 3.8 keeps the killed session around until the command has run, so
+  the command still gets that session's environment. tmux-rs does not keep
+  destroyed sessions, so the command gets the global environment, and
+  `TMUX` does not name a session. Without `-d` there is no difference.
 
 The integration tests run with tmux-rs on both sides and with C tmux as the
 client, the server or both, see [TESTING.md](TESTING.md).
