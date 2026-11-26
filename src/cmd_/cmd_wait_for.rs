@@ -26,9 +26,11 @@
 //! For both, `-l` lists the clients waiting on a name and `-w client`
 //! wakes one of them.
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::ffi::CStr;
 
 use crate::events::{Payload, Sink, SinkId, events_add_sink, events_remove_sink};
+use crate::global::with_wait_channels;
+use crate::wait_channel::{WaitChannels, WaitOutcome};
 use crate::*;
 
 pub static CMD_WAIT_FOR_ENTRY: cmd_entry = cmd_entry {
@@ -200,108 +202,87 @@ unsafe fn cmd_wait_for_event_exec(item: *mut cmdq_item, name: &str, args: *mut a
     }
 }
 
-pub struct wait_channel {
-    pub name: *mut u8,
-    pub locked: bool,
-    pub woken: bool,
-
-    pub waiters: Vec<*mut cmdq_item>,
-    pub lockers: Vec<*mut cmdq_item>,
+/// A command waiting on a channel: its queue item and the client it came
+/// from, which a waiting command always has.
+#[derive(Clone, Copy, Debug)]
+pub struct Waiter {
+    item: *mut cmdq_item,
+    client: ClientId,
 }
 
-static mut WAIT_CHANNELS: BTreeMap<String, Box<wait_channel>> = BTreeMap::new();
-
-unsafe fn wait_channel_find(name: *const u8) -> *mut wait_channel {
-    unsafe {
-        let key = cstr_to_str(name);
-        (*(&raw mut WAIT_CHANNELS))
-            .get_mut(key)
-            .map_or(null_mut(), |wc| &mut **wc as *mut wait_channel)
-    }
-}
-
-pub unsafe fn cmd_wait_for_add(name: *const u8) -> *mut wait_channel {
-    unsafe {
-        let key = cstr_to_str(name).to_string();
-        let wc = Box::new(wait_channel {
-            name: xstrdup(name).as_ptr(),
-            locked: false,
-            woken: false,
-            waiters: Vec::new(),
-            lockers: Vec::new(),
-        });
-
-        log_debug!("add wait channel {}", _s(wc.name));
-
-        (*(&raw mut WAIT_CHANNELS)).insert(key.clone(), wc);
-        &mut **(*(&raw mut WAIT_CHANNELS)).get_mut(&key).unwrap() as *mut wait_channel
-    }
-}
-
-pub unsafe fn cmd_wait_for_remove(wc: *mut wait_channel) {
-    unsafe {
-        if (*wc).locked {
-            return;
-        }
-        if !(*wc).waiters.is_empty() || !(*wc).woken {
-            return;
-        }
-
-        let key = cstr_to_str((*wc).name).to_string();
-        log_debug!("remove wait channel {}", _s((*wc).name));
-
-        if let Some(removed) = (*(&raw mut WAIT_CHANNELS)).remove(&key) {
-            free_(removed.name);
-        }
+/// Lets the waiters run on.
+///
+/// # Safety
+/// The waiters' items must be valid.
+unsafe fn cmd_wait_for_continue(waiters: Vec<Waiter>) {
+    for w in waiters {
+        // SAFETY: the caller guarantees the items are valid.
+        unsafe { cmdq_continue(w.item) };
     }
 }
 
 pub unsafe fn cmd_wait_for_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
     unsafe {
         let args = cmd_get_args(self_);
-        let name = args_string(args, 0);
+        let name_ptr = args_string(args, 0);
 
         if args_has(args, 'E') {
-            return cmd_wait_for_event_exec(item, &cstr_to_string_lossy(name), args);
+            return cmd_wait_for_event_exec(item, &cstr_to_string_lossy(name_ptr), args);
         }
 
-        let wc = wait_channel_find(name);
+        let name = CStr::from_ptr(name_ptr.cast()).to_bytes();
         if args_has(args, 'l') {
-            return cmd_wait_for_list(item, wc);
+            return cmd_wait_for_list(item, name);
         }
         if args_has(args, 'w') {
-            return cmd_wait_for_wake(args, wc);
+            return cmd_wait_for_wake(args, name);
         }
         if args_has(args, 'S') {
-            return cmd_wait_for_signal(item, name, wc);
+            let woken = with_wait_channels(|w| w.signal(name));
+            log_debug!(
+                "signal wait channel {}, {} waiters",
+                String::from_utf8_lossy(name),
+                woken.len()
+            );
+            cmd_wait_for_continue(woken);
+            return cmd_retval::CMD_RETURN_NORMAL;
         }
-        if args_has(args, 'L') {
-            return cmd_wait_for_lock(item, name, wc);
-        }
-        if args_has(args, 'U') {
-            return cmd_wait_for_unlock(item, name, wc);
+        // As C, -L wins over -U.
+        let lock = args_has(args, 'L');
+        if !lock && args_has(args, 'U') {
+            return match with_wait_channels(|w| w.unlock(name)) {
+                Err(e) => {
+                    cmdq_error!(item, "{e}");
+                    cmd_retval::CMD_RETURN_ERROR
+                }
+                Ok(next) => {
+                    cmd_wait_for_continue(next.into_iter().collect());
+                    cmd_retval::CMD_RETURN_NORMAL
+                }
+            };
         }
 
-        cmd_wait_for_wait(item, name, wc)
-    }
-}
-
-/// Removes a channel nobody waits on, holds or has signalled.
-///
-/// # Safety
-/// `wc` must be a channel in the list.
-unsafe fn cmd_wait_for_remove_empty(wc: *mut wait_channel) {
-    unsafe {
-        if (*wc).locked || (*wc).woken {
-            return;
+        let c = cmdq_get_client(item);
+        if c.is_null() {
+            if lock {
+                cmdq_error!(item, "not able to lock");
+            } else {
+                cmdq_error!(item, "not able to wait");
+            }
+            return cmd_retval::CMD_RETURN_ERROR;
         }
-        if !(*wc).waiters.is_empty() || !(*wc).lockers.is_empty() {
-            return;
-        }
-        let key = cstr_to_str((*wc).name).to_string();
-        log_debug!("remove empty wait channel {}", key);
-        if let Some(removed) = (*(&raw mut WAIT_CHANNELS)).remove(&key) {
-            free_(removed.name);
+        let waiter = Waiter {
+            item,
+            client: (*c).id,
+        };
+        let outcome = if lock {
+            with_wait_channels(|w| w.lock(name, waiter))
+        } else {
+            with_wait_channels(|w| w.wait(name, waiter))
+        };
+        match outcome {
+            WaitOutcome::Done => cmd_retval::CMD_RETURN_NORMAL,
+            WaitOutcome::Wait => cmd_retval::CMD_RETURN_WAIT,
         }
     }
 }
@@ -309,15 +290,11 @@ unsafe fn cmd_wait_for_remove_empty(wc: *mut wait_channel) {
 /// wait-for -l: the clients waiting on or locking a channel.
 ///
 /// # Safety
-/// `item` must be valid and `wc` null or a channel in the list.
-unsafe fn cmd_wait_for_list(item: *mut cmdq_item, wc: *mut wait_channel) -> cmd_retval {
+/// `item` must be valid.
+unsafe fn cmd_wait_for_list(item: *mut cmdq_item, name: &[u8]) -> cmd_retval {
     unsafe {
-        if wc.is_null() {
-            return cmd_retval::CMD_RETURN_NORMAL;
-        }
-        let items: Vec<*mut cmdq_item> = (*wc).waiters.iter().chain(&(*wc).lockers).copied().collect();
-        for wi in items {
-            cmdq_print!(item, "{}", cmd_wait_for_item_client_name(wi));
+        for w in with_wait_channels(|ch| ch.list(name)) {
+            cmdq_print!(item, "{}", cmd_wait_for_item_client_name(w.item));
         }
         cmd_retval::CMD_RETURN_NORMAL
     }
@@ -326,126 +303,19 @@ unsafe fn cmd_wait_for_list(item: *mut cmdq_item, wc: *mut wait_channel) -> cmd_
 /// wait-for -w: lets the named client's command on a channel run on.
 ///
 /// # Safety
-/// `args` must be valid and `wc` null or a channel in the list.
-unsafe fn cmd_wait_for_wake(args: *mut args, wc: *mut wait_channel) -> cmd_retval {
+/// `args` must be valid.
+unsafe fn cmd_wait_for_wake(args: *mut args, name: &[u8]) -> cmd_retval {
     unsafe {
-        if wc.is_null() {
-            return cmd_retval::CMD_RETURN_NORMAL;
-        }
         let client_name = cstr_to_string_lossy(args_get(args, b'w'));
-        for list in [&raw mut (*wc).waiters, &raw mut (*wc).lockers] {
-            if let Some(i) = (*list).iter().position(|&wi| cmd_wait_for_item_client_name(wi) == client_name) {
-                let wi = (*list).remove(i);
-                cmdq_continue(wi);
-                cmd_wait_for_remove_empty(wc);
-                return cmd_retval::CMD_RETURN_NORMAL;
-            }
-        }
+        let Some(client) = clients_iter().find(|&c| cstr_to_string_lossy((*c).name) == client_name)
+        else {
+            return cmd_retval::CMD_RETURN_NORMAL;
+        };
+        let id = (*client).id;
+        let woken = with_wait_channels(|w| w.wake(name, |x| x.client == id));
+        cmd_wait_for_continue(woken.into_iter().collect());
         cmd_retval::CMD_RETURN_NORMAL
     }
-}
-
-pub unsafe fn cmd_wait_for_signal(
-    _item: *const cmdq_item,
-    name: *const u8,
-    mut wc: *mut wait_channel,
-) -> cmd_retval {
-    unsafe {
-        if wc.is_null() {
-            wc = cmd_wait_for_add(name);
-        }
-
-        if (*wc).waiters.is_empty() && !(*wc).woken {
-            log_debug!("signal wait channel {}, no waiters", _s((*wc).name));
-            (*wc).woken = true;
-            return cmd_retval::CMD_RETURN_NORMAL;
-        }
-        log_debug!("signal wait channel {}, with waiters", _s((*wc).name));
-
-        for &wi in &(*wc).waiters {
-            cmdq_continue(wi);
-        }
-        (*wc).waiters.clear();
-
-        cmd_wait_for_remove(wc);
-
-        cmd_retval::CMD_RETURN_NORMAL
-    }
-}
-
-pub unsafe fn cmd_wait_for_wait(
-    item: *mut cmdq_item,
-    name: *const u8,
-    mut wc: *mut wait_channel,
-) -> cmd_retval {
-    unsafe {
-        let c = cmdq_get_client(item);
-
-        if c.is_null() {
-            cmdq_error!(item, "not able to wait");
-            return cmd_retval::CMD_RETURN_ERROR;
-        }
-
-        if wc.is_null() {
-            wc = cmd_wait_for_add(name);
-        }
-
-        if (*wc).woken {
-            log_debug!("wait channel {} already woken ({:p})", _s((*wc).name), c);
-            cmd_wait_for_remove(wc);
-            return cmd_retval::CMD_RETURN_NORMAL;
-        }
-        log_debug!("wait channel {} not woken ({:p})", _s((*wc).name), c);
-
-        (*wc).waiters.push(item);
-    }
-    cmd_retval::CMD_RETURN_WAIT
-}
-
-pub unsafe fn cmd_wait_for_lock(
-    item: *mut cmdq_item,
-    name: *const u8,
-    mut wc: *mut wait_channel,
-) -> cmd_retval {
-    unsafe {
-        if cmdq_get_client(item).is_null() {
-            cmdq_error!(item, "not able to lock");
-            return cmd_retval::CMD_RETURN_ERROR;
-        }
-
-        if wc.is_null() {
-            wc = cmd_wait_for_add(name);
-        }
-
-        if (*wc).locked {
-            (*wc).lockers.push(item);
-            return cmd_retval::CMD_RETURN_WAIT;
-        }
-        (*wc).locked = true;
-    }
-    cmd_retval::CMD_RETURN_NORMAL
-}
-
-pub unsafe fn cmd_wait_for_unlock(
-    item: *mut cmdq_item,
-    name: *const u8,
-    wc: *mut wait_channel,
-) -> cmd_retval {
-    unsafe {
-        if wc.is_null() || !(*wc).locked {
-            cmdq_error!(item, "channel {} not locked", _s(name));
-            return cmd_retval::CMD_RETURN_ERROR;
-        }
-
-        if !(*wc).lockers.is_empty() {
-            let wi = (*wc).lockers.remove(0);
-            cmdq_continue(wi);
-        } else {
-            (*wc).locked = false;
-            cmd_wait_for_remove(wc);
-        }
-    }
-    cmd_retval::CMD_RETURN_NORMAL
 }
 
 /// Release the items of a client that has gone away from every channel
@@ -456,49 +326,19 @@ pub unsafe fn cmd_wait_for_client_lost(c: *mut client) {
         for wei in wait_events_take(|w| cmdq_get_client(w.item) == c) {
             cmd_wait_for_event_done(wei);
         }
-
-        let mut empty = Vec::new();
-        for wc in (*(&raw mut WAIT_CHANNELS)).values_mut() {
-            for list in [&mut wc.waiters, &mut wc.lockers] {
-                list.retain(|&wi| {
-                    if cmdq_get_client(wi) != c {
-                        return true;
-                    }
-                    cmdq_continue(wi);
-                    false
-                });
-            }
-            empty.push(&mut **wc as *mut wait_channel);
-        }
-        for wc in empty {
-            cmd_wait_for_remove_empty(wc);
-        }
+        let id = (*c).id;
+        let woken = with_wait_channels(|w| w.client_lost(|x| x.client == id));
+        cmd_wait_for_continue(woken);
     }
 }
 
+/// Lets every waiting command run on and frees every lock (server exit).
 pub unsafe fn cmd_wait_for_flush() {
     unsafe {
         for wei in wait_events_take(|_| true) {
             cmd_wait_for_event_done(wei);
         }
-
-        let keys: Vec<String> = (*(&raw mut WAIT_CHANNELS)).keys().cloned().collect();
-        for key in keys {
-            let Some(wc) = (*(&raw mut WAIT_CHANNELS)).get_mut(&key) else {
-                continue;
-            };
-            let wc = &mut **wc as *mut wait_channel;
-            for &wi in &(*wc).waiters {
-                cmdq_continue(wi);
-            }
-            (*wc).waiters.clear();
-            (*wc).woken = true;
-            for &wi in &(*wc).lockers {
-                cmdq_continue(wi);
-            }
-            (*wc).lockers.clear();
-            (*wc).locked = false;
-            cmd_wait_for_remove(wc);
-        }
+        let woken = with_wait_channels(WaitChannels::flush);
+        cmd_wait_for_continue(woken);
     }
 }

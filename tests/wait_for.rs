@@ -241,7 +241,6 @@ fn wake_a_locker() {
 
 /// Channel names need not be UTF-8.
 #[test]
-#[ignore = "channel names that are not UTF-8 panic, run 16 task 2"]
 fn channel_names_that_are_not_utf8() {
     use std::os::unix::ffi::OsStrExt;
     let name = std::ffi::OsStr::from_bytes(b"c\xff");

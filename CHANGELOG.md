@@ -18,7 +18,8 @@
 - A variable name that is not UTF-8 in the environment no longer crashes
   the client or the server, and `show-environment` prints names and
   values as they are instead of replacing bytes that are not UTF-8.
-- A key table name that is not UTF-8 no longer crashes the server.
+- A key table or `wait-for` channel name that is not UTF-8 no longer
+  crashes the server.
 - A client whose key table lost its last binding no longer reads freed
   memory. As in tmux, its next key goes to the root table.
 - `bind-key` and `unbind-key` report an unknown key as `unknown key: X`,

@@ -105,6 +105,7 @@ cfg_pub_mods! {
     mod server_fn;
     mod session_;
     mod sort;
+    mod wait_channel;
     mod sort_get;
     mod spawn;
     mod status;

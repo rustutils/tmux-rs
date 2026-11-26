@@ -39,7 +39,9 @@ use std::cell::RefCell;
 use crate::environ::Environ;
 use crate::cmd_::CmdList;
 use crate::events::EventBus;
+use crate::cmd_::cmd_wait_for::Waiter;
 use crate::key_bindings::KeyTables;
+use crate::wait_channel::WaitChannels;
 use crate::message_log::MessageLog;
 use crate::paste::PasteStore;
 use crate::prompt_history::PromptHistory;
@@ -61,6 +63,16 @@ thread_local! {
     static GLOBAL_ENVIRON: RefCell<Environ> = RefCell::new(Environ::new());
     /// The key tables with their bindings.
     static KEY_TABLES: RefCell<KeyTables<CmdList>> = RefCell::new(KeyTables::new());
+    /// The wait-for channels.
+    static WAIT_CHANNELS: RefCell<WaitChannels<Waiter>> = RefCell::new(WaitChannels::new());
+}
+
+/// Run `f` with the wait channels.
+///
+/// # Panics
+/// If `f` reaches the wait channels again (see the module rules).
+pub fn with_wait_channels<R>(f: impl FnOnce(&mut WaitChannels<Waiter>) -> R) -> R {
+    WAIT_CHANNELS.with_borrow_mut(f)
 }
 
 /// Run `f` with the key tables.

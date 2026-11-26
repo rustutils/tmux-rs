@@ -83,7 +83,7 @@
 2 src/cmd_/cmd_swap_pane.rs
 2 src/cmd_/cmd_swap_window.rs
 2 src/cmd_/cmd_switch_client.rs
-34 src/cmd_/cmd_wait_for.rs
+20 src/cmd_/cmd_wait_for.rs
 62 src/cmd_/mod.rs
 16 src/cmd_/run.rs
 128 src/cmd_parse.rs
