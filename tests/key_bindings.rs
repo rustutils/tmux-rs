@@ -386,6 +386,11 @@ fn unbind_key_errors_and_tables() {
         "error: table nosuch doesn't exist"
     );
     assert_eq!(run(&["unbind", "-q", "-T", "nosuch", "x"]), "");
+    // -q fails without a message, which still stops the command list.
+    run(&[
+        "unbind", "-q", "-T", "nosuch", "x", ";", "set", "-g", "@q", "1",
+    ]);
+    assert_eq!(run(&["show", "-gv", "@q"]), "error: invalid option: @q");
     assert_eq!(
         run(&["unbind", "-a", "-T", "nosuch"]),
         "error: table nosuch doesn't exist"

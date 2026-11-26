@@ -22,7 +22,8 @@
 
 use crate::cmd_::context::{
     ClientInfo, CmdArgs, CmdCtx, CmdCtxParts, CmdEffect, CmdFlow, CmdResult,
-    EnvironChange, FileError, FilePath, FileThen, FormatSubject, PaneInfo, SessionInfo,
+    EnvironChange, FileError, FilePath, FileThen, FormatSubject, PaneInfo, QuietError,
+    SessionInfo,
 };
 use crate::libc::{O_APPEND, O_TRUNC, strerror};
 use crate::paste::{buffer_limit, now, paste_notify};
@@ -203,6 +204,7 @@ unsafe fn cmd_apply_effects(item: *mut cmdq_item, effects: Vec<CmdEffect>) {
                     }
                 }
                 CmdEffect::Environ { session, change } => cmd_change_environ(item, session, change),
+                CmdEffect::RemoveKeyTable { name } => key_bindings_remove_table(&name),
                 CmdEffect::PrintSummaries {
                     terminals,
                     terminal_client,
@@ -294,6 +296,7 @@ unsafe fn cmd_finish(item: *mut cmdq_item, result: CmdResult) -> cmd_retval {
             }
         };
         match result {
+            Err(error) if error.is::<QuietError>() => cmd_retval::CMD_RETURN_ERROR,
             Err(error) => {
                 cmdq_error!(item, "{error}");
                 cmd_retval::CMD_RETURN_ERROR

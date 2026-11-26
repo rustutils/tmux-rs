@@ -37,7 +37,9 @@
 use std::rc::Rc;
 
 use crate::environ::Environ;
-use crate::global::{with_global_environ, with_message_log, with_paste, with_prompt_history};
+use crate::global::{
+    with_global_environ, with_key_tables, with_message_log, with_paste, with_prompt_history,
+};
 use crate::message_log::Message;
 use crate::paste::{PasteBuffer, PasteError, PasteEvent};
 use crate::prompt_history::PromptType;
@@ -47,6 +49,12 @@ use crate::{ClientId, PaneId, SessionId, args, args_value};
 
 /// What a converted command returns.
 pub type CmdResult = Result<CmdFlow, Box<dyn std::error::Error>>;
+
+/// An error that prints nothing (unbind-key -q). The command fails, which
+/// stops the rest of its command list, but the client is not told.
+#[derive(Debug, thiserror::Error)]
+#[error("")]
+pub struct QuietError;
 
 /// The exec function of a converted command.
 pub type CmdExecFn = fn(&mut CmdCtx<'_>) -> CmdResult;
@@ -123,6 +131,9 @@ pub enum CmdEffect {
         terminal_client: Option<ClientId>,
         jobs: bool,
     },
+    /// Remove a key table with its defaults, moving the clients in it to
+    /// their default table.
+    RemoveKeyTable { name: Vec<u8> },
     /// Change a variable of the global environment (`session` None) or
     /// of a session's.
     Environ {
@@ -341,6 +352,29 @@ impl<'a> CmdCtx<'a> {
     /// The session of the command's target, if it has one.
     pub fn target_session(&self) -> Option<&SessionInfo> {
         self.target_session.as_ref()
+    }
+
+    /// Whether a key table called `name` exists.
+    pub fn has_key_table(&self, name: &[u8]) -> bool {
+        with_key_tables(|t| t.id(name).is_some())
+    }
+
+    /// Unbinds `key` (flags masked off) in the table called `name`.
+    pub fn unbind_key(&self, name: &[u8], key: u64) {
+        // The binding is dropped outside the store, its command list may
+        // be freed.
+        let _old = with_key_tables(|t| {
+            let old = t.get_by_name(name, key);
+            t.remove(name, key);
+            old
+        });
+    }
+
+    /// Removes the key table called `name`, once the command returns.
+    pub fn remove_key_table(&mut self, name: &[u8]) {
+        self.effects.push(CmdEffect::RemoveKeyTable {
+            name: name.to_vec(),
+        });
     }
 
     /// The logged messages, newest first.

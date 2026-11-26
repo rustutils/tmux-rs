@@ -83,7 +83,6 @@
 2 src/cmd_/cmd_swap_pane.rs
 2 src/cmd_/cmd_swap_window.rs
 2 src/cmd_/cmd_switch_client.rs
-2 src/cmd_/cmd_unbind_key.rs
 34 src/cmd_/cmd_wait_for.rs
 62 src/cmd_/mod.rs
 16 src/cmd_/run.rs
@@ -106,7 +105,7 @@
 17 src/input_keys.rs
 35 src/job_.rs
 10 src/key_bindings/mod.rs
-22 src/key_string.rs
+23 src/key_string.rs
 78 src/layout.rs
 16 src/layout_custom.rs
 26 src/layout_set.rs

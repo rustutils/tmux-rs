@@ -272,6 +272,15 @@ pub unsafe fn key_string_get_modifiers(string: *mut *const u8) -> key_code {
 // TODO
 const MB_LEN_MAX: usize = 16;
 
+/// The key named by `name` (`key_string_lookup_string` on bytes): None for a
+/// name that is no key or holds a NUL.
+pub fn key_string_lookup_bytes(name: &[u8]) -> Option<key_code> {
+    let name = CString::new(name).ok()?;
+    // SAFETY: `name` is a NUL terminated string that lives for the call.
+    let key = unsafe { key_string_lookup_string(name.as_ptr().cast()) };
+    (key != KEYC_NONE && key != KEYC_UNKNOWN).then_some(key)
+}
+
 /// Lookup a string and convert to a key value.
 pub unsafe fn key_string_lookup_string(mut string: *const u8) -> key_code {
     unsafe {
