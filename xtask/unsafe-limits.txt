@@ -77,7 +77,6 @@
 6 src/cmd_/cmd_send_keys.rs
 4 src/cmd_/cmd_server_access.rs
 12 src/cmd_/cmd_set_option.rs
-4 src/cmd_/cmd_show_messages.rs
 8 src/cmd_/cmd_show_options.rs
 12 src/cmd_/cmd_source_file.rs
 2 src/cmd_/cmd_split_window.rs
@@ -146,7 +145,7 @@
 16 src/tty_acs.rs
 7 src/tty_features.rs
 36 src/tty_keys.rs
-36 src/tty_term_.rs
+38 src/tty_term_.rs
 5 src/utempter.rs
 15 src/utf8.rs
 10 src/utf8_combined.rs

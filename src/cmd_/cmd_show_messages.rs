@@ -11,9 +11,15 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use crate::*;
+//! show-messages, converted to run in a [`CmdCtx`].
 
-const SHOW_MESSAGES_TEMPLATE: *const u8 = c!("#{t/p:message_time}: #{message_text}");
+#![forbid(unsafe_code)]
+
+use crate::cmd_::context::{CmdCtx, CmdFlow, CmdResult, FormatSubject};
+use crate::{CmdExec, args_parse, cmd_entry, cmd_entry_flag, cmd_flag};
+
+/// How each message is shown.
+const SHOW_MESSAGES_TEMPLATE: &[u8] = b"#{t/p:message_time}: #{message_text}";
 
 pub static CMD_SHOW_MESSAGES_ENTRY: cmd_entry = cmd_entry {
     name: "show-messages",
@@ -25,83 +31,82 @@ pub static CMD_SHOW_MESSAGES_ENTRY: cmd_entry = cmd_entry {
     flags: cmd_flag::CMD_AFTERHOOK
         .union(cmd_flag::CMD_CLIENT_TFLAG)
         .union(cmd_flag::CMD_CLIENT_CANFAIL),
-    exec: CmdExec::Old(cmd_show_messages_exec),
+    exec: CmdExec::Ctx(cmd_show_messages_exec),
     source: cmd_entry_flag::zeroed(),
     target: cmd_entry_flag::zeroed(),
 };
 
-unsafe fn cmd_show_messages_terminals(
-    self_: *mut cmd,
-    item: *mut cmdq_item,
-    mut blank: i32,
-) -> c_int {
-    unsafe {
-        let args = cmd_get_args(self_);
-        let tc = cmdq_get_target_client(item);
-
-        let mut n = 0u32;
-        for term_box in &(*(&raw mut TTY_TERMS)) {
-            let term: *mut tty_term = &raw const **term_box as *mut tty_term;
-            if args_has(args, 't') && !tc.is_null() && term != (*tc).tty.term {
-                continue;
-            }
-            if blank != 0 {
-                cmdq_print!(item, "");
-                blank = 0;
-            }
-            cmdq_print!(
-                item,
-                "Terminal {}: {} for {}, flags=0x{:x}:",
-                n,
-                _s((*term).name.as_ptr().cast::<u8>()),
-                _s((*(*(*term).tty).client).name),
-                (*term).flags,
-            );
-            n += 1;
-            for i in 0..tty_term_ncodes() {
-                cmdq_print!(
-                    item,
-                    "{}",
-                    tty_term_describe(term, tty_code_code::try_from(i).unwrap()),
-                );
-            }
-        }
-        (n != 0) as i32
+/// show-messages: the terminals in use (-T) and the jobs (-J), or else
+/// the message log, newest first.
+fn cmd_show_messages_exec(ctx: &mut CmdCtx<'_>) -> CmdResult {
+    let args = ctx.args();
+    let (terminals, jobs) = (args.has('T'), args.has('J'));
+    if terminals || jobs {
+        // -t limits -T to the terminal of the target client.
+        let terminal_client = if args.has('t') {
+            ctx.target_client().map(|c| c.id)
+        } else {
+            None
+        };
+        ctx.print_summaries(terminals, terminal_client, jobs);
+        return Ok(CmdFlow::Done);
     }
+    for msg in ctx.messages() {
+        ctx.print_format(SHOW_MESSAGES_TEMPLATE, None, FormatSubject::Message(msg));
+    }
+    Ok(CmdFlow::Done)
 }
 
-unsafe fn cmd_show_messages_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ClientId;
+    use crate::cmd_::context::{ClientInfo, CmdEffect};
+    use crate::cmd_::context::testing::{args, ctx, parts};
+    use crate::global::with_message_log;
 
-        let mut done = false;
-        let mut blank = 0;
-        if args_has(args, 'T') {
-            blank = cmd_show_messages_terminals(self_, item, blank);
-            done = true;
-        }
-        if args_has(args, 'J') {
-            job_print_summary(item, blank);
-            done = true;
-        }
-        if done {
-            return cmd_retval::CMD_RETURN_NORMAL;
-        }
+    #[test]
+    fn summaries() {
+        let mut p = parts();
+        p.target_client = Some(ClientInfo {
+            id: ClientId(4),
+            attached: true,
+            control: false,
+        });
+        let a = args(&[('T', None), ('J', None), ('t', Some("/dev/x"))], &[]);
+        let mut c = ctx(&a, p);
+        cmd_show_messages_exec(&mut c).unwrap();
+        let effects = c.take_effects();
+        assert!(matches!(
+            effects.as_slice(),
+            [CmdEffect::PrintSummaries {
+                terminals: true,
+                terminal_client: Some(ClientId(4)),
+                jobs: true
+            }]
+        ));
+    }
 
-        let ft = format_create_from_target(item);
-
-        for msg in message_log_list() {
-            format_add!(ft, "message_text", "{}", msg.text());
-            format_add!(ft, "message_number", "{}", msg.number());
-            let tv = message_timeval(&msg);
-            format_add_tv(ft, c!("message_time"), &raw const tv);
-
-            let s = format_expand(ft, SHOW_MESSAGES_TEMPLATE);
-            cmdq_print!(item, "{}", _s(s));
-            free_(s);
-        }
-        format_free(ft);
-
-        cmd_retval::CMD_RETURN_NORMAL
+    #[test]
+    fn messages_newest_first() {
+        with_message_log(|log| {
+            log.add("one".into(), std::time::UNIX_EPOCH, 10);
+            log.add("two".into(), std::time::UNIX_EPOCH, 10);
+        });
+        let a = args(&[], &[]);
+        let mut c = ctx(&a, parts());
+        cmd_show_messages_exec(&mut c).unwrap();
+        let texts: Vec<String> = c
+            .take_effects()
+            .into_iter()
+            .map(|e| match e {
+                CmdEffect::PrintFormat {
+                    subject: FormatSubject::Message(m),
+                    ..
+                } => m.text().to_string(),
+                _ => panic!("unexpected effect"),
+            })
+            .collect();
+        assert_eq!(texts, ["two", "one"]);
     }
 }

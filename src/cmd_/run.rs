@@ -131,15 +131,26 @@ unsafe fn cmd_print_format(
     subject: FormatSubject,
 ) {
     unsafe {
-        let ft = format_create(
-            cmdq_get_client(item),
-            item,
-            FORMAT_NONE,
-            format_flags::empty(),
-        );
-        match subject {
-            FormatSubject::PasteBuffer(pb) => format_defaults_paste_buffer(ft, pb),
-        }
+        let ft = match subject {
+            FormatSubject::PasteBuffer(pb) => {
+                let ft = format_create(
+                    cmdq_get_client(item),
+                    item,
+                    FORMAT_NONE,
+                    format_flags::empty(),
+                );
+                format_defaults_paste_buffer(ft, pb);
+                ft
+            }
+            FormatSubject::Message(msg) => {
+                let ft = format_create_from_target(item);
+                format_add!(ft, "message_text", "{}", msg.text());
+                format_add!(ft, "message_number", "{}", msg.number());
+                let tv = message_timeval(&msg);
+                format_add_tv(ft, c!("message_time"), &raw const tv);
+                ft
+            }
+        };
 
         let show = match filter {
             Some(filter) => {
@@ -192,6 +203,16 @@ unsafe fn cmd_apply_effects(item: *mut cmdq_item, effects: Vec<CmdEffect>) {
                     }
                 }
                 CmdEffect::Environ { session, change } => cmd_change_environ(item, session, change),
+                CmdEffect::PrintSummaries {
+                    terminals,
+                    terminal_client,
+                    jobs,
+                } => {
+                    let blank = terminals && tty_term_print_summary(item, terminal_client);
+                    if jobs {
+                        job_print_summary(item, i32::from(blank));
+                    }
+                }
             }
         }
     }

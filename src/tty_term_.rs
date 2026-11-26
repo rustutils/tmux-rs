@@ -957,3 +957,40 @@ pub unsafe fn tty_term_describe(term: *mut tty_term, code: tty_code_code) -> Str
         }
     }
 }
+
+/// Prints a description of each terminal in use (show-messages -T): a
+/// line naming it and its client, then one line per capability. With
+/// `only`, just the terminal of that client. Returns whether anything was
+/// printed.
+///
+/// # Safety
+/// `item` must be a valid queue item.
+pub unsafe fn tty_term_print_summary(item: *mut cmdq_item, only: Option<ClientId>) -> bool {
+    unsafe {
+        let only = only.and_then(|id| client_from_id(id)).map(|c| (*c).tty.term);
+        let mut n = 0u32;
+        for term_box in &(*(&raw mut TTY_TERMS)) {
+            let term: *mut tty_term = &raw const **term_box as *mut tty_term;
+            if only.is_some_and(|t| t != term) {
+                continue;
+            }
+            cmdq_print!(
+                item,
+                "Terminal {}: {} for {}, flags=0x{:x}:",
+                n,
+                _s((*term).name.as_ptr().cast::<u8>()),
+                _s((*(*(*term).tty).client).name),
+                (*term).flags,
+            );
+            n += 1;
+            for i in 0..tty_term_ncodes() {
+                cmdq_print!(
+                    item,
+                    "{}",
+                    tty_term_describe(term, tty_code_code::try_from(i).unwrap()),
+                );
+            }
+        }
+        n != 0
+    }
+}

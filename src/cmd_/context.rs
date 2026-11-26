@@ -37,7 +37,8 @@
 use std::rc::Rc;
 
 use crate::environ::Environ;
-use crate::global::{with_global_environ, with_paste, with_prompt_history};
+use crate::global::{with_global_environ, with_message_log, with_paste, with_prompt_history};
+use crate::message_log::Message;
 use crate::paste::{PasteBuffer, PasteError, PasteEvent};
 use crate::prompt_history::PromptType;
 use crate::sort::SortCriteria;
@@ -114,6 +115,14 @@ pub enum CmdEffect {
     SetSelection { client: ClientId, data: Rc<[u8]> },
     /// Write bytes to a pane's program.
     WritePane { pane: PaneId, data: Vec<u8> },
+    /// Print the terminals in use (show-messages -T), only the one of
+    /// `terminal_client` if given, then the jobs (-J), with a blank line
+    /// between when both print something.
+    PrintSummaries {
+        terminals: bool,
+        terminal_client: Option<ClientId>,
+        jobs: bool,
+    },
     /// Change a variable of the global environment (`session` None) or
     /// of a session's.
     Environ {
@@ -142,6 +151,9 @@ pub enum EnvironChange {
 pub enum FormatSubject {
     /// A paste buffer (the buffer_* variables).
     PasteBuffer(PasteBuffer),
+    /// A logged message (the message_* variables), with the command's
+    /// target as well.
+    Message(Message),
 }
 
 /// A client, as a command sees it.
@@ -331,6 +343,11 @@ impl<'a> CmdCtx<'a> {
         self.target_session.as_ref()
     }
 
+    /// The logged messages, newest first.
+    pub fn messages(&self) -> Vec<Message> {
+        with_message_log(|log| log.iter().cloned().collect())
+    }
+
     /// A copy of the global environment.
     pub fn global_environ(&self) -> Environ {
         with_global_environ(|env| env.clone())
@@ -340,6 +357,16 @@ impl<'a> CmdCtx<'a> {
     /// of a session's environment, once the command returns.
     pub fn change_environ(&mut self, session: Option<SessionId>, change: EnvironChange) {
         self.effects.push(CmdEffect::Environ { session, change });
+    }
+
+    /// Prints the terminals in use (`terminals`, only the one of
+    /// `terminal_client` if given) and the jobs, once the command returns.
+    pub fn print_summaries(&mut self, terminals: bool, terminal_client: Option<ClientId>, jobs: bool) {
+        self.effects.push(CmdEffect::PrintSummaries {
+            terminals,
+            terminal_client,
+            jobs,
+        });
     }
 
     /// Takes the recorded effects, oldest first.

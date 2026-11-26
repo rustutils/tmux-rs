@@ -53,11 +53,6 @@ pub unsafe fn server_add_message_(args: std::fmt::Arguments) {
     with_message_log(|log| log.add(text, SystemTime::now(), limit));
 }
 
-/// The logged messages, newest first.
-pub fn message_log_list() -> Vec<Message> {
-    with_message_log(|log| log.iter().cloned().collect())
-}
-
 /// Empties the log and restarts the numbering, when a server starts.
 pub fn message_log_reset() {
     with_message_log(|log| *log = MessageLog::new());
