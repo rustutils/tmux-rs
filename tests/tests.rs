@@ -14,6 +14,7 @@ mod input_keys;
 mod jobs;
 mod key_bindings;
 mod layout;
+mod links;
 mod messages;
 mod mouse;
 mod options;
