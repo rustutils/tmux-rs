@@ -252,3 +252,254 @@ fn if_shell_nested_tmux_invocation() {
         .stdout_trimmed();
     assert_eq!(val, "yes");
 }
+
+/// Writes `contents` to `path` under `home`, creating its directories. A
+/// file ending in .tmux is a plugin script and is made executable.
+fn write_home_file(home: &std::path::Path, path: &str, contents: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let path = home.join(path);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, contents).unwrap();
+    if path.extension().is_some_and(|e| e == "tmux") {
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// A configuration in the shape people write them: a colour theme and
+/// plugins loaded with run-shell that call `tmux` back, environment
+/// assignments, `%if` blocks, if-shell, hooks, globbed source-file and the
+/// usual options and key bindings. 0.3.0 crashed on the first pane after a
+/// theme's `NAME=value` line, which no test with a hand-picked command saw.
+const USER_CONFIG: &str = r##"
+# colour theme, loaded the way srcery and similar themes are
+run-shell ~/.config/tmux/theme/theme.tmux
+
+set -g default-terminal "tmux-256color"
+set -ga terminal-overrides ",xterm-256color:Tc"
+
+unbind C-b
+set -g prefix C-a
+bind C-a send-prefix
+
+bind-key h select-pane -L
+bind-key -r J resize-pane -D 5
+bind-key -r C-l select-window -t :+
+bind-key -r "<" swap-window -d -t -1
+bind-key "|" split-window -h -c "#{pane_current_path}"
+bind-key "\\" split-window -fh -c "#{pane_current_path}"
+bind-key '"' split-window -v -c "#{pane_current_path}"
+bind -n M-Left select-pane -L
+bind -T copy-mode-vi v send-keys -X begin-selection
+
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+setw -g mode-keys vi
+setw -g monitor-activity on
+set -g history-limit 10000
+set -g @batt_color green
+
+%if "#{==:#{base-index},1}"
+set -g @branch if
+%elif "#{==:#{base-index},0}"
+set -g @branch elif
+%else
+set -g @branch else
+%endif
+
+if-shell 'test -n "$HOME"' 'set -g @ifshell yes' 'set -g @ifshell no'
+if-shell -F '#{@batt_color}' {
+    set -g @braces yes
+}
+
+set-hook -g after-new-window 'set -g @hooked yes'
+
+source-file -q ~/.config/tmux/missing.conf
+source-file ~/.config/tmux/conf.d/*.conf
+
+# plugins, loaded the way tmux-sensible and tmux-prefix-highlight are
+run-shell ~/.config/tmux/plugin/plugin.tmux
+run-shell -b 'tmux set -g @background done'
+"##;
+
+const THEME_SCRIPT: &str = r#"#!/bin/sh
+CURRENT_DIR="$(cd "$(dirname "$0")" && pwd)"
+tmux source-file "$CURRENT_DIR/theme.conf"
+if [ "$(tmux show-option -gqv @theme_patched)" = 1 ]; then
+    tmux set -g @theme_variant patched
+else
+    tmux set -g @theme_variant plain
+fi
+"#;
+
+const THEME_CONFIG: &str = r##"
+orange=colour208
+%hidden black=colour0
+set -g status-left "#[fg=$black,bg=$orange] #S "
+set -g status-right "#{prefix_highlight} %H:%M"
+setw -g window-status-format "#[fg=$orange] #I:#W "
+"##;
+
+const PLUGIN_SCRIPT: &str = r##"#!/bin/sh
+version=$(tmux -V)
+highlight='#{?client_prefix,#[reverse] PREFIX #[noreverse],}'
+status_right=$(tmux show-option -gqv status-right)
+tmux set-option -gq status-right "$(printf '%s' "$status_right" | sed "s/#{prefix_highlight}/$highlight/")"
+if [ -z "$(tmux show-option -gqv @sensible_done)" ]; then
+    tmux set -g escape-time 0
+    tmux set -g focus-events on
+    tmux bind-key R source-file '~/.config/tmux/tmux.conf' \; display reloaded
+    tmux set -g @sensible_done 1
+fi
+tmux set -g @plugin_version "$version"
+"##;
+
+const ENV_CONFIG: &str = r#"
+EDITOR=vi
+PAGER="less -R"
+SPACED='a b'
+"#;
+
+#[test]
+fn user_config_with_theme_and_plugins() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().join("home");
+    write_home_file(&home, ".config/tmux/tmux.conf", USER_CONFIG);
+    write_home_file(&home, ".config/tmux/theme/theme.tmux", THEME_SCRIPT);
+    write_home_file(&home, ".config/tmux/theme/theme.conf", THEME_CONFIG);
+    write_home_file(&home, ".config/tmux/plugin/plugin.tmux", PLUGIN_SCRIPT);
+    write_home_file(&home, ".config/tmux/conf.d/10-env.conf", ENV_CONFIG);
+    // Plugins call a bare tmux, which finds the server through TMUX.
+    let bin = dir.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    std::os::unix::fs::symlink(harness::client_bin(), bin.join("tmux")).unwrap();
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let config = home.join(".config/tmux/tmux.conf");
+
+    let tmux = TmuxTestHarness::new();
+    tmux.cmd()
+        .args([
+            &format!("-f{}", config.display()),
+            "new-session",
+            "-d",
+            "-s",
+            "s",
+            "sleep 1000",
+        ])
+        .env("HOME", &home)
+        .env("PATH", &path)
+        .run()
+        .assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.wait_for("#{@background}", |v| v == "done", Duration::from_secs(5));
+
+    // New panes get the environment the config set. This crashed 0.3.0.
+    let pane = tmux
+        .cmd()
+        .args([
+            "new-window",
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id}",
+            "-t",
+            "s:",
+            "sh",
+            "-c",
+            r#"printf '%s|%s|%s|%s|%s\n' "$orange" "$black" "$EDITOR" "$PAGER" "$SPACED"; sleep 1000"#,
+        ])
+        .run()
+        .stdout_trimmed();
+    tmux.cmd()
+        .args(["split-window", "-d", "-t", &pane, "sleep 1000"])
+        .run()
+        .assert_success();
+    let start = std::time::Instant::now();
+    let output = loop {
+        let out = tmux.capture_pane_target(&pane);
+        if !out.is_empty() || start.elapsed() > Duration::from_secs(5) {
+            break out;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(output.trim_end(), "colour208||vi|less -R|a b");
+    tmux.wait_for("#{@hooked}", |v| v == "yes", Duration::from_secs(5));
+
+    let option = |name: &str| {
+        tmux.cmd()
+            .args(["show-options", "-gv", name])
+            .run()
+            .stdout_str()
+            .trim_end_matches('\n')
+            .to_string()
+    };
+    for (name, value) in [
+        ("prefix", "C-a"),
+        ("base-index", "1"),
+        ("pane-base-index", "1"),
+        ("mode-keys", "vi"),
+        ("history-limit", "10000"),
+        ("escape-time", "0"),
+        ("default-terminal", "tmux-256color"),
+        // %if is decided while the file is parsed, before any of its
+        // commands run, so base-index is still 0 there.
+        ("@branch", "elif"),
+        ("@ifshell", "yes"),
+        ("@braces", "yes"),
+        ("@theme_variant", "plain"),
+        ("@sensible_done", "1"),
+        ("status-left", "#[fg=colour0,bg=colour208] #S "),
+        (
+            "status-right",
+            "#{?client_prefix,#[reverse] PREFIX #[noreverse],} %H:%M",
+        ),
+        ("window-status-format", "#[fg=colour208] #I:#W "),
+    ] {
+        assert_eq!(option(name), value, "option {name}");
+    }
+    assert!(
+        option("terminal-overrides").contains("xterm-256color:Tc"),
+        "{}",
+        option("terminal-overrides")
+    );
+    assert!(!option("@plugin_version").is_empty());
+
+    let keys = |table: &str| {
+        tmux.cmd()
+            .args(["list-keys", "-T", table])
+            .run()
+            .stdout_lines()
+            .iter()
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let prefix = keys("prefix");
+    for binding in [
+        r##"bind-key -T prefix \\ split-window -fh -c "#{pane_current_path}""##,
+        "bind-key -r -T prefix J resize-pane -D 5",
+        "bind-key -T prefix C-a send-prefix",
+        "bind-key -T prefix R source-file",
+    ] {
+        assert!(prefix.contains(binding), "{binding} not in\n{prefix}");
+    }
+    assert!(!prefix.contains("prefix C-b "), "{prefix}");
+    assert!(keys("root").contains("M-Left select-pane -L"));
+    assert!(keys("copy-mode-vi").contains("v send-keys -X begin-selection"));
+
+    // Loading the config again, as the usual reload binding does, works and
+    // reports no errors.
+    let reload = tmux
+        .cmd()
+        .args(["source-file", &config.display().to_string()])
+        .env("PATH", &path)
+        .run();
+    reload.assert_success();
+    assert_eq!(reload.stderr_str().trim(), "");
+    assert_eq!(reload.stdout_trimmed(), "");
+    tmux.cmd().args(["list-sessions"]).run().assert_success();
+}
