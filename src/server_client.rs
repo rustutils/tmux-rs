@@ -278,7 +278,7 @@ pub unsafe fn server_client_create(fd: i32) -> *mut client {
         }
         memcpy__(&raw mut (*c).activity_time, &raw mut (*c).creation_time);
 
-        std::ptr::write(&raw mut (*c).environ, Box::from_raw(environ_create().as_ptr()));
+        std::ptr::write(&raw mut (*c).environ, Box::new(Environ::new()));
 
         (*c).fd = -1;
         (*c).out_fd = -1;

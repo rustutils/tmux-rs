@@ -5531,7 +5531,7 @@ pub unsafe fn window_copy_pipe_run(
                 cmd,
                 0,
                 null_mut(),
-                null_mut(),
+                None,
                 s,
                 null_mut(),
                 None,

@@ -29,7 +29,6 @@ use crate::options_::{options, options_create, options_default, options_set_numb
 pub static mut GLOBAL_OPTIONS: *mut options = null_mut();
 pub static mut GLOBAL_S_OPTIONS: *mut options = null_mut();
 pub static mut GLOBAL_W_OPTIONS: *mut options = null_mut();
-pub static mut GLOBAL_ENVIRON: *mut Environ = null_mut();
 
 /// When the server started, set once by [`server_start`].
 pub static START_TIME: std::sync::OnceLock<timeval> = std::sync::OnceLock::new();
@@ -154,9 +153,7 @@ unsafe fn expand_path(path: *const u8, home: Option<&CStr>) -> Option<CString> {
                     .cast()
                     .as_ptr()
             };
-            let value = (*GLOBAL_ENVIRON)
-                .value(std::ffi::CStr::from_ptr(name.cast()).to_bytes())
-                .map(<[u8]>::to_vec);
+            let value = global_environ_value(std::ffi::CStr::from_ptr(name.cast()).to_bytes());
             free_(name);
             let val = String::from_utf8_lossy(value.as_ref()?);
             if end.is_null() {
@@ -414,16 +411,15 @@ pub unsafe fn tmux_main(mut argc: i32, mut argv: *mut *mut u8, _env: *mut *mut u
             flags = client_flag::LOGIN;
         }
 
-        GLOBAL_ENVIRON = environ_create().as_ptr();
 
         let mut var = environ;
         while !(*var).is_null() {
-            (*GLOBAL_ENVIRON).put(std::ffi::CStr::from_ptr((*var).cast()).to_bytes(), EnvironFlags::empty());
+            global_environ_put(std::ffi::CStr::from_ptr((*var).cast()).to_bytes(), EnvironFlags::empty());
             var = var.add(1);
         }
 
         if let Some(cwd) = find_cwd() {
-            (*GLOBAL_ENVIRON).set(
+            global_environ_set(
                 b"PWD",
                 std::os::unix::ffi::OsStrExt::as_bytes(cwd.as_os_str()),
                 EnvironFlags::empty(),

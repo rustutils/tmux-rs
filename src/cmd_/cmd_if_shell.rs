@@ -103,7 +103,7 @@ unsafe fn cmd_if_shell_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval
             shellcmd,
             0,
             null_mut(),
-            null_mut(),
+            None,
             s,
             cwd_c.as_ptr().cast(),
             None,

@@ -381,7 +381,7 @@ pub unsafe fn format_job_get(es: *mut format_expand_state, cmd: *mut u8) -> *mut
                 expanded,
                 0,
                 null_mut(),
-                null_mut(),
+                None,
                 null_mut(),
                 cwd_c.as_ptr().cast(),
                 Some(format_job_update),
@@ -3518,16 +3518,14 @@ unsafe fn format_find(
             }
 
             if !modifiers.intersects(format_modifiers::FORMAT_TIMESTRING) {
-                let mut envent = None;
+                // A session entry, even a removed one, hides the global one.
+                let name = std::ffi::CStr::from_ptr(key.cast()).to_bytes();
                 let fts = (*ft).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-                if !fts.is_null() {
-                    envent = (*fts).environ.find(std::ffi::CStr::from_ptr(key.cast()).to_bytes());
-                }
-                if envent.is_none() {
-                    envent = (*GLOBAL_ENVIRON).find(std::ffi::CStr::from_ptr(key.cast()).to_bytes());
-                }
-                if let Some(envent) = envent
-                    && let Some(value) = envent.value() {
+                let value = match (!fts.is_null()).then(|| (*fts).environ.find(name)).flatten() {
+                    Some(entry) => entry.value().map(<[u8]>::to_vec),
+                    None => global_environ_value(name),
+                };
+                if let Some(value) = value {
                         let p = xmalloc(value.len() + 1).as_ptr().cast::<u8>();
                         std::ptr::copy_nonoverlapping(value.as_ptr(), p, value.len());
                         *p.add(value.len()) = b'\0';
@@ -5707,11 +5705,6 @@ pub fn fuzz_format_expand(input: &[u8]) {
         use crate::options_::*;
         use crate::options_table::OPTIONS_TABLE;
         use crate::tmux::{GLOBAL_OPTIONS, GLOBAL_S_OPTIONS, GLOBAL_W_OPTIONS};
-        use crate::tmux::GLOBAL_ENVIRON;
-        use crate::environ_::environ_create;
-
-        GLOBAL_ENVIRON = environ_create().as_ptr();
-
         GLOBAL_OPTIONS = options_create(null_mut());
         GLOBAL_S_OPTIONS = options_create(null_mut());
         GLOBAL_W_OPTIONS = options_create(null_mut());

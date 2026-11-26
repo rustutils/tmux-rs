@@ -201,7 +201,7 @@ unsafe fn cmd_run_shell_timer_fire(cdata: *mut cmd_run_shell_data) {
                 cmd,
                 0,
                 null_mut(),
-                null_mut(),
+                None,
                 (*cdata).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()),
                 (*cdata).cwd,
                 None,

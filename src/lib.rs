@@ -2558,7 +2558,8 @@ struct spawn_context {
     name: *const u8,
     argv: *mut *mut u8,
     argc: i32,
-    environ: *mut Environ,
+    /// The -e variables, None when there are none.
+    environ: Option<Box<Environ>>,
 
     idx: i32,
     cwd: *const u8,

@@ -36,6 +36,7 @@
 
 use std::cell::RefCell;
 
+use crate::environ::Environ;
 use crate::events::EventBus;
 use crate::message_log::MessageLog;
 use crate::paste::PasteStore;
@@ -53,6 +54,17 @@ thread_local! {
     static EVENTS: RefCell<EventBus> = RefCell::new(EventBus::new());
     /// The prompt history of every prompt type.
     static PROMPT_HISTORY: RefCell<PromptHistory> = RefCell::new(PromptHistory::new());
+    /// The global environment (set-environment -g), filled from the
+    /// environment of the process that started the server.
+    static GLOBAL_ENVIRON: RefCell<Environ> = RefCell::new(Environ::new());
+}
+
+/// Run `f` with the global environment.
+///
+/// # Panics
+/// If `f` reaches the global environment again (see the module rules).
+pub fn with_global_environ<R>(f: impl FnOnce(&mut Environ) -> R) -> R {
+    GLOBAL_ENVIRON.with_borrow_mut(f)
 }
 
 /// Run `f` with the paste buffer store.

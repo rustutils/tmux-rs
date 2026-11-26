@@ -22,22 +22,39 @@ use std::os::unix::ffi::OsStrExt;
 
 pub use self::store::{Environ, EnvironEntry, EnvironFlags, ProcessVars};
 
+use crate::global::with_global_environ;
 use crate::options_::*;
 use crate::*;
 
-/// Allocates an empty environment that the caller frees with
-/// [`environ_free`].
-pub fn environ_create() -> NonNull<Environ> {
-    NonNull::from(Box::leak(Box::new(Environ::new())))
+/// A copy of the global environment.
+pub fn global_environ() -> Environ {
+    with_global_environ(|env| env.clone())
 }
 
-/// Frees an environment from [`environ_create`].
-///
-/// # Safety
-/// `env` must come from [`environ_create`] and not be used afterwards.
-pub unsafe fn environ_free(env: *mut Environ) {
-    // SAFETY: the caller passes a pointer from environ_create.
-    unsafe { drop(Box::from_raw(env)) }
+/// The value of `name` in the global environment, None when it is missing
+/// or removed.
+pub fn global_environ_value(name: &[u8]) -> Option<Vec<u8>> {
+    with_global_environ(|env| env.value(name).map(<[u8]>::to_vec))
+}
+
+/// Sets `name` in the global environment.
+pub fn global_environ_set(name: &[u8], value: &[u8], flags: EnvironFlags) {
+    with_global_environ(|env| env.set(name, value, flags));
+}
+
+/// Sets a `NAME=VALUE` variable in the global environment.
+pub fn global_environ_put(var: &[u8], flags: EnvironFlags) {
+    with_global_environ(|env| env.put(var, flags));
+}
+
+/// Marks `name` as removed in the global environment.
+pub fn global_environ_clear(name: &[u8]) {
+    with_global_environ(|env| env.clear(name));
+}
+
+/// Deletes `name` from the global environment.
+pub fn global_environ_unset(name: &[u8]) {
+    with_global_environ(|env| env.unset(name));
 }
 
 /// Applies the update-environment option of `oo` to `dst`, with the
@@ -124,15 +141,15 @@ pub fn environ_log_(env: &Environ, args: std::fmt::Arguments) {
 
 /// The environment of a new process in session `s` (`environ_for_session`):
 /// the global environment, the session's over it, then TERM,
-/// `TERM_PROGRAM`, `TERM_PROGRAM_VERSION` and COLORTERM unless `no_term` is
-/// nonzero, then TMUX.
+/// `TERM_PROGRAM`, `TERM_PROGRAM_VERSION` and COLORTERM unless `no_term`,
+/// then TMUX.
 ///
 /// # Safety
-/// `s` must be null or a valid session, and the global environment and
-/// options must exist.
-pub unsafe fn environ_for_session(s: *mut session, no_term: c_int) -> *mut Environ {
+/// `s` must be null or a valid session, and the global options must
+/// exist.
+pub unsafe fn environ_for_session(s: *mut session, no_term: bool) -> Environ {
     unsafe {
-        let term = (no_term == 0).then(|| options_get_string_(GLOBAL_OPTIONS, "default-terminal"));
+        let term = (!no_term).then(|| options_get_string_(GLOBAL_OPTIONS, "default-terminal"));
         let idx = if s.is_null() { -1 } else { (*s).id as i32 };
         let mut tmux = socket_path().to_bytes().to_vec();
         tmux.extend_from_slice(format!(",{},{}", std::process::id(), idx).as_bytes());
@@ -142,7 +159,6 @@ pub unsafe fn environ_for_session(s: *mut session, no_term: c_int) -> *mut Envir
             tmux: &tmux,
         };
         let session = if s.is_null() { None } else { Some(&*(*s).environ) };
-        let env = Environ::for_process(&*GLOBAL_ENVIRON, session, &vars);
-        Box::leak(Box::new(env))
+        with_global_environ(|global| Environ::for_process(global, session, &vars))
     }
 }

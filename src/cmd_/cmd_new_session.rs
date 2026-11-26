@@ -65,7 +65,6 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
         let s;
         let as_;
         let mut groupwith = null_mut();
-        let env: *mut Environ;
         let oo;
         let mut tio: termios = zeroed();
         let tiop;
@@ -296,13 +295,13 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
                 }
                 options_set_string!(oo, "default-size", false, "{dsx}x{dsy}");
             }
-            env = environ_create().as_ptr();
+            let mut env = Environ::new();
             if !c.is_null() && !args_has(args, 'E') {
-                environ_update(GLOBAL_S_OPTIONS, &(*c).environ, &mut *env);
+                environ_update(GLOBAL_S_OPTIONS, &(*c).environ, &mut env);
             }
             for av in args_flag_values(args, b'e') {
                 if let args_value::String { string } = av {
-                    (*env).put(string.as_bytes(), EnvironFlags::empty());
+                    env.put(string.as_bytes(), EnvironFlags::empty());
                 }
             }
             s = session_create(prefix, newname.as_deref(), cwd, env, oo, tiop);

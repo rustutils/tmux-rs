@@ -633,10 +633,6 @@ pub fn fuzz_cmd_parse(input: &[u8]) {
         use crate::options_::*;
         use crate::options_table::OPTIONS_TABLE;
         use crate::tmux::{GLOBAL_OPTIONS, GLOBAL_S_OPTIONS, GLOBAL_W_OPTIONS};
-        use crate::tmux::GLOBAL_ENVIRON;
-        use crate::environ_::environ_create;
-
-        GLOBAL_ENVIRON = environ_create().as_ptr();
         GLOBAL_OPTIONS = options_create(null_mut());
         GLOBAL_S_OPTIONS = options_create(null_mut());
         GLOBAL_W_OPTIONS = options_create(null_mut());
@@ -1088,8 +1084,8 @@ unsafe fn yylex_token_variable(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> b
         }
         name[namelen] = b'\0';
 
-        if let Some(value) = (*GLOBAL_ENVIRON).value(&name[..namelen]) {
-            yylex_append(buf, value);
+        if let Some(value) = global_environ_value(&name[..namelen]) {
+            yylex_append(buf, &value);
         }
         true
     }
@@ -1117,15 +1113,10 @@ unsafe fn yylex_token_tilde(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> bool
         }
         name[namelen] = b'\0';
 
-        // home_bytes holds the value if it came from environ (Vec<u8>),
-        // so the pointer into it stays valid for the yylex_append call.
-        let mut home_bytes: Option<&[u8]> = None;
+        // HOME from the global environment, if it is set and not empty.
+        let mut home_bytes: Option<Vec<u8>> = None;
         if name[0] == b'\0' {
-            if let Some(value) = (*GLOBAL_ENVIRON).value(b"HOME")
-                && !value.is_empty()
-            {
-                home_bytes = Some(value);
-            }
+            home_bytes = global_environ_value(b"HOME").filter(|v| !v.is_empty());
             if home_bytes.is_none()
                 && let Some(pw) = NonNull::new(libc::getpwuid(libc::getuid())) {
                     home = (*pw.as_ptr()).pw_dir.cast();
@@ -1135,7 +1126,7 @@ unsafe fn yylex_token_tilde(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> bool
         }
 
         // Resolve the home directory as a byte slice
-        let home_slice = if let Some(bytes) = home_bytes {
+        let home_slice = if let Some(bytes) = home_bytes.as_deref() {
             bytes
         } else if !home.is_null() {
             let home_len = strlen(home);

@@ -69,7 +69,7 @@ pub unsafe fn job_run(
     cmd: *const u8,
     argc: c_int,
     argv: *mut *mut u8,
-    e: *mut Environ,
+    e: Option<&Environ>,
     s: *mut session,
     cwd: *const u8,
     updatecb: job_update_cb,
@@ -83,7 +83,7 @@ pub unsafe fn job_run(
     let __func__ = "job_run";
     unsafe {
         let job: *mut job;
-        let env: *mut Environ;
+        let mut env: Environ;
         let pid: pid_t;
         let nullfd: i32;
         let mut out: [i32; 2] = [0; 2];
@@ -99,9 +99,9 @@ pub unsafe fn job_run(
         let oo: *mut options;
 
         'fail: {
-            env = environ_for_session(s, !CFG_FINISHED.load(atomic::Ordering::Acquire) as i32);
-            if !e.is_null() {
-                (*env).copy_from(&*e);
+            env = environ_for_session(s, !CFG_FINISHED.load(atomic::Ordering::Acquire));
+            if let Some(e) = e {
+                env.copy_from(e);
             }
 
             if !flags.intersects(job_flag::JOB_DEFAULTSHELL) {
@@ -181,13 +181,12 @@ pub unsafe fn job_run(
                             .flatten()
                             .find(|dir| std::env::set_current_dir(dir).is_ok());
                         match dir {
-                            Some(dir) => (*env).set(b"PWD", dir, EnvironFlags::empty()),
+                            Some(dir) => env.set(b"PWD", dir, EnvironFlags::empty()),
                             None => fatal("chdir failed"),
                         }
                     }
 
-                    environ_push(&*env);
-                    environ_free(env);
+                    environ_push(&env);
 
                     if !flags.intersects(job_flag::JOB_PTY) {
                         if dup2(out[1], STDIN_FILENO) == -1 {
@@ -234,7 +233,6 @@ pub unsafe fn job_run(
             }
 
             sigprocmask(SIG_SETMASK, oldset.as_ptr(), null_mut());
-            environ_free(env);
             free_(argv0);
 
             job = Box::leak(Box::new(job {
@@ -287,7 +285,6 @@ pub unsafe fn job_run(
         }
 
         sigprocmask(SIG_SETMASK, oldset.as_ptr(), null_mut());
-        environ_free(env);
         free_(argv0);
         null_mut()
     }

@@ -103,7 +103,7 @@ impl session {
         prefix: *const u8,
         name: Option<&str>,
         cwd: *const u8,
-        env: *mut Environ,
+        env: Environ,
         oo: *mut options,
         tio: *mut termios,
     ) -> Box<Self> {
@@ -127,7 +127,7 @@ impl session {
             std::ptr::write(&raw mut s.lastw, Vec::new());
             std::ptr::write(&raw mut s.windows, BTreeMap::new());
 
-            std::ptr::write(&raw mut s.environ, Box::from_raw(env));
+            std::ptr::write(&raw mut s.environ, Box::new(env));
             s.options = oo;
 
             status_update_cache(s.as_mut());
@@ -176,7 +176,7 @@ pub unsafe fn session_create(
     prefix: *const u8,
     name: Option<&str>,
     cwd: *const u8,
-    env: *mut Environ,
+    env: Environ,
     oo: *mut options,
     tio: *mut termios,
 ) -> *mut session {

@@ -469,7 +469,7 @@ unsafe fn cmd_display_popup_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         let mut px = 0;
         let mut py = 0;
         let count = args_count(args);
-        let mut env = null_mut();
+        let mut env: Option<Environ> = None;
         let o = (*winlink_window((*s).curw)).options;
 
         if args_has(args, 'C') {
@@ -557,12 +557,13 @@ unsafe fn cmd_display_popup_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         }
 
         if args_has(args, 'e') {
-            env = environ_create().as_ptr();
+            let mut e = Environ::new();
             for av in args_flag_values(args, b'e') {
                 if let args_value::String { string } = av {
-                    (*env).put(string.as_bytes(), EnvironFlags::empty());
+                    e.put(string.as_bytes(), EnvironFlags::empty());
                 }
             }
+            env = Some(e);
         }
 
         let title = if args_has(args, 'T') {
@@ -584,7 +585,7 @@ unsafe fn cmd_display_popup_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             py,
             w,
             h,
-            env,
+            env.as_ref(),
             shellcmd,
             argc,
             argv,
@@ -599,15 +600,9 @@ unsafe fn cmd_display_popup_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         ) != 0
         {
             cmd_free_argv(argc, argv);
-            if !env.is_null() {
-                environ_free(env);
-            }
             free_(cwd);
             free_(title);
             return cmd_retval::CMD_RETURN_NORMAL;
-        }
-        if !env.is_null() {
-            environ_free(env);
         }
         free_(cwd);
         free_(title);

@@ -274,7 +274,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
         let s = (*sc).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         let w = (*(*sc).wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
         let new_wp: *mut window_pane;
-        let child: *mut Environ;
+        let mut child: Environ;
         let argv: *mut *mut u8;
         let argvp: *mut *mut u8;
         let argv0: *mut u8;
@@ -384,11 +384,11 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             }
 
             // Create an environment for this pane.
-            child = environ_for_session(s, 0);
-            if !(*sc).environ.is_null() {
-                (*child).copy_from(&*(*sc).environ);
+            child = environ_for_session(s, false);
+            if let Some(extra) = &(*sc).environ {
+                child.copy_from(extra);
             }
-            (*child).set(
+            child.set(
                 b"TMUX_PANE",
                 format!("%{}", (*new_wp).id),
                 EnvironFlags::empty(),
@@ -400,11 +400,11 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             if !c.is_null() && client_get_session(c).is_null() {
                 // only unattached clients
                 if let Some(value) = (*c).environ.value(b"PATH") {
-                    (*child).set(b"PATH", value, EnvironFlags::empty());
+                    child.set(b"PATH", value, EnvironFlags::empty());
                 }
             }
-            if (*child).find(b"PATH").is_none() {
-                (*child).set(
+            if child.find(b"PATH").is_none() {
+                child.set(
                     b"PATH",
                     std::ffi::CStr::from_ptr(_PATH_DEFPATH.cast()).to_bytes(),
                     EnvironFlags::empty(),
@@ -429,7 +429,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
                 .as_deref()
                 .map(|p| p.as_os_str().as_bytes())
                 .unwrap_or_default();
-            (*child).set(b"SHELL", shell_bytes, EnvironFlags::empty());
+            child.set(b"SHELL", shell_bytes, EnvironFlags::empty());
 
             // Log the arguments we are going to use.
             log_debug!("spawn_pane: shell={}", shell_display);
@@ -439,7 +439,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             }
             log_debug!("spawn_pane: cwd={}", (*new_wp).cwd.as_deref().map(|p| p.display().to_string()).unwrap_or_default());
             cmd_log_argv!((*new_wp).argc, (*new_wp).argv, "spawn_pan");
-            environ_log!(child, "spawn_pan: environment ");
+            environ_log!(&child, "spawn_pan: environment ");
 
             // Initialize the window size.
             memset0(&raw mut ws);
@@ -499,7 +499,6 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
                     window_remove_pane(w, new_wp);
                 }
                 sigprocmask(SIG_SETMASK, &raw mut oldset, null_mut());
-                environ_free(child);
                 return Err(msg);
             }
 
@@ -526,7 +525,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
 
             // Child process. Set PWD to the working directory.
             if let Some(dir) = &actual_cwd {
-                (*child).set(b"PWD", dir.as_os_str().as_bytes(), EnvironFlags::empty());
+                child.set(b"PWD", dir.as_os_str().as_bytes(), EnvironFlags::empty());
             }
 
             // Update terminal escape characters from the session if available and
@@ -557,7 +556,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             sigprocmask(SIG_SETMASK, &raw mut oldset, null_mut());
             proc_unblock_signals();
             log_close();
-            environ_push(&*child);
+            environ_push(&child);
 
             // If given multiple arguments, use execvp(). Copy the arguments to
             // ensure they end in a NULL.
@@ -610,7 +609,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
         sigprocmask(SIG_SETMASK, &raw mut oldset, null_mut());
         window_pane_set_event(new_wp);
 
-        environ_free(child);
+        drop(child);
         spawn_fire_pane_created(sc, new_wp);
 
         if (*sc).flags.intersects(SPAWN_RESPAWN) {

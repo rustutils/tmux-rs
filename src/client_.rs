@@ -333,7 +333,6 @@ pub unsafe extern "C-unwind" fn client_main(
         options_free(GLOBAL_OPTIONS);
         options_free(GLOBAL_S_OPTIONS);
         options_free(GLOBAL_W_OPTIONS);
-        environ_free(GLOBAL_ENVIRON);
 
         if (*&raw const CLIENT_FLAGS).intersects(client_flag::CONTROLCONTROL) {
             if tcgetattr(STDIN_FILENO, &raw mut saved_tio) != 0 {

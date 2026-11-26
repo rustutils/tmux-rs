@@ -35,7 +35,8 @@ unsafe fn cmd_set_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
     unsafe {
         let args = cmd_get_args(self_);
         let target = cmdq_get_target(item);
-        let env: *mut Environ;
+        // None for the global environment.
+        let env: Option<*mut Environ>;
         let name = args_string(args, 0);
         let mut value: *const u8;
         let tflag;
@@ -62,7 +63,7 @@ unsafe fn cmd_set_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
                 value = expanded;
             }
             if args_has(args, 'g') {
-                env = GLOBAL_ENVIRON;
+                env = None;
             } else {
                 if (*target).s.is_none() {
                     tflag = args_get_(args, 't');
@@ -74,7 +75,7 @@ unsafe fn cmd_set_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
                     retval = cmd_retval::CMD_RETURN_ERROR;
                     break 'out;
                 }
-                env = &raw mut *(*(*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut())).environ;
+                env = Some(&raw mut *(*(*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut())).environ);
             }
 
             if args_has(args, 'u') {
@@ -83,14 +84,22 @@ unsafe fn cmd_set_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
                     retval = cmd_retval::CMD_RETURN_ERROR;
                     break 'out;
                 }
-                (*env).unset(std::ffi::CStr::from_ptr(name.cast()).to_bytes());
+                let name = std::ffi::CStr::from_ptr(name.cast()).to_bytes();
+                match env {
+                    Some(env) => (*env).unset(name),
+                    None => global_environ_unset(name),
+                }
             } else if args_has(args, 'r') {
                 if !value.is_null() {
                     cmdq_error!(item, "can't specify a value with -r");
                     retval = cmd_retval::CMD_RETURN_ERROR;
                     break 'out;
                 }
-                (*env).clear(std::ffi::CStr::from_ptr(name.cast()).to_bytes());
+                let name = std::ffi::CStr::from_ptr(name.cast()).to_bytes();
+                match env {
+                    Some(env) => (*env).clear(name),
+                    None => global_environ_clear(name),
+                }
             } else {
                 if value.is_null() {
                     cmdq_error!(item, "no value specified");
@@ -103,11 +112,12 @@ unsafe fn cmd_set_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
                 } else {
                     EnvironFlags::empty()
                 };
-                (*env).set(
-                    std::ffi::CStr::from_ptr(name.cast()).to_bytes(),
-                    std::ffi::CStr::from_ptr(value.cast()).to_bytes(),
-                    flags,
-                );
+                let name = std::ffi::CStr::from_ptr(name.cast()).to_bytes();
+                let value = std::ffi::CStr::from_ptr(value.cast()).to_bytes();
+                match env {
+                    Some(env) => (*env).set(name, value, flags),
+                    None => global_environ_set(name, value, flags),
+                }
             }
         }
 

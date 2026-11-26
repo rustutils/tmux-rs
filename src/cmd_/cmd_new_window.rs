@@ -95,13 +95,14 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
 
         sc.name = args_get(args, b'n');
         args_to_vector(args, &raw mut sc.argc, &raw mut sc.argv);
-        sc.environ = environ_create().as_ptr();
+        let mut extra = Environ::new();
 
         for av in args_flag_values(args, b'e') {
             if let args_value::String { string } = av {
-                (*sc.environ).put(string.as_bytes(), EnvironFlags::empty());
+                extra.put(string.as_bytes(), EnvironFlags::empty());
             }
         }
+        sc.environ = Some(Box::new(extra));
 
         sc.idx = idx;
         sc.cwd = args_get_(args, 'c');
@@ -121,7 +122,6 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
                 if !sc.argv.is_null() {
                     cmd_free_argv(sc.argc, sc.argv);
                 }
-                environ_free(sc.environ);
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         };
@@ -149,7 +149,6 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
         if !sc.argv.is_null() {
             cmd_free_argv(sc.argc, sc.argv);
         }
-        environ_free(sc.environ);
         cmd_retval::CMD_RETURN_NORMAL
     }
 }

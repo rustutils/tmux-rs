@@ -100,8 +100,10 @@ unsafe fn cmd_show_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cm
             return cmd_retval::CMD_RETURN_ERROR;
         }
 
-        let env: *mut Environ = if args_has(args, 'g') {
-            GLOBAL_ENVIRON
+        let global;
+        let env: *const Environ = if args_has(args, 'g') {
+            global = global_environ();
+            &raw const global
         } else {
             if (*target).s.is_none() {
                 tflag = args_get_(args, 't');
