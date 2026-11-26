@@ -1088,12 +1088,9 @@ unsafe fn yylex_token_variable(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> b
         }
         name[namelen] = b'\0';
 
-        let envent = environ_find_raw(&*GLOBAL_ENVIRON, (&raw const name).cast());
-        if let Some(envent) = envent
-            && let Some(ref value) = envent.value {
-                // log_debug("%s: %s -> %s", __func__, name, value);
-                yylex_append(buf, value);
-            }
+        if let Some(value) = (*GLOBAL_ENVIRON).value(&name[..namelen]) {
+            yylex_append(buf, value);
+        }
         true
     }
 }
@@ -1124,12 +1121,11 @@ unsafe fn yylex_token_tilde(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> bool
         // so the pointer into it stays valid for the yylex_append call.
         let mut home_bytes: Option<&[u8]> = None;
         if name[0] == b'\0' {
-            let envent = environ_find_raw(&*GLOBAL_ENVIRON, c!("HOME"));
-            if let Some(envent) = envent
-                && let Some(ref value) = envent.value
-                    && !value.is_empty() {
-                        home_bytes = Some(value.as_slice());
-                    }
+            if let Some(value) = (*GLOBAL_ENVIRON).value(b"HOME")
+                && !value.is_empty()
+            {
+                home_bytes = Some(value);
+            }
             if home_bytes.is_none()
                 && let Some(pw) = NonNull::new(libc::getpwuid(libc::getuid())) {
                     home = (*pw.as_ptr()).pw_dir.cast();

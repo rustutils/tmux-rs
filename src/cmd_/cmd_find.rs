@@ -60,14 +60,10 @@ pub unsafe fn cmd_find_inside_pane(c: *mut client) -> *mut window_pane {
             }
         }
 
-        if wp.is_null() {
-            let envent = environ_find_raw(&(*c).environ, c!("TMUX_PANE"));
-            if let Some(envent) = envent
-                && let Some(ref value) = envent.value {
-                    wp = window_pane_find_by_id_str(
-                        std::str::from_utf8(value).unwrap_or(""),
-                    );
-                }
+        if wp.is_null()
+            && let Some(value) = (*c).environ.value(b"TMUX_PANE")
+        {
+            wp = window_pane_find_by_id_str(std::str::from_utf8(value).unwrap_or(""));
         }
         if !wp.is_null() {
             log_debug!(

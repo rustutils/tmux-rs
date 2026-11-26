@@ -50,7 +50,7 @@ unsafe fn cmd_respawn_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
 
         for av in args_flag_values(args, b'e') {
             if let args_value::String { string } = av {
-                environ_put(&mut *sc.environ, string.as_ptr().cast(), environ_flags::empty());
+                (*sc.environ).put(string.as_bytes(), EnvironFlags::empty());
             }
         }
 

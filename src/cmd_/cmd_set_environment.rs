@@ -83,14 +83,14 @@ unsafe fn cmd_set_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
                     retval = cmd_retval::CMD_RETURN_ERROR;
                     break 'out;
                 }
-                environ_unset(&mut *env, name);
+                (*env).unset(std::ffi::CStr::from_ptr(name.cast()).to_bytes());
             } else if args_has(args, 'r') {
                 if !value.is_null() {
                     cmdq_error!(item, "can't specify a value with -r");
                     retval = cmd_retval::CMD_RETURN_ERROR;
                     break 'out;
                 }
-                environ_clear(&mut *env, cstr_to_str(name));
+                (*env).clear(std::ffi::CStr::from_ptr(name.cast()).to_bytes());
             } else {
                 if value.is_null() {
                     cmdq_error!(item, "no value specified");
@@ -98,11 +98,16 @@ unsafe fn cmd_set_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
                     break 'out;
                 }
 
-                if args_has(args, 'h') {
-                    environ_set!(env, name, ENVIRON_HIDDEN, "{}", _s(value));
+                let flags = if args_has(args, 'h') {
+                    EnvironFlags::HIDDEN
                 } else {
-                    environ_set!(env, name, environ_flags::empty(), "{}", _s(value));
-                }
+                    EnvironFlags::empty()
+                };
+                (*env).set(
+                    std::ffi::CStr::from_ptr(name.cast()).to_bytes(),
+                    std::ffi::CStr::from_ptr(value.cast()).to_bytes(),
+                    flags,
+                );
             }
         }
 

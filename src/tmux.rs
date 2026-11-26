@@ -147,17 +147,18 @@ unsafe fn expand_path(path: *const u8, home: Option<&CStr>) -> Option<CString> {
 
         if *path == b'$' {
             let mut end: *const u8 = strchr(path, b'/' as i32).cast();
-            let name = if end.is_null() {
+            let name: *mut u8 = if end.is_null() {
                 xstrdup(path.add(1)).cast().as_ptr()
             } else {
                 xstrndup(path.add(1), end.addr() - path.addr() - 1)
                     .cast()
                     .as_ptr()
             };
-            let envent = environ_find_raw(&*GLOBAL_ENVIRON, name);
+            let value = (*GLOBAL_ENVIRON)
+                .value(std::ffi::CStr::from_ptr(name.cast()).to_bytes())
+                .map(<[u8]>::to_vec);
             free_(name);
-            let envent = envent?;
-            let val = String::from_utf8_lossy(envent.value.as_ref()?);
+            let val = String::from_utf8_lossy(value.as_ref()?);
             if end.is_null() {
                 end = c!("");
             }
@@ -417,17 +418,15 @@ pub unsafe fn tmux_main(mut argc: i32, mut argv: *mut *mut u8, _env: *mut *mut u
 
         let mut var = environ;
         while !(*var).is_null() {
-            environ_put(&mut *GLOBAL_ENVIRON, *var, environ_flags::empty());
+            (*GLOBAL_ENVIRON).put(std::ffi::CStr::from_ptr((*var).cast()).to_bytes(), EnvironFlags::empty());
             var = var.add(1);
         }
 
         if let Some(cwd) = find_cwd() {
-            environ_set!(
-                GLOBAL_ENVIRON,
-                c!("PWD"),
-                environ_flags::empty(),
-                "{}",
-                cwd.to_str().unwrap()
+            (*GLOBAL_ENVIRON).set(
+                b"PWD",
+                std::os::unix::ffi::OsStrExt::as_bytes(cwd.as_os_str()),
+                EnvironFlags::empty(),
             );
         }
         expand_paths(TMUX_CONF, &mut CFG_FILES.lock().unwrap(), 1);

@@ -101,7 +101,7 @@ pub unsafe fn job_run(
         'fail: {
             env = environ_for_session(s, !CFG_FINISHED.load(atomic::Ordering::Acquire) as i32);
             if !e.is_null() {
-                environ_copy(&*e, &mut *env);
+                (*env).copy_from(&*e);
             }
 
             if !flags.intersects(job_flag::JOB_DEFAULTSHELL) {
@@ -181,7 +181,7 @@ pub unsafe fn job_run(
                             .flatten()
                             .find(|dir| std::env::set_current_dir(dir).is_ok());
                         match dir {
-                            Some(dir) => environ_set_(&mut *env, "PWD", environ_flags::empty(), dir.into()),
+                            Some(dir) => (*env).set(b"PWD", dir, EnvironFlags::empty()),
                             None => fatal("chdir failed"),
                         }
                     }

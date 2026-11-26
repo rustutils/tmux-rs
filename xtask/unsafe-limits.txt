@@ -95,7 +95,7 @@
 2 src/compat/getopt.rs
 72 src/control.rs
 12 src/control_notify.rs
-26 src/environ_.rs
+10 src/environ/mod.rs
 36 src/events/mod.rs
 60 src/file.rs
 453 src/format.rs

@@ -53,38 +53,36 @@ unsafe fn cmd_show_environment_print(
     unsafe {
         let args = cmd_get_args(self_);
 
-        if !args_has(args, 'h') && envent.flags.intersects(ENVIRON_HIDDEN) {
+        if args_has(args, 'h') != envent.is_hidden() {
             return;
         }
-        if args_has(args, 'h') && !envent.flags.intersects(ENVIRON_HIDDEN) {
-            return;
-        }
+        let name = String::from_utf8_lossy(envent.name());
 
         if !args_has(args, 's') {
-            if let Some(ref value) = envent.value {
+            if let Some(value) = envent.value() {
                 cmdq_print!(
                     item,
                     "{}={}",
-                    envent.name,
+                    name,
                     String::from_utf8_lossy(value),
                 );
             } else {
-                cmdq_print!(item, "-{}", envent.name);
+                cmdq_print!(item, "-{}", name);
             }
             return;
         }
 
-        if let Some(ref value) = envent.value {
+        if let Some(value) = envent.value() {
             let escaped = cmd_show_environment_escape(value);
             cmdq_print!(
                 item,
                 "{}=\"{}\"; export {};",
-                envent.name,
+                name,
                 escaped,
-                envent.name,
+                name,
             );
         } else {
-            cmdq_print!(item, "unset {};", envent.name);
+            cmdq_print!(item, "unset {};", name);
         }
     }
 }
@@ -118,7 +116,7 @@ unsafe fn cmd_show_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cm
         };
 
         if !name.is_null() {
-            let Some(envent) = environ_find_raw(&*env, name) else {
+            let Some(envent) = (*env).find(std::ffi::CStr::from_ptr(name.cast()).to_bytes()) else {
                 cmdq_error!(item, "unknown variable: {}", _s(name));
                 return cmd_retval::CMD_RETURN_ERROR;
             };
@@ -126,7 +124,7 @@ unsafe fn cmd_show_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cm
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
-        for entry in environ_entries(&*env) {
+        for entry in (*env).iter() {
             cmd_show_environment_print(self_, item, entry);
         }
         cmd_retval::CMD_RETURN_NORMAL

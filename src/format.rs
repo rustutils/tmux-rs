@@ -3521,13 +3521,13 @@ unsafe fn format_find(
                 let mut envent = None;
                 let fts = (*ft).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
                 if !fts.is_null() {
-                    envent = environ_find_raw(&(*fts).environ, key);
+                    envent = (*fts).environ.find(std::ffi::CStr::from_ptr(key.cast()).to_bytes());
                 }
                 if envent.is_none() {
-                    envent = environ_find_raw(&*GLOBAL_ENVIRON, key);
+                    envent = (*GLOBAL_ENVIRON).find(std::ffi::CStr::from_ptr(key.cast()).to_bytes());
                 }
                 if let Some(envent) = envent
-                    && let Some(ref value) = envent.value {
+                    && let Some(value) = envent.value() {
                         let p = xmalloc(value.len() + 1).as_ptr().cast::<u8>();
                         std::ptr::copy_nonoverlapping(value.as_ptr(), p, value.len());
                         *p.add(value.len()) = b'\0';

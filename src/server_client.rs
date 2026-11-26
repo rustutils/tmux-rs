@@ -166,13 +166,9 @@ pub unsafe fn server_client_overlay_range(
 /// Check if this client is inside this server.
 pub unsafe fn server_client_check_nested(c: *mut client) -> bool {
     unsafe {
-        let envent = environ_find_raw(&(*c).environ, c!("TMUX"));
-        let Some(envent) = envent else {
-            return false;
-        };
-        match envent.value {
+        match (*c).environ.value(b"TMUX") {
             None => return false,
-            Some(ref v) if v.is_empty() || v[0] == b'\0' => return false,
+            Some(v) if v.is_empty() || v[0] == b'\0' => return false,
             _ => {}
         }
 
@@ -3409,7 +3405,10 @@ pub unsafe fn server_client_dispatch_identify(c: *mut client, imsg: *mut imsg) -
                     return -1;
                 }
                 if !libc::strchr(data.cast(), b'=' as i32).is_null() {
-                    environ_put(&mut (*c).environ, data.cast(), environ_flags::empty());
+                    (*c).environ.put(
+                        std::ffi::CStr::from_ptr(data.cast()).to_bytes(),
+                        EnvironFlags::empty(),
+                    );
                 }
                 // log_debug("client %p IDENTIFY_ENVIRON %s", c, data);
             }

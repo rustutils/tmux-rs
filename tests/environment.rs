@@ -343,7 +343,6 @@ fn set_environment_expands_formats() {
 }
 
 #[test]
-#[ignore = "COLORTERM is not set, run 14 task 3"]
 fn new_panes_get_the_tmux_variables() {
     let tmux = server_with_env(&[]);
     let out = pane_output(
@@ -413,7 +412,6 @@ fn split_window_environment() {
 /// started, removed from the global environment with -gu, does not reach
 /// new panes: the child gets exactly the environment tmux built.
 #[test]
-#[ignore = "the child keeps the server process environment, run 14 task 3"]
 fn removed_global_variable_does_not_reach_panes() {
     let tmux = server_with_env(&[("LEAKED_VAR", "from-start")]);
     assert_eq!(
@@ -429,7 +427,6 @@ fn removed_global_variable_does_not_reach_panes() {
 }
 
 #[test]
-#[ignore = "COLORTERM is not set, run 14 task 3"]
 fn run_shell_gets_the_environment() {
     let tmux = server_with_env(&[]);
     tmux.cmd()
@@ -505,7 +502,7 @@ fn formats_look_up_the_environment() {
 /// A client whose environment has a variable name that is not UTF-8 works,
 /// both for the client that starts the server and for a later one.
 #[test]
-#[ignore = "names that are not UTF-8 panic, run 14 task 2"]
+#[ignore = "show-environment prints names as lossy UTF-8, run 14 task 4"]
 fn environment_names_that_are_not_utf8() {
     use std::os::unix::ffi::OsStrExt;
     let name = std::ffi::OsStr::from_bytes(b"BAD\xffNAME");

@@ -302,7 +302,7 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             }
             for av in args_flag_values(args, b'e') {
                 if let args_value::String { string } = av {
-                    environ_put(&mut *env, string.as_ptr().cast(), environ_flags::empty());
+                    (*env).put(string.as_bytes(), EnvironFlags::empty());
                 }
             }
             s = session_create(prefix, newname.as_deref(), cwd, env, oo, tiop);

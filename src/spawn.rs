@@ -12,6 +12,7 @@
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+use std::os::unix::ffi::OsStrExt;
 use crate::compat::{closefrom, fdforkpty::fdforkpty};
 use crate::libc::{
     _exit, SIG_BLOCK, SIG_SETMASK, STDERR_FILENO, STDIN_FILENO, TCSANOW, VERASE, close, execl,
@@ -385,14 +386,12 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             // Create an environment for this pane.
             child = environ_for_session(s, 0);
             if !(*sc).environ.is_null() {
-                environ_copy(&*(*sc).environ, &mut *child);
+                (*child).copy_from(&*(*sc).environ);
             }
-            environ_set!(
-                child,
-                c!("TMUX_PANE"),
-                environ_flags::empty(),
-                "%{}",
-                (*new_wp).id,
+            (*child).set(
+                b"TMUX_PANE",
+                format!("%{}", (*new_wp).id),
+                EnvironFlags::empty(),
             );
 
             // Then the PATH environment variable. The session one is replaced from
@@ -400,18 +399,15 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
             // myprogram" wouldn't work if myprogram isn't in the session's path.
             if !c.is_null() && client_get_session(c).is_null() {
                 // only unattached clients
-                if let Some(ee) = environ_find_raw(&(*c).environ, c!("PATH"))
-                    && let Some(ref value) = ee.value {
-                        environ_set_(&mut *child, "PATH", environ_flags::empty(), value.clone());
-                    }
+                if let Some(value) = (*c).environ.value(b"PATH") {
+                    (*child).set(b"PATH", value, EnvironFlags::empty());
+                }
             }
-            if environ_find_raw(&*child, c!("PATH")).is_none() {
-                environ_set!(
-                    child,
-                    c!("PATH"),
-                    environ_flags::empty(),
-                    "{}",
-                    _s(_PATH_DEFPATH)
+            if (*child).find(b"PATH").is_none() {
+                (*child).set(
+                    b"PATH",
+                    std::ffi::CStr::from_ptr(_PATH_DEFPATH.cast()).to_bytes(),
+                    EnvironFlags::empty(),
                 );
             }
 
@@ -428,13 +424,12 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
                 ));
             }
             let shell_display = (*new_wp).shell.as_deref().map(|p| p.display().to_string()).unwrap_or_default();
-            environ_set!(
-                child,
-                c!("SHELL"),
-                environ_flags::empty(),
-                "{}",
-                shell_display
-            );
+            let shell_bytes = (*new_wp)
+                .shell
+                .as_deref()
+                .map(|p| p.as_os_str().as_bytes())
+                .unwrap_or_default();
+            (*child).set(b"SHELL", shell_bytes, EnvironFlags::empty());
 
             // Log the arguments we are going to use.
             log_debug!("spawn_pane: shell={}", shell_display);
@@ -531,7 +526,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
 
             // Child process. Set PWD to the working directory.
             if let Some(dir) = &actual_cwd {
-                environ_set!(child, c!("PWD"), environ_flags::empty(), "{}", dir.display());
+                (*child).set(b"PWD", dir.as_os_str().as_bytes(), EnvironFlags::empty());
             }
 
             // Update terminal escape characters from the session if available and

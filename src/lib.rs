@@ -62,7 +62,7 @@ cfg_pub_mods! {
     mod compat;
     mod control;
     mod control_notify;
-    mod environ_;
+    mod environ;
     mod events;
     mod file;
     mod format;
@@ -168,7 +168,7 @@ use crate::{
     compat::{imsg::imsg, strtonum, *}, // strtonum need to disambiguate from libc on macos
     control::{control_write, *},
     control_notify::*,
-    environ_::*,
+    environ::*,
     events::{
         events_fire_client, events_fire_pane, events_fire_session, events_fire_window,
         events_fire_winlink,
@@ -1613,28 +1613,6 @@ mod layout_arena_tests {
         assert_eq!(a.root(), Some(id1));
         assert_eq!(a.saved_root(), Some(id2));
     }
-}
-
-bitflags::bitflags! {
-    #[repr(transparent)]
-    #[derive(Copy, Clone)]
-    struct environ_flags: i32 {
-        const ENVIRON_HIDDEN = 0x1;
-    }
-}
-const ENVIRON_HIDDEN: environ_flags = environ_flags::ENVIRON_HIDDEN;
-
-/// Environment variable entry.
-///
-/// `name` is always set (the variable name, portable ASCII charset).
-/// `value` is `None` for "cleared" entries that mask an inherited variable
-/// (equivalent to `unset`). Values are arbitrary bytes (`Vec<u8>`) since
-/// POSIX does not require environment variable values to be valid UTF-8.
-struct EnvironEntry {
-    name: String,
-    value: Option<Vec<u8>>,
-
-    flags: environ_flags,
 }
 
 /// Client session.

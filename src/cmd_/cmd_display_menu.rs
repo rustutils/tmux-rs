@@ -560,7 +560,7 @@ unsafe fn cmd_display_popup_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             env = environ_create().as_ptr();
             for av in args_flag_values(args, b'e') {
                 if let args_value::String { string } = av {
-                    environ_put(&mut *env, string.as_ptr().cast(), environ_flags::empty());
+                    (*env).put(string.as_bytes(), EnvironFlags::empty());
                 }
             }
         }
