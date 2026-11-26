@@ -37,7 +37,9 @@
 use std::cell::RefCell;
 
 use crate::environ::Environ;
+use crate::cmd_::CmdList;
 use crate::events::EventBus;
+use crate::key_bindings::KeyTables;
 use crate::message_log::MessageLog;
 use crate::paste::PasteStore;
 use crate::prompt_history::PromptHistory;
@@ -57,6 +59,16 @@ thread_local! {
     /// The global environment (set-environment -g), filled from the
     /// environment of the process that started the server.
     static GLOBAL_ENVIRON: RefCell<Environ> = RefCell::new(Environ::new());
+    /// The key tables with their bindings.
+    static KEY_TABLES: RefCell<KeyTables<CmdList>> = RefCell::new(KeyTables::new());
+}
+
+/// Run `f` with the key tables.
+///
+/// # Panics
+/// If `f` reaches the key tables again (see the module rules).
+pub fn with_key_tables<R>(f: impl FnOnce(&mut KeyTables<CmdList>) -> R) -> R {
+    KEY_TABLES.with_borrow_mut(f)
 }
 
 /// Run `f` with the global environment.

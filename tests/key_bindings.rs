@@ -346,7 +346,6 @@ fn keys(tmux: &TmuxTestHarness, client: &str, keys: &[&str]) {
 /// bind-key without a command changes only what it is given: -N sets the
 /// note, -r adds the repeat flag, neither clears the other (3.8).
 #[test]
-#[ignore = "bind-key without a command clears the note, run 15 task 3"]
 fn bind_without_command_keeps_note_and_repeat() {
     let mut tmux = TmuxTestHarness::new();
     tmux.new_session().run().assert_success();
@@ -377,7 +376,6 @@ fn bind_without_command_keeps_note_and_repeat() {
 }
 
 #[test]
-#[ignore = "unbind-key names itself in the unknown key error, run 15 task 3"]
 fn unbind_key_errors_and_tables() {
     let mut tmux = TmuxTestHarness::new();
     tmux.new_session().run().assert_success();
@@ -393,6 +391,10 @@ fn unbind_key_errors_and_tables() {
         "error: table nosuch doesn't exist"
     );
     assert_eq!(run(&["unbind", "notakey"]), "error: unknown key: notakey");
+    assert_eq!(
+        run(&["bind", "notakey", "display", "x"]),
+        "error: unknown key: notakey"
+    );
     assert_eq!(run(&["unbind", "-a", "x"]), "error: key given with -a");
     assert_eq!(run(&["unbind"]), "error: missing key");
     run(&["bind", "-T", "mytab", "a", "display", "a"]);
@@ -479,7 +481,6 @@ fn switch_client_key_table() {
 /// so it does not see bindings added to a new table of the same name, and
 /// the next key goes to the root table.
 #[test]
-#[ignore = "the client keeps a freed table, run 15 task 3"]
 fn client_in_a_dropped_table() {
     let (tmux, _pty, client) = server_with_client();
     let run = |args: &[&str]| outcome(&tmux, args);
@@ -534,8 +535,39 @@ fn repeating_bindings() {
 
 /// Key table names need not be UTF-8.
 #[test]
-#[ignore = "table names that are not UTF-8 panic, run 15 task 3"]
 fn key_table_names_that_are_not_utf8() {
+    use std::os::unix::ffi::OsStrExt;
+    let name = std::ffi::OsStr::from_bytes(b"x\xff");
+    let mut tmux = TmuxTestHarness::new();
+    tmux.new_session().run().assert_success();
+    tmux.wait_ready(Duration::from_secs(5));
+    tmux.cmd()
+        .args(["bind", "-T"])
+        .args([name])
+        .args(["a", "display", "hi"])
+        .run()
+        .assert_success();
+    let out = tmux.cmd().args(["list-keys", "-T"]).args([name]).run();
+    out.assert_success();
+    assert!(
+        out.stdout_str().ends_with(" a display-message hi\n"),
+        "{}",
+        out.stdout_str()
+    );
+    tmux.cmd()
+        .args(["unbind", "-T"])
+        .args([name])
+        .args(["a"])
+        .run()
+        .assert_success();
+    let out = tmux.cmd().args(["list-keys", "-T"]).args([name]).run();
+    assert!(!out.success());
+}
+
+/// list-keys prints a table name that is not UTF-8 as it is.
+#[test]
+#[ignore = "format values are strings, so key_table is lossy until formats are converted (F8)"]
+fn list_keys_prints_table_names_as_bytes() {
     use std::os::unix::ffi::OsStrExt;
     let name = std::ffi::OsStr::from_bytes(b"x\xff");
     let mut tmux = TmuxTestHarness::new();

@@ -38,23 +38,7 @@ pub use self::store::{
 use crate::libc::fnmatch;
 use crate::*;
 
-/// A command list owned by an option. Dropping it frees it.
-pub struct CmdList(NonNull<cmd_list>);
-
-impl CmdList {
-    /// The command list, valid while the option holds it.
-    pub fn as_ptr(&self) -> *mut cmd_list {
-        self.0.as_ptr()
-    }
-}
-
-impl Drop for CmdList {
-    fn drop(&mut self) {
-        // SAFETY: the pointer came from cmd_parse_from_string and is owned
-        // by this value, which drops one reference.
-        unsafe { cmd_list_free(self.0.as_ptr()) }
-    }
-}
+pub use crate::cmd_::CmdList;
 
 /// The parts of options that are still C-shaped code.
 pub struct COptions;
@@ -69,7 +53,11 @@ impl OptionsExt for COptions {
         // SAFETY: parsing a string does not touch option trees.
         match unsafe { cmd_parse_from_string(s, None) } {
             Ok(cmdlist) => NonNull::new(cmdlist)
-                .map(CmdList)
+                .map(|list| {
+                    // SAFETY: the parser returns a new list with one
+                    // reference, which the CmdList takes.
+                    unsafe { CmdList::from_raw(list) }
+                })
                 .ok_or_else(String::new),
             Err(error) => Err(error.to_string_lossy().into_owned()),
         }

@@ -234,9 +234,10 @@ pub struct Timestamp {
 }
 
 /// Compares ASCII case insensitively, like strcasecmp.
-fn cmp_ignore_ascii_case(a: &str, b: &str) -> Ordering {
-    let a = a.bytes().map(|c| c.to_ascii_lowercase());
-    let b = b.bytes().map(|c| c.to_ascii_lowercase());
+/// strcasecmp on bytes.
+fn cmp_bytes_ignore_ascii_case(a: &[u8], b: &[u8]) -> Ordering {
+    let a = a.iter().map(u8::to_ascii_lowercase);
+    let b = b.iter().map(u8::to_ascii_lowercase);
     a.cmp(b)
 }
 
@@ -406,7 +407,7 @@ impl SortKey for WinlinkKey {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeyBindingKey {
     /// Name of the key table.
-    pub table: String,
+    pub table: Vec<u8>,
     /// Key code with its flags.
     pub key: u64,
     /// The modifier bits of the key code.
@@ -420,13 +421,13 @@ impl SortKey for KeyBindingKey {
         match order {
             SortOrder::Index => self.key.cmp(&other.key),
             SortOrder::Modifier => self.modifiers.cmp(&other.modifiers),
-            SortOrder::Name => cmp_ignore_ascii_case(&self.table, &other.table),
+            SortOrder::Name => cmp_bytes_ignore_ascii_case(&self.table, &other.table),
             _ => Ordering::Equal,
         }
     }
 
     fn compare_fallback(&self, other: &Self) -> Ordering {
-        cmp_ignore_ascii_case(&self.table, &other.table).then(self.key.cmp(&other.key))
+        cmp_bytes_ignore_ascii_case(&self.table, &other.table).then(self.key.cmp(&other.key))
     }
 }
 
@@ -746,7 +747,7 @@ mod tests {
     fn key_bindings() {
         const META: u64 = 0x0010_0000_0000_0000;
         let binding = |table: &str, key, modifiers| KeyBindingKey {
-            table: table.into(),
+            table: table.as_bytes().to_vec(),
             key,
             modifiers,
         };
@@ -760,7 +761,7 @@ mod tests {
             let mut l = l.clone();
             sort(&mut l, &crit);
             l.iter()
-                .map(|k| format!("{}:{:x}", k.table, k.key & 0xff))
+                .map(|k| format!("{}:{:x}", String::from_utf8_lossy(&k.table), k.key & 0xff))
                 .collect::<Vec<_>>()
         };
         // Table names ignore case, ties by key code.
@@ -784,11 +785,11 @@ mod tests {
 
     #[test]
     fn strcasecmp_order() {
-        assert_eq!(cmp_ignore_ascii_case("ABC", "abd"), Ordering::Less);
-        assert_eq!(cmp_ignore_ascii_case("abc", "ABC"), Ordering::Equal);
-        assert_eq!(cmp_ignore_ascii_case("ab", "abc"), Ordering::Less);
+        assert_eq!(cmp_bytes_ignore_ascii_case(b"ABC", b"abd"), Ordering::Less);
+        assert_eq!(cmp_bytes_ignore_ascii_case(b"abc", b"ABC"), Ordering::Equal);
+        assert_eq!(cmp_bytes_ignore_ascii_case(b"ab", b"abc"), Ordering::Less);
         // strcasecmp lowercases, so '_' (0x5f) sorts before 'A' (0x61
         // after lowering), unlike strcmp.
-        assert_eq!(cmp_ignore_ascii_case("_", "A"), Ordering::Less);
+        assert_eq!(cmp_bytes_ignore_ascii_case(b"_", b"A"), Ordering::Less);
     }
 }

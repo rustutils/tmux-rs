@@ -91,13 +91,10 @@ pub unsafe fn cmd_send_keys_inject_key(
             return item;
         }
 
-        let table = key_bindings_get_table((*(*wme).mode).key_table.unwrap()(wme), true);
-
-        let bd = key_bindings_get(NonNull::new(table).unwrap(), key & !KEYC_MASK_FLAGS);
-        if !bd.is_null() {
-            (*table).references += 1;
-            after = key_bindings_dispatch(bd, after, tc, null_mut(), target);
-            key_bindings_unref_table(table);
+        let name = (*(*wme).mode).key_table.unwrap()(wme);
+        let table = KeyTableRef::get_or_create(CStr::from_ptr(name.cast()).to_bytes());
+        if let Some(bd) = key_bindings_get(&table, key) {
+            after = key_bindings_dispatch(&bd, after, tc, null_mut(), target);
         }
         after
     }

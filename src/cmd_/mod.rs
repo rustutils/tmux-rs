@@ -626,6 +626,43 @@ pub unsafe fn cmd_list_move(cmdlist: *mut cmd_list, from: *mut cmd_list) {
     }
 }
 
+/// A reference to a command list. Cloning takes another reference,
+/// dropping gives it back, so the list lives while any clone does.
+pub struct CmdList(NonNull<cmd_list>);
+
+impl CmdList {
+    /// Takes over one reference to `list`.
+    ///
+    /// # Safety
+    /// `list` must be a live command list, and the caller gives up one
+    /// reference it holds.
+    pub unsafe fn from_raw(list: NonNull<cmd_list>) -> Self {
+        Self(list)
+    }
+
+    /// The command list, valid while this value lives.
+    pub fn as_ptr(&self) -> *mut cmd_list {
+        self.0.as_ptr()
+    }
+}
+
+impl Clone for CmdList {
+    fn clone(&self) -> Self {
+        // SAFETY: the list is live while this value holds its reference,
+        // and the new value holds the one taken here.
+        unsafe { (*self.0.as_ptr()).references += 1 };
+        Self(self.0)
+    }
+}
+
+impl Drop for CmdList {
+    fn drop(&mut self) {
+        // SAFETY: this value holds one reference to a live list, which it
+        // gives back.
+        unsafe { cmd_list_free(self.0.as_ptr()) }
+    }
+}
+
 pub unsafe fn cmd_list_free(cmdlist: *mut cmd_list) {
     unsafe {
         (*cmdlist).references -= 1;

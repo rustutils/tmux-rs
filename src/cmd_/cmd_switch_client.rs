@@ -65,14 +65,13 @@ unsafe fn cmd_switch_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
 
         let tablename = args_get_(args, 'T');
         if !tablename.is_null() {
-            let table = key_bindings_get_table(tablename, false);
-            if table.is_null() {
+            let name = CStr::from_ptr(tablename.cast()).to_bytes();
+            if !key_bindings_has_table(name) {
                 cmdq_error!(item, "table {} doesn't exist", _s(tablename));
                 return cmd_retval::CMD_RETURN_ERROR;
             }
-            (*table).references += 1;
-            key_bindings_unref_table((*tc).keytable);
-            (*tc).keytable = table;
+            // As C, the table's activity time is not touched.
+            (*tc).keytable = KeyTableRef::get_or_create(name);
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
@@ -134,7 +133,7 @@ unsafe fn cmd_switch_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
 
         server_client_set_session(tc, s);
         if !cmdq_get_flags(item).intersects(cmdq_state_flags::CMDQ_STATE_REPEAT) {
-            server_client_set_key_table(tc, null_mut());
+            server_client_set_key_table(tc, None);
         }
 
         cmd_retval::CMD_RETURN_NORMAL

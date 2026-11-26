@@ -45,6 +45,9 @@ pub struct KeyTableId(pub u32);
 /// One binding: a key and what it runs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyBinding<C> {
+    /// Identifies the binding the way its address does in C: a new
+    /// binding gets a new serial, changing one in place keeps it.
+    pub serial: u64,
     pub key: KeyCode,
     /// The commands it runs.
     pub cmds: C,
@@ -70,6 +73,7 @@ pub struct KeyTables<C> {
     tables: BTreeMap<Vec<u8>, KeyTable<C>>,
     names: BTreeMap<KeyTableId, Vec<u8>>,
     next_id: u32,
+    next_serial: u64,
 }
 
 impl<C> Default for KeyTables<C> {
@@ -78,6 +82,7 @@ impl<C> Default for KeyTables<C> {
             tables: BTreeMap::new(),
             names: BTreeMap::new(),
             next_id: 0,
+            next_serial: 0,
         }
     }
 }
@@ -112,11 +117,6 @@ impl<C: Clone> KeyTables<C> {
         );
         self.names.insert(id, name.to_vec());
         id
-    }
-
-    /// The name of table `id`, None if it was dropped.
-    pub fn name(&self, id: KeyTableId) -> Option<&[u8]> {
-        self.names.get(&id).map(Vec::as_slice)
     }
 
     /// The table names in order.
@@ -178,6 +178,7 @@ impl<C: Clone> KeyTables<C> {
     /// flag if `repeat`, and nothing else changes.
     pub fn add(&mut self, name: &[u8], key: KeyCode, note: Option<&[u8]>, repeat: bool, cmds: Option<C>) {
         self.get_or_create(name);
+        let serial = self.next_serial;
         let table = self.tables.get_mut(name).expect("just created");
         match cmds {
             None => {
@@ -191,9 +192,11 @@ impl<C: Clone> KeyTables<C> {
                 }
             }
             Some(cmds) => {
+                        self.next_serial += 1;
                 table.bindings.insert(
                     key,
                     KeyBinding {
+                        serial,
                         key,
                         cmds,
                         note: note.map(<[u8]>::to_vec),
@@ -231,11 +234,35 @@ impl<C: Clone> KeyTables<C> {
         }
         match table.defaults.get(&key).cloned() {
             Some(default) => {
-                table.bindings.insert(key, default);
+                // In place, as C copies the default into the binding.
+                let bd = table.bindings.get_mut(&key).expect("checked above");
+                bd.cmds = default.cmds;
+                bd.note = default.note;
+                bd.repeat = default.repeat;
             }
             None => {
                 self.remove(name, key);
             }
+        }
+    }
+
+    /// Replaces the commands of the binding of `key` in the table called
+    /// `name`, in place. Returns whether there was one.
+    pub fn set_commands(&mut self, name: &[u8], key: KeyCode, cmds: C) -> bool {
+        match self.tables.get_mut(name).and_then(|t| t.bindings.get_mut(&key)) {
+            Some(bd) => {
+                bd.cmds = cmds;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Sets or clears the repeat flag of the binding of `key` in the table
+    /// called `name`, in place.
+    pub fn set_repeat(&mut self, name: &[u8], key: KeyCode, repeat: bool) {
+        if let Some(bd) = self.tables.get_mut(name).and_then(|t| t.bindings.get_mut(&key)) {
+            bd.repeat = repeat;
         }
     }
 
@@ -318,11 +345,10 @@ mod tests {
         let mut t = Tables::new();
         t.add(b"mine", 1, None, false, Some("a"));
         let first = t.id(b"mine").unwrap();
-        assert_eq!(t.name(first), Some(b"mine".as_slice()));
         assert!(t.remove(b"mine", 1));
         // The last binding went, so the table did.
         assert_eq!(t.id(b"mine"), None);
-        assert_eq!(t.name(first), None);
+        assert_eq!(t.activity(first), None);
         assert!(t.get(first, 1).is_none());
         t.add(b"mine", 2, None, false, Some("b"));
         let second = t.id(b"mine").unwrap();
@@ -346,6 +372,23 @@ mod tests {
         assert!(t.remove(b"prefix", 1));
         assert!(t.id(b"prefix").is_some());
         assert!(!t.remove(b"prefix", 1));
+    }
+
+    #[test]
+    fn serials_follow_identity() {
+        let mut t = Tables::new();
+        t.add(b"prefix", 1, None, false, Some("a"));
+        let first = t.get_by_name(b"prefix", 1).unwrap().serial;
+        t.snapshot_defaults();
+        t.add(b"prefix", 1, Some(b"note"), true, None);
+        assert!(t.set_commands(b"prefix", 1, "b"));
+        t.set_repeat(b"prefix", 1, false);
+        t.reset(b"prefix", 1);
+        let bd = t.get_by_name(b"prefix", 1).unwrap();
+        assert_eq!((bd.serial, bd.cmds, bd.note, bd.repeat), (first, "a", None, false));
+        t.add(b"prefix", 1, None, false, Some("c"));
+        assert_ne!(t.get_by_name(b"prefix", 1).unwrap().serial, first);
+        assert!(!t.set_commands(b"prefix", 9, "x"));
     }
 
     #[test]

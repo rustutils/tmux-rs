@@ -183,32 +183,35 @@ pub unsafe fn server_client_check_nested(c: *mut client) -> bool {
     }
 }
 
-/// Set client key table.
-pub unsafe fn server_client_set_key_table(c: *mut client, mut name: *const u8) {
+/// Puts the client in the key table called `name`, or its default table
+/// with None, creating the table, and records the time it entered.
+pub unsafe fn server_client_set_key_table(c: *mut client, name: Option<&[u8]>) {
     unsafe {
-        if name.is_null() {
-            name = server_client_get_key_table(c);
-        }
-
-        key_bindings_unref_table((*c).keytable);
-        (*c).keytable = key_bindings_get_table(name, true);
-        (*(*c).keytable).references += 1;
-        if libc::gettimeofday(&raw mut (*(*c).keytable).activity_time, null_mut()) != 0 {
-            fatal("gettimeofday failed");
-        }
+        let table = match name {
+            Some(name) => KeyTableRef::get_or_create(name),
+            None => KeyTableRef::get_or_create(&server_client_default_key_table(c)),
+        };
+        key_table_touch(&table);
+        (*c).keytable = table;
     }
 }
 
+/// Milliseconds since the client entered its key table. Like C, a client
+/// whose activity is older than the table's gives a huge number.
 pub unsafe fn server_client_key_table_activity_diff(c: *mut client) -> u64 {
     unsafe {
-        let mut diff: libc::timeval = zeroed();
-        timersub(
-            &raw const (*c).activity_time,
-            &raw const (*(*c).keytable).activity_time,
-            &raw mut diff,
+        let entered = key_table_activity(&(*c).keytable).unwrap_or_default();
+        let activity = Duration::new(
+            (*c).activity_time.tv_sec as u64,
+            (*c).activity_time.tv_usec as u32 * 1000,
         );
-        (diff.tv_sec as u64 * 1000u64) + (diff.tv_usec as u64 / 1000u64)
+        (activity.as_millis() as i64 - entered.as_millis() as i64) as u64
     }
+}
+
+/// The name of the client's default key table.
+pub unsafe fn server_client_default_key_table(c: *mut client) -> Vec<u8> {
+    unsafe { CStr::from_ptr(server_client_get_key_table(c).cast()).to_bytes().to_vec() }
 }
 
 /// Get default key table.
@@ -228,8 +231,8 @@ pub unsafe fn server_client_get_key_table(c: *mut client) -> *const u8 {
 }
 
 /// Is this table the default key table?
-pub unsafe fn server_client_is_default_key_table(c: *mut client, table: *mut key_table) -> bool {
-    unsafe { (*table).name == cstr_to_str(server_client_get_key_table(c)) }
+pub unsafe fn server_client_is_default_key_table(c: *mut client, table: &KeyTableRef) -> bool {
+    unsafe { table.name == server_client_default_key_table(c) }
 }
 
 /// Create a new client.
@@ -293,8 +296,7 @@ pub unsafe fn server_client_create(fd: i32) -> *mut client {
         status_init(c);
         (*c).flags |= client_flag::FOCUSED;
 
-        (*c).keytable = key_bindings_get_table(c!("root"), true);
-        (*(*c).keytable).references += 1;
+        std::ptr::write(&raw mut (*c).keytable, KeyTableRef::get_or_create(b"root"));
 
         std::ptr::write(&raw mut (*c).repeat_timer, None);
         std::ptr::write(&raw mut (*c).click_timer, None);
@@ -516,8 +518,6 @@ pub unsafe fn server_client_lost(c: *mut client) {
         (*c).repeat_timer = None;
         (*c).click_timer = None;
         (*c).exit_timer = None;
-
-        key_bindings_unref_table((*c).keytable);
 
         // message_string is Option<String>, dropped automatically by Box drop.
         (*c).message_timer = None;
@@ -1938,9 +1938,9 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
         let s = client_get_session(c);
 
         let _tv: libc::timeval = zeroed();
-        let mut bd: *mut key_binding;
-        let mut table: *mut key_table;
-        let mut first: *mut key_table;
+        let mut bd: Option<KeyBinding>;
+        let mut table: KeyTableRef;
+        let mut first: KeyTableRef;
         let wme: *mut window_mode_entry;
         let mut fs: cmd_find_state = zeroed();
         let wl: *mut winlink;
@@ -2023,7 +2023,7 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
 
                 // Work out the current key table. If the pane is in a mode, use
                 // the mode table instead of the default key table.
-                table = if server_client_is_default_key_table(c, (*c).keytable)
+                table = if server_client_is_default_key_table(c, &(*c).keytable)
                     && !wp.is_null()
                     && ({
                         wme = (*wp).modes.first().copied().unwrap_or(null_mut());
@@ -2031,11 +2031,12 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                     })
                     && (*(*wme).mode).key_table.is_some()
                 {
-                    key_bindings_get_table((*(*wme).mode).key_table.unwrap()(wme), true)
+                    let name = (*(*wme).mode).key_table.unwrap()(wme);
+                    KeyTableRef::get_or_create(CStr::from_ptr(name.cast()).to_bytes())
                 } else {
-                    (*c).keytable
+                    (*c).keytable.clone()
                 };
-                first = table;
+                first = table.clone();
 
                 'table_changed: loop {
                     // The prefix always takes precedence and forces a switch to the prefix
@@ -2045,9 +2046,9 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                     key0 = key & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS);
                     if (key0 == (prefix & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS))
                         || key0 == (prefix2 & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS)))
-                        && (*table).name != "prefix"
+                        && !table.is(b"prefix")
                     {
-                        server_client_set_key_table(c, c!("prefix"));
+                        server_client_set_key_table(c, Some(b"prefix"));
                         server_status_client(c);
                         break 'out;
                     }
@@ -2056,16 +2057,15 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                     'try_again: loop {
                         /* Log key table. */
                         if wp.is_null() {
-                            log_debug!("key table {} (no pane)", (*table).name);
+                            log_debug!("key table {} (no pane)", table.name_lossy());
                         } else {
-                            log_debug!("key table {} (pane %%{})", (*table).name, (*wp).id);
+                            log_debug!("key table {} (pane %%{})", table.name_lossy(), (*wp).id);
                         }
                         if (*c).flags.intersects(client_flag::REPEAT) {
                             log_debug!("currently repeating");
                         }
 
-                        bd =
-                            key_bindings_get(NonNull::new(table).expect("just dereferenced"), key0);
+                        bd = key_bindings_get(&table, key0);
 
                         /*
                          * If prefix-timeout is enabled and we're in the prefix table, see if
@@ -2073,19 +2073,18 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                          */
                         prefix_delay = options_get_number_(GLOBAL_OPTIONS, "prefix-timeout") as u64;
                         if prefix_delay > 0
-                            && (*table).name == "prefix"
+                            && table.is(b"prefix")
                             && server_client_key_table_activity_diff(c) > prefix_delay
                         {
-                            if !bd.is_null()
+                            if bd.as_ref().is_some_and(|bd| bd.repeat)
                                 && (*c).flags.intersects(client_flag::REPEAT)
-                                && (*bd).flags & KEY_BINDING_REPEAT != 0
                             {
                                 log_debug!("prefix timeout ignored, repeat is active");
                             } else {
                                 log_debug!("prefix timeout exceeded");
-                                server_client_set_key_table(c, null_mut());
-                                table = (*c).keytable;
-                                first = (*c).keytable;
+                                server_client_set_key_table(c, None);
+                                table = (*c).keytable.clone();
+                                first = (*c).keytable.clone();
                                 server_status_client(c);
                                 continue 'table_changed;
                             }
@@ -2095,40 +2094,37 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                          */
 
                         /* Try to see if there is a key binding in the current table. */
-                        if !bd.is_null() {
+                        if let Some(bd) = bd {
                             /*
                              * Key was matched in this table. If currently repeating but a
                              * non-repeating binding was found, stop repeating and try
                              * again in the root table.
                              */
-                            if (*c).flags.intersects(client_flag::REPEAT)
-                                && (*bd).flags & KEY_BINDING_REPEAT == 0
+                            if (*c).flags.intersects(client_flag::REPEAT) && !bd.repeat
                             {
                                 log_debug!(
                                     "found in key table {} (not repeating)",
-                                    (*table).name
+                                    table.name_lossy()
                                 );
-                                server_client_set_key_table(c, null_mut());
-                                table = (*c).keytable;
-                                first = (*c).keytable;
+                                server_client_set_key_table(c, None);
+                                table = (*c).keytable.clone();
+                                first = (*c).keytable.clone();
                                 (*c).flags &= !client_flag::REPEAT;
                                 server_status_client(c);
                                 continue 'table_changed;
                             }
-                            log_debug!("found in key table {}", (*table).name);
+                            log_debug!("found in key table {}", table.name_lossy());
 
-                            /*
-                             * Take a reference to this table to make sure the key binding
-                             * doesn't disappear.
-                             */
-                            (*table).references += 1;
+                            // bd is a copy holding its own reference to the
+                            // command list, so it stays valid whatever the
+                            // binding runs.
 
                             /*
                              * If this is a repeating key, start the timer. Otherwise reset
                              * the client back to the root table.
                              */
                             xtimeout = options_get_number_((*s).options, "repeat-time") as i32;
-                            if xtimeout != 0 && (*bd).flags & KEY_BINDING_REPEAT != 0 {
+                            if xtimeout != 0 && bd.repeat {
                                 (*c).flags |= client_flag::REPEAT;
 
                                 (*c).repeat_timer = None;
@@ -2139,13 +2135,12 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                                 );
                             } else {
                                 (*c).flags &= !client_flag::REPEAT;
-                                server_client_set_key_table(c, null_mut());
+                                server_client_set_key_table(c, None);
                             }
                             server_status_client(c);
 
                             /* Execute the key binding. */
-                            key_bindings_dispatch(bd, item, c, event, &raw mut fs);
-                            key_bindings_unref_table(table);
+                            key_bindings_dispatch(&bd, item, c, event, &raw mut fs);
                             break 'out;
                         }
 
@@ -2175,15 +2170,15 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                          * No match in this table. If not in the root table or if repeating
                          * switch the client back to the root table and try again.
                          */
-                        log_debug!("not found in key table {}", (*table).name);
-                        if !server_client_is_default_key_table(c, table)
+                        log_debug!("not found in key table {}", table.name_lossy());
+                        if !server_client_is_default_key_table(c, &table)
                             || (*c).flags.intersects(client_flag::REPEAT)
                         {
                             log_debug!("trying in root table");
-                            server_client_set_key_table(c, null_mut());
-                            table = (*c).keytable;
+                            server_client_set_key_table(c, None);
+                            table = (*c).keytable.clone();
                             if (*c).flags.intersects(client_flag::REPEAT) {
-                                first = table;
+                                first = table.clone();
                             }
                             (*c).flags &= !client_flag::REPEAT;
                             server_status_client(c);
@@ -2194,8 +2189,8 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                          * No match in the root table either. If this wasn't the first table
                          * tried, don't pass the key to the pane.
                          */
-                        if first != table && !flags.intersects(client_flag::REPEAT) {
-                            server_client_set_key_table(c, null_mut());
+                        if first.id != table.id && !flags.intersects(client_flag::REPEAT) {
+                            server_client_set_key_table(c, None);
                             server_status_client(c);
                             break 'out;
                         }
@@ -2737,7 +2732,7 @@ unsafe fn server_client_repeat_timer_fire(cid: ClientId) {
     unsafe {
         let Some(c) = client_from_id(cid) else { return };
         if (*c).flags.intersects(client_flag::REPEAT) {
-            server_client_set_key_table(c, null_mut());
+            server_client_set_key_table(c, None);
             (*c).flags &= !client_flag::REPEAT;
             server_status_client(c);
         }

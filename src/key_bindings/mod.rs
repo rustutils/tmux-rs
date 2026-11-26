@@ -11,9 +11,188 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-#[expect(dead_code, reason = "the adapter moves onto the store in run 15 task 3")]
+//! The adapter between key tables ([`store::KeyTables`]) and the rest of
+//! tmux: the default bindings, table changes that move clients, and
+//! running a binding.
 mod store;
+
+use std::time::{Duration, UNIX_EPOCH};
+
+pub use self::store::{KeyBinding as StoreKeyBinding, KeyTableId, KeyTables};
+
+use crate::global::with_key_tables;
 use crate::*;
+
+/// A binding, as the rest of tmux gets it: a copy holding its own
+/// reference to the command list.
+pub type KeyBinding = StoreKeyBinding<CmdList>;
+
+/// A key table as a client or the key callback refers to it. The ID
+/// finds nothing once the table is dropped, which counts as an empty
+/// table, as 3.8's detached tables are.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyTableRef {
+    pub id: KeyTableId,
+    pub name: Vec<u8>,
+}
+
+impl KeyTableRef {
+    /// The table called `name`, created if it does not exist.
+    pub fn get_or_create(name: &[u8]) -> Self {
+        Self {
+            id: with_key_tables(|t| t.get_or_create(name)),
+            name: name.to_vec(),
+        }
+    }
+
+    /// Whether the table is called `name`.
+    pub fn is(&self, name: &[u8]) -> bool {
+        self.name == name
+    }
+
+    /// The name, for logs and formats.
+    pub fn name_lossy(&self) -> String {
+        String::from_utf8_lossy(&self.name).into_owned()
+    }
+}
+
+/// The binding of `key` (flags masked off) in table `table`.
+pub fn key_bindings_get(table: &KeyTableRef, key: key_code) -> Option<KeyBinding> {
+    with_key_tables(|t| t.get(table.id, key & !KEYC_MASK_FLAGS))
+}
+
+/// The binding of `key` in the table called `name`.
+pub fn key_bindings_get_by_name(name: &[u8], key: key_code) -> Option<KeyBinding> {
+    with_key_tables(|t| t.get_by_name(name, key & !KEYC_MASK_FLAGS))
+}
+
+/// The default binding of `key` in the table called `name`.
+pub fn key_bindings_get_default(name: &[u8], key: key_code) -> Option<KeyBinding> {
+    with_key_tables(|t| t.get_default(name, key & !KEYC_MASK_FLAGS))
+}
+
+/// Whether a table called `name` exists.
+pub fn key_bindings_has_table(name: &[u8]) -> bool {
+    with_key_tables(|t| t.id(name).is_some())
+}
+
+/// The table names in order.
+pub fn key_bindings_table_names() -> Vec<Vec<u8>> {
+    with_key_tables(|t| t.names().map(<[u8]>::to_vec).collect())
+}
+
+/// The bindings of the table called `name`, in key order.
+pub fn key_bindings_list(name: &[u8]) -> Vec<KeyBinding> {
+    with_key_tables(|t| t.bindings(name))
+}
+
+/// When a client last entered `table`, None once it was dropped.
+pub fn key_table_activity(table: &KeyTableRef) -> Option<Duration> {
+    with_key_tables(|t| t.activity(table.id))
+}
+
+/// Records that a client entered `table` now.
+pub fn key_table_touch(table: &KeyTableRef) {
+    let now = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    with_key_tables(|t| t.set_activity(table.id, now));
+}
+
+/// Binds `key` in the table called `name` (`key_bindings_add`). Without
+/// `cmds`, an existing binding only gets the note and the repeat flag.
+pub fn key_bindings_add(
+    name: &[u8],
+    key: key_code,
+    note: Option<&[u8]>,
+    repeat: bool,
+    cmds: Option<CmdList>,
+) {
+    let key = key & !KEYC_MASK_FLAGS;
+    if let Some(cmds) = &cmds {
+        // SAFETY: the list is live while `cmds` holds it, and
+        // cmd_list_print returns a new string, freed here.
+        unsafe {
+            let s = cmd_list_print(&*cmds.as_ptr(), 0);
+            log_debug!(
+                "key_bindings_add: {:#x} {} = {}",
+                key,
+                key_string_lookup_key(key, 1),
+                _s(s),
+            );
+            free_(s);
+        }
+    }
+    // The replaced binding is dropped outside the store, its command list
+    // may be freed.
+    let _old = with_key_tables(|t| {
+        let old = t.get_by_name(name, key);
+        t.add(name, key, note, repeat, cmds);
+        old
+    });
+}
+
+/// Unbinds `key` in the table called `name`.
+pub fn key_bindings_remove(name: &[u8], key: key_code) {
+    let key = key & !KEYC_MASK_FLAGS;
+    let old = with_key_tables(|t| {
+        let old = t.get_by_name(name, key);
+        t.remove(name, key);
+        old
+    });
+    if old.is_some() {
+        log_debug!("key_bindings_remove: {:#x} {}", key, key_string_lookup_key(key, 1));
+    }
+}
+
+/// Puts `key` in the table called `name` back to its default binding, or
+/// unbinds it if it has none.
+pub fn key_bindings_reset(name: &[u8], key: key_code) {
+    let key = key & !KEYC_MASK_FLAGS;
+    let _old = with_key_tables(|t| {
+        let old = t.get_by_name(name, key);
+        t.reset(name, key);
+        old
+    });
+}
+
+/// Replaces the commands of the binding of `key` in the table called
+/// `name`, keeping the binding (customize mode).
+pub fn key_bindings_set_commands(name: &[u8], key: key_code, cmds: CmdList) {
+    // The old commands are dropped outside the store, they may be freed.
+    let old = with_key_tables(|t| t.get_by_name(name, key & !KEYC_MASK_FLAGS));
+    with_key_tables(|t| t.set_commands(name, key & !KEYC_MASK_FLAGS, cmds));
+    drop(old);
+}
+
+/// Sets or clears the repeat flag of the binding of `key` in the table
+/// called `name` (customize mode).
+pub fn key_bindings_set_repeat(name: &[u8], key: key_code, repeat: bool) {
+    with_key_tables(|t| t.set_repeat(name, key & !KEYC_MASK_FLAGS, repeat));
+}
+
+/// Removes the table called `name` with its defaults, and moves the
+/// clients in it to their default table.
+///
+/// # Safety
+/// The clients must be valid.
+pub unsafe fn key_bindings_remove_table(name: &[u8]) {
+    unsafe {
+        let Some(id) = with_key_tables(|t| t.remove_table(name)) else {
+            return;
+        };
+        for c in clients_iter() {
+            if (*c).keytable.id == id {
+                server_client_set_key_table(c, None);
+            }
+        }
+    }
+}
+
+unsafe fn key_bindings_init_done(_item: *mut cmdq_item, _data: *mut c_void) -> cmd_retval {
+    with_key_tables(KeyTables::snapshot_defaults);
+    cmd_retval::CMD_RETURN_NORMAL
+}
 
 macro_rules! DEFAULT_SESSION_MENU {
     () => {
@@ -75,270 +254,6 @@ macro_rules! DEFAULT_PANE_MENU {
             " '#{?#{>:#{window_panes},1},,-}#{?window_zoomed_flag,Unzoom,Zoom}' 'z' {resize-pane -Z}",
         )
     };
-}
-
-static mut KEY_TABLES: key_tables = BTreeMap::new();
-
-unsafe fn key_binding_free_fields(bd: &mut key_binding) {
-    unsafe {
-        cmd_list_free(bd.cmdlist);
-        bd.note = None;
-    }
-}
-
-pub unsafe fn key_bindings_get_table(name: *const u8, create: bool) -> *mut key_table {
-    unsafe {
-        let key = cstr_to_str(name).to_string();
-        if create {
-            let table = (*(&raw mut KEY_TABLES)).entry(key).or_insert_with(|| {
-                Box::new(key_table {
-                    name: cstr_to_str(name).to_string(),
-                    activity_time: timeval {
-                        tv_sec: 0,
-                        tv_usec: 0,
-                    },
-                    key_bindings: BTreeMap::new(),
-                    default_key_bindings: BTreeMap::new(),
-                    references: 1,
-                })
-            });
-            &mut **table as *mut key_table
-        } else {
-            (*(&raw mut KEY_TABLES))
-                .get_mut(&key)
-                .map_or(null_mut(), |t| &mut **t as *mut key_table)
-        }
-    }
-}
-
-/// Collect all key table pointers in sorted order.
-pub unsafe fn key_tables_entries() -> Vec<*mut key_table> {
-    unsafe {
-        (*(&raw mut KEY_TABLES))
-            .values_mut()
-            .map(|t| &mut **t as *mut key_table)
-            .collect()
-    }
-}
-
-
-pub unsafe fn key_bindings_unref_table(table: *mut key_table) {
-    unsafe {
-        (*table).references -= 1;
-        if (*table).references != 0 {
-            return;
-        }
-
-        for bd in (*table).key_bindings.values_mut() {
-            key_binding_free_fields(bd);
-        }
-        for bd in (*table).default_key_bindings.values_mut() {
-            key_binding_free_fields(bd);
-        }
-
-        // name: String dropped automatically
-    }
-}
-
-pub unsafe fn key_bindings_get(table: NonNull<key_table>, key: key_code) -> *mut key_binding {
-    unsafe {
-        (*table.as_ptr())
-            .key_bindings
-            .get_mut(&key)
-            .map_or(null_mut(), |bd| &mut **bd as *mut key_binding)
-    }
-}
-
-pub unsafe fn key_bindings_get_default(table: *mut key_table, key: key_code) -> *mut key_binding {
-    unsafe {
-        (*table)
-            .default_key_bindings
-            .get_mut(&key)
-            .map_or(null_mut(), |bd| &mut **bd as *mut key_binding)
-    }
-}
-
-/// Collect all binding pointers in sorted order.
-pub unsafe fn key_bindings_entries(table: *mut key_table) -> Vec<*mut key_binding> {
-    unsafe {
-        (*table)
-            .key_bindings
-            .values_mut()
-            .map(|bd| &mut **bd as *mut key_binding)
-            .collect()
-    }
-}
-
-
-pub unsafe fn key_bindings_add(
-    name: *const u8,
-    key: key_code,
-    note: *const u8,
-    repeat: bool,
-    cmdlist: *mut cmd_list,
-) {
-    unsafe {
-        let table = key_bindings_get_table(name, true);
-        let masked_key = key & !KEYC_MASK_FLAGS;
-
-        if cmdlist.is_null() {
-            // Just update note on existing binding
-            if let Some(bd) = (*table).key_bindings.get_mut(&masked_key) {
-                bd.note = if !note.is_null() {
-                    Some(cstr_to_str(note).to_string())
-                } else {
-                    None
-                };
-            }
-            return;
-        }
-
-        // Remove old binding if exists
-        if let Some(mut old) = (*table).key_bindings.remove(&masked_key) {
-            key_binding_free_fields(&mut old);
-        }
-
-        let bd = key_binding {
-            key: masked_key,
-            note: if !note.is_null() {
-                Some(cstr_to_str(note).to_string())
-            } else {
-                None
-            },
-            flags: if repeat { KEY_BINDING_REPEAT } else { 0 },
-            cmdlist,
-        };
-
-        let s = cmd_list_print(&*bd.cmdlist, 0);
-        log_debug!(
-            "{}: {:#x} {} = {}",
-            "key_bindings_add",
-            bd.key,
-            key_string_lookup_key(bd.key, 1),
-            _s(s),
-        );
-        free_(s);
-
-        (*table).key_bindings.insert(masked_key, Box::new(bd));
-    }
-}
-
-pub unsafe fn key_bindings_remove(name: *const u8, key: key_code) {
-    unsafe {
-        let table = key_bindings_get_table(name, false);
-        if table.is_null() {
-            return;
-        }
-
-        let masked_key = key & !KEYC_MASK_FLAGS;
-        if let Some(mut old) = (*table).key_bindings.remove(&masked_key) {
-            log_debug!(
-                "{}: {:#x} {}",
-                "key_bindings_remove",
-                old.key,
-                key_string_lookup_key(old.key, 1),
-            );
-            key_binding_free_fields(&mut old);
-        }
-
-        if (*table).key_bindings.is_empty() && (*table).default_key_bindings.is_empty() {
-            let table_name = (*table).name.clone();
-            if let Some(mut removed) = (*(&raw mut KEY_TABLES)).remove(&table_name) {
-                removed.references -= 1;
-                // name: String dropped automatically
-            }
-        }
-    }
-}
-
-pub unsafe fn key_bindings_reset(name: *const u8, key: key_code) {
-    unsafe {
-        let Some(table) = NonNull::new(key_bindings_get_table(name, false)) else {
-            return;
-        };
-
-        let bd = key_bindings_get(table, key & !KEYC_MASK_FLAGS);
-        if bd.is_null() {
-            return;
-        }
-
-        let dd = key_bindings_get_default(table.as_ptr(), (*bd).key);
-        if dd.is_null() {
-            key_bindings_remove(name, (*bd).key);
-            return;
-        }
-
-        cmd_list_free((*bd).cmdlist);
-        (*bd).cmdlist = (*dd).cmdlist;
-        (*(*bd).cmdlist).references += 1;
-
-        (*bd).note.clone_from(&(*dd).note);
-        (*bd).flags = (*dd).flags;
-    }
-}
-
-pub unsafe fn key_bindings_remove_table(name: *const u8) {
-    unsafe {
-        let key = cstr_to_str(name).to_string();
-        let table_ptr = (*(&raw mut KEY_TABLES))
-            .get_mut(&key)
-            .map_or(null_mut(), |t| &mut **t as *mut key_table);
-        if !table_ptr.is_null() {
-            for c in clients_iter() {
-                if (*c).keytable == table_ptr {
-                    server_client_set_key_table(c, null_mut());
-                }
-            }
-            if let Some(mut removed) = (*(&raw mut KEY_TABLES)).remove(&key) {
-                key_bindings_unref_table(&mut *removed as *mut key_table);
-            }
-        }
-    }
-}
-
-#[expect(dead_code)]
-unsafe fn key_bindings_reset_table(name: *const u8) {
-    unsafe {
-        let table = key_bindings_get_table(name, false);
-        if table.is_null() {
-            return;
-        }
-        if (*table).default_key_bindings.is_empty() {
-            key_bindings_remove_table(name);
-            return;
-        }
-        let keys: Vec<key_code> = (*table).key_bindings.keys().copied().collect();
-        for key in keys {
-            key_bindings_reset(name, key);
-        }
-    }
-}
-
-unsafe fn key_bindings_init_done(_item: *mut cmdq_item, _data: *mut c_void) -> cmd_retval {
-    unsafe {
-        for table in (*(&raw mut KEY_TABLES)).values_mut() {
-            // Copy current bindings to default_key_bindings
-            let copies: Vec<(key_code, key_binding)> = table
-                .key_bindings
-                .iter()
-                .map(|(&key, bd)| {
-                    let new_bd = key_binding {
-                        key: bd.key,
-                        note: bd.note.clone(),
-                        flags: bd.flags,
-                        cmdlist: bd.cmdlist,
-                    };
-                    (*new_bd.cmdlist).references += 1;
-                    (key, new_bd)
-                })
-                .collect();
-            for (key, bd) in copies {
-                table.default_key_bindings.insert(key, Box::new(bd));
-            }
-        }
-    }
-
-    cmd_retval::CMD_RETURN_NORMAL
 }
 
 pub unsafe fn key_bindings_init() {
@@ -656,7 +571,7 @@ pub unsafe fn key_bindings_read_only(item: *mut cmdq_item, _data: *mut c_void) -
 }
 
 pub unsafe fn key_bindings_dispatch(
-    bd: *mut key_binding,
+    bd: &KeyBinding,
     item: *mut cmdq_item,
     c: *mut client,
     event: *mut key_event,
@@ -668,18 +583,18 @@ pub unsafe fn key_bindings_dispatch(
         let readonly = if c.is_null() || !(*c).flags.intersects(client_flag::READONLY) {
             true
         } else {
-            cmd_list_all_have((*bd).cmdlist, cmd_flag::CMD_READONLY)
+            cmd_list_all_have(bd.cmds.as_ptr(), cmd_flag::CMD_READONLY)
         };
 
         let mut new_item;
         if !readonly {
             new_item = cmdq_get_callback!(key_bindings_read_only, null_mut()).as_ptr();
         } else {
-            if (*bd).flags & KEY_BINDING_REPEAT != 0 {
+            if bd.repeat {
                 flags |= cmdq_state_flags::CMDQ_STATE_REPEAT;
             }
             let new_state = cmdq_new_state(fs, event, flags);
-            new_item = cmdq_get_command((*bd).cmdlist, new_state);
+            new_item = cmdq_get_command(bd.cmds.as_ptr(), new_state);
             cmdq_free_state(new_state);
         }
         if !item.is_null() {

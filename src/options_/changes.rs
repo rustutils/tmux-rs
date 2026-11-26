@@ -56,7 +56,7 @@ pub unsafe fn options_push_changes(name: &str) {
 
         if name == "key-table" {
             for loop_ in clients_iter() {
-                server_client_set_key_table(loop_, null_mut());
+                server_client_set_key_table(loop_, None);
             }
         }
 

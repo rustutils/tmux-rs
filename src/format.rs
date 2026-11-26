@@ -1397,7 +1397,7 @@ pub unsafe fn format_cb_client_height(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_client_key_table(ft: &format_tree) -> format_table_type {
     unsafe {
         if !ft.c.is_null() {
-            return (*(*ft.c).keytable).name.to_string().into();
+            return (*ft.c).keytable.name_lossy().into();
         }
         format_table_type::None
     }
@@ -1437,8 +1437,7 @@ pub unsafe fn format_cb_client_pid(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_client_prefix(ft: &format_tree) -> format_table_type {
     unsafe {
         if !ft.c.is_null() {
-            let name = server_client_get_key_table(ft.c);
-            if (*(*ft.c).keytable).name == cstr_to_str(name) {
+            if server_client_is_default_key_table(ft.c, &(*ft.c).keytable) {
                 return "0".into();
             }
             return "1".into();

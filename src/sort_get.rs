@@ -202,55 +202,48 @@ pub unsafe fn sort_get_winlinks_session(s: *mut session, criteria: &SortCriteria
     }
 }
 
-/// A key binding and the table it is in.
-#[derive(Clone, Copy)]
+/// A key binding and the name of the table it is in.
+#[derive(Clone)]
 pub struct TableBinding {
-    /// The key table.
-    pub table: *mut key_table,
-    /// The binding.
-    pub bd: *mut key_binding,
+    /// The name of the key table.
+    pub table: Vec<u8>,
+    /// A copy of the binding.
+    pub bd: KeyBinding,
 }
 
-/// Collects the bindings of tables and sorts them.
-///
-/// # Safety
-/// Every table must be valid.
-unsafe fn sort_bindings(tables: &[*mut key_table], criteria: &SortCriteria) -> Vec<TableBinding> {
-    unsafe {
-        let mut l: Vec<(KeyBindingKey, TableBinding)> = Vec::new();
-        for &table in tables {
-            for bd in key_bindings_entries(table) {
-                let key = KeyBindingKey {
-                    table: (*table).name.clone(),
-                    key: (*bd).key,
-                    modifiers: (*bd).key & KEYC_MASK_MODIFIERS,
-                };
-                l.push((key, TableBinding { table, bd }));
-            }
+/// Collects the bindings of the tables called `tables` and sorts them.
+fn sort_bindings(tables: Vec<Vec<u8>>, criteria: &SortCriteria) -> Vec<TableBinding> {
+    let mut l: Vec<(KeyBindingKey, TableBinding)> = Vec::new();
+    for table in tables {
+        for bd in key_bindings_list(&table) {
+            let key = KeyBindingKey {
+                table: table.clone(),
+                key: bd.key,
+                modifiers: bd.key & KEYC_MASK_MODIFIERS,
+            };
+            l.push((
+                key,
+                TableBinding {
+                    table: table.clone(),
+                    bd,
+                },
+            ));
         }
-        sort_by(&mut l, criteria, |(key, _)| key);
-        l.into_iter().map(|(_, tb)| tb).collect()
     }
+    sort_by(&mut l, criteria, |(key, _)| key);
+    l.into_iter().map(|(_, tb)| tb).collect()
 }
 
 /// The bindings of every table, tables by name and bindings by key unless
 /// sorted otherwise.
-///
-/// # Safety
-/// The key tables must be valid.
-pub unsafe fn sort_get_key_bindings(criteria: &SortCriteria) -> Vec<TableBinding> {
-    unsafe { sort_bindings(&key_tables_entries(), criteria) }
+pub fn sort_get_key_bindings(criteria: &SortCriteria) -> Vec<TableBinding> {
+    sort_bindings(key_bindings_table_names(), criteria)
 }
 
-/// The bindings of one table, by key unless sorted otherwise.
-///
-/// # Safety
-/// `table` must be a valid key table.
-pub unsafe fn sort_get_key_bindings_table(
-    table: *mut key_table,
-    criteria: &SortCriteria,
-) -> Vec<TableBinding> {
-    unsafe { sort_bindings(&[table], criteria) }
+/// The bindings of the table called `table`, by key unless sorted
+/// otherwise.
+pub fn sort_get_key_bindings_table(table: &[u8], criteria: &SortCriteria) -> Vec<TableBinding> {
+    sort_bindings(vec![table.to_vec()], criteria)
 }
 
 /// Sort criteria from a command's -O and -r flags. A name that is not

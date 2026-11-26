@@ -75,7 +75,7 @@ cfg_pub_mods! {
     mod input;
     mod input_keys;
     mod job_;
-    mod key_bindings_;
+    mod key_bindings;
     mod key_string;
     mod layout;
     mod layout_custom;
@@ -181,7 +181,7 @@ use crate::{
     input::*,
     input_keys::*,
     job_::*,
-    key_bindings_::*,
+    key_bindings::*,
     key_string::*,
     layout::*,
     layout_custom::*,
@@ -2458,7 +2458,8 @@ struct client {
     exit_session: Option<String>,
     exit_message: Option<String>,
 
-    keytable: *mut key_table,
+    /// The key table the next key is looked up in.
+    keytable: KeyTableRef,
 
     message_ignore_keys: c_int,
     message_ignore_styles: c_int,
@@ -2494,29 +2495,6 @@ struct client {
 
     files: client_files,
 }
-
-const KEY_BINDING_REPEAT: i32 = 0x1;
-
-/// Key binding.
-struct key_binding {
-    key: key_code,
-    cmdlist: *mut cmd_list,
-    note: Option<String>,
-
-    flags: i32,
-}
-type key_bindings = BTreeMap<key_code, Box<key_binding>>;
-
-/// Key table: a named group of key bindings.
-struct key_table {
-    name: String,
-    activity_time: timeval,
-    key_bindings: key_bindings,
-    default_key_bindings: key_bindings,
-
-    references: u32,
-}
-type key_tables = BTreeMap<String, Box<key_table>>;
 
 // Option table entries, defined in options/store.rs.
 type options_table_entry = options_::OptionTableEntry;

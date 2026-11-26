@@ -132,7 +132,7 @@ pub unsafe fn cmd_attach_session(
 
             server_client_set_session(c, s);
             if !cmdq_get_flags(item).intersects(cmdq_state_flags::CMDQ_STATE_REPEAT) {
-                server_client_set_key_table(c, null_mut());
+                server_client_set_key_table(c, None);
             }
         } else {
             if let Err(cause) = server_client_open(c) {
@@ -158,7 +158,7 @@ pub unsafe fn cmd_attach_session(
             }
 
             server_client_set_session(c, s);
-            server_client_set_key_table(c, null_mut());
+            server_client_set_key_table(c, None);
 
             if !(*c).flags.intersects(client_flag::CONTROL) {
                 proc_send((*c).peer, msgtype::MSG_READY, -1, null_mut(), 0);

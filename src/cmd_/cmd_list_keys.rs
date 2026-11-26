@@ -75,37 +75,33 @@ unsafe fn cmd_list_keys_get_prefix(args: *mut args) -> String {
 
 /// The bindings of the root and prefix tables, for -N without -T. Each
 /// table is sorted on its own.
-///
-/// # Safety
-/// The key tables must be valid.
-unsafe fn cmd_list_keys_get_root_and_prefix(criteria: &SortCriteria) -> Vec<TableBinding> {
-    unsafe {
-        let mut l = Vec::new();
-        for name in [c"prefix", c"root"] {
-            let table = key_bindings_get_table(name.as_ptr().cast(), false);
-            if !table.is_null() {
-                l.extend(sort_get_key_bindings_table(table, criteria));
-            }
-        }
-        l
+fn cmd_list_keys_get_root_and_prefix(criteria: &SortCriteria) -> Vec<TableBinding> {
+    let mut l = Vec::new();
+    for name in [b"prefix".as_slice(), b"root"] {
+        l.extend(sort_get_key_bindings_table(name, criteria));
     }
+    l
 }
 
 /// Adds the variables of one binding to the format tree.
 ///
 /// # Safety
 /// `ft` must be a valid format tree and `tb` a valid binding.
-unsafe fn cmd_list_keys_format_add_key_binding(ft: *mut format_tree, tb: TableBinding, prefix: &str) {
+unsafe fn cmd_list_keys_format_add_key_binding(ft: *mut format_tree, tb: &TableBinding, prefix: &str) {
     unsafe {
-        let bd = tb.bd;
-        let repeat = (*bd).flags & KEY_BINDING_REPEAT != 0;
-        format_add!(ft, "key_repeat", "{}", i32::from(repeat));
-        format_add!(ft, "key_note", "{}", (*bd).note.as_deref().unwrap_or(""));
+        let bd = &tb.bd;
+        format_add!(ft, "key_repeat", "{}", i32::from(bd.repeat));
+        format_add!(
+            ft,
+            "key_note",
+            "{}",
+            String::from_utf8_lossy(bd.note.as_deref().unwrap_or_default())
+        );
         format_add!(ft, "key_prefix", "{prefix}");
-        format_add!(ft, "key_table", "{}", (*tb.table).name);
-        format_add!(ft, "key_string", "{}", key_string_lookup_key((*bd).key, 0));
+        format_add!(ft, "key_table", "{}", String::from_utf8_lossy(&tb.table));
+        format_add!(ft, "key_string", "{}", key_string_lookup_key(bd.key, 0));
 
-        let s = cmd_list_print(&*(*bd).cmdlist, CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS);
+        let s = cmd_list_print(&*bd.cmds.as_ptr(), CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS);
         format_add!(ft, "key_command", "{}", _s(s));
         free_(s);
     }
@@ -141,13 +137,14 @@ unsafe fn cmd_list_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
         };
 
         let tablename = args_get(args, b'T');
-        let mut table: *mut key_table = null_mut();
+        let mut table: Option<&[u8]> = None;
         if !tablename.is_null() {
-            table = key_bindings_get_table(tablename, false);
-            if table.is_null() {
+            let name = CStr::from_ptr(tablename.cast()).to_bytes();
+            if !key_bindings_has_table(name) {
                 cmdq_error!(item, "table {} doesn't exist", _s(tablename));
                 return cmd_retval::CMD_RETURN_ERROR;
             }
+            table = Some(name);
         }
 
         let prefix = cmd_list_keys_get_prefix(args);
@@ -161,7 +158,7 @@ unsafe fn cmd_list_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
             template = default_template.as_ptr().cast();
         }
 
-        let mut l = if !table.is_null() {
+        let mut l = if let Some(table) = table {
             sort_get_key_bindings_table(table, &criteria)
         } else if notes_only {
             cmd_list_keys_get_root_and_prefix(&criteria)
@@ -172,8 +169,8 @@ unsafe fn cmd_list_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
         let filter_notes = notes_only && !args_has(args, 'a');
         let filter_key = only != KEYC_UNKNOWN;
         l.retain(|tb| {
-            let key = (*tb.bd).key & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS);
-            !(filter_key && key != only) && !(filter_notes && (*tb.bd).note.is_none())
+            let key = tb.bd.key & (KEYC_MASK_KEY | KEYC_MASK_MODIFIERS);
+            !(filter_key && key != only) && !(filter_notes && tb.bd.note.is_none())
         });
         if filter_key && l.is_empty() {
             cmdq_error!(item, "unknown key: {}", _s(keystr));
@@ -183,15 +180,15 @@ unsafe fn cmd_list_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
             l.truncate(1);
         }
 
-        let has_repeat = l.iter().any(|tb| (*tb.bd).flags & KEY_BINDING_REPEAT != 0);
+        let has_repeat = l.iter().any(|tb| tb.bd.repeat);
         let key_width = l
             .iter()
-            .map(|tb| utf8_cstrwidth_(key_string_lookup_key((*tb.bd).key, 0).as_bytes()))
+            .map(|tb| utf8_cstrwidth_(key_string_lookup_key(tb.bd.key, 0).as_bytes()))
             .max()
             .unwrap_or(0);
         let table_width = l
             .iter()
-            .map(|tb| utf8_cstrwidth_((*tb.table).name.as_bytes()))
+            .map(|tb| utf8_cstrwidth_(&tb.table))
             .max()
             .unwrap_or(0);
 
@@ -202,7 +199,7 @@ unsafe fn cmd_list_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
         format_add!(ft, "key_string_width", "{key_width}");
         format_add!(ft, "key_table_width", "{table_width}");
         for tb in l {
-            cmd_list_keys_format_add_key_binding(ft, tb, &prefix);
+            cmd_list_keys_format_add_key_binding(ft, &tb, &prefix);
 
             let line = format_expand(ft, template);
             if single && !tc.is_null() && !(*tc).flags.intersects(client_flag::CONTROL) {

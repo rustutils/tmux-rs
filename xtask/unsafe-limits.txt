@@ -52,7 +52,7 @@
 2 src/cmd_/cmd_kill_session.rs
 2 src/cmd_/cmd_kill_window.rs
 2 src/cmd_/cmd_list_clients.rs
-10 src/cmd_/cmd_list_keys.rs
+8 src/cmd_/cmd_list_keys.rs
 8 src/cmd_/cmd_list_panes.rs
 2 src/cmd_/cmd_list_sessions.rs
 2 src/cmd_/cmd_list_windows.rs
@@ -85,7 +85,7 @@
 2 src/cmd_/cmd_switch_client.rs
 2 src/cmd_/cmd_unbind_key.rs
 34 src/cmd_/cmd_wait_for.rs
-59 src/cmd_/mod.rs
+62 src/cmd_/mod.rs
 16 src/cmd_/run.rs
 128 src/cmd_parse.rs
 4 src/colour.rs
@@ -105,7 +105,7 @@
 166 src/input.rs
 17 src/input_keys.rs
 35 src/job_.rs
-32 src/key_bindings_/mod.rs
+10 src/key_bindings/mod.rs
 22 src/key_string.rs
 78 src/layout.rs
 16 src/layout_custom.rs
@@ -133,10 +133,10 @@
 138 src/screen_write.rs
 38 src/server.rs
 19 src/server_acl/mod.rs
-128 src/server_client.rs
+130 src/server_client.rs
 55 src/server_fn.rs
 83 src/session_.rs
-24 src/sort_get.rs
+18 src/sort_get.rs
 8 src/spawn.rs
 56 src/status.rs
 56 src/style_.rs

@@ -50,14 +50,14 @@ unsafe fn cmd_unbind_key_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
                     tablename = c!("prefix");
                 }
             }
-            if key_bindings_get_table(tablename, false).is_null() {
+            if !key_bindings_has_table(CStr::from_ptr(tablename.cast()).to_bytes()) {
                 if !quiet {
                     cmdq_error!(item, "table {} doesn't exist", _s(tablename));
                 }
                 return cmd_retval::CMD_RETURN_ERROR;
             }
 
-            key_bindings_remove_table(tablename);
+            key_bindings_remove_table(CStr::from_ptr(tablename.cast()).to_bytes());
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
@@ -71,14 +71,14 @@ unsafe fn cmd_unbind_key_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
         let key = key_string_lookup_string(keystr);
         if key == KEYC_NONE || key == KEYC_UNKNOWN {
             if !quiet {
-                cmdq_error!(item, "unknown key unbind: {}", _s(keystr));
+                cmdq_error!(item, "unknown key: {}", _s(keystr));
             }
             return cmd_retval::CMD_RETURN_ERROR;
         }
 
         if args_has(args, 'T') {
             tablename = args_get(args, b'T');
-            if key_bindings_get_table(tablename, false).is_null() {
+            if !key_bindings_has_table(CStr::from_ptr(tablename.cast()).to_bytes()) {
                 if !quiet {
                     cmdq_error!(item, "table {} doesn't exist", _s(tablename));
                 }
@@ -89,7 +89,7 @@ unsafe fn cmd_unbind_key_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
         } else {
             tablename = c!("prefix");
         }
-        key_bindings_remove(tablename, key);
+        key_bindings_remove(CStr::from_ptr(tablename.cast()).to_bytes(), key);
         cmd_retval::CMD_RETURN_NORMAL
     }
 }

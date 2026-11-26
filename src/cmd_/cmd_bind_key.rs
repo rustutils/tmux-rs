@@ -40,7 +40,7 @@ unsafe fn cmd_bind_key_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval
 
         let key: key_code = key_string_lookup_string(args_string(args, 0));
         if key == KEYC_NONE || key == KEYC_UNKNOWN {
-            cmdq_error!(item, "unknown key bind: {}", _s(args_string(args, 0)));
+            cmdq_error!(item, "unknown key: {}", _s(args_string(args, 0)));
             return cmd_retval::CMD_RETURN_ERROR;
         }
 
@@ -52,17 +52,22 @@ unsafe fn cmd_bind_key_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval
             c!("prefix")
         };
         let repeat = args_has(args, 'r');
+        let tablename = CStr::from_ptr(tablename.cast()).to_bytes();
+        let note = (!note.is_null()).then(|| CStr::from_ptr(note.cast()).to_bytes());
 
         if count == 1 {
-            key_bindings_add(tablename, key, note, repeat, null_mut());
+            key_bindings_add(tablename, key, note, repeat, None);
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
         if count == 2
             && let Some(args_value::Commands { cmdlist, .. }) = args_value(args, 1)
         {
-            key_bindings_add(tablename, key, note, repeat, *cmdlist);
+            // SAFETY: the argument holds a live list. The reference taken
+            // here goes to the binding.
             (**cmdlist).references += 1;
+            let cmds = CmdList::from_raw(NonNull::new(*cmdlist).expect("parsed commands"));
+            key_bindings_add(tablename, key, note, repeat, Some(cmds));
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
@@ -78,7 +83,10 @@ unsafe fn cmd_bind_key_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval
                 cmd_retval::CMD_RETURN_ERROR
             }
             Ok(cmdlist) => {
-                key_bindings_add(tablename, key, note, repeat, cmdlist);
+                // SAFETY: the parser returns a new list with one reference,
+                // which goes to the binding.
+                let cmds = CmdList::from_raw(NonNull::new(cmdlist).expect("parsed commands"));
+                key_bindings_add(tablename, key, note, repeat, Some(cmds));
                 cmd_retval::CMD_RETURN_NORMAL
             }
         }

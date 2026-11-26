@@ -359,7 +359,7 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
                 }
                 server_client_set_session(c, s);
                 if !cmdq_get_flags(item).intersects(cmdq_state_flags::CMDQ_STATE_REPEAT) {
-                    server_client_set_key_table(c, null_mut());
+                    server_client_set_key_table(c, None);
                 }
             }
 
