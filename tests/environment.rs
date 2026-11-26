@@ -527,3 +527,30 @@ fn environment_names_that_are_not_utf8() {
     let sessions = tmux.cmd().args(["ls", "-F", "#{session_name}"]).run();
     assert_eq!(sessions.stdout_lines(), ["s", "t"]);
 }
+
+/// A `NAME=value` line in a configuration file sets the global environment,
+/// and new panes get the value. The value used to keep the NUL that ends
+/// the parser's token, so the first pane started after it crashed the
+/// server.
+#[test]
+fn config_assignment_reaches_panes() {
+    let tmux = server_with_env(&[]);
+    let mut config = tempfile::NamedTempFile::new().unwrap();
+    std::io::Write::write_all(&mut config, b"CONFVAR=colour208\n%hidden HIDVAR=x\n").unwrap();
+    tmux.cmd()
+        .args(["source-file", &config.path().display().to_string()])
+        .run()
+        .assert_success();
+    assert_eq!(
+        outcome(&tmux.cmd().args(["showenv", "-g", "CONFVAR"]).run()),
+        "CONFVAR=colour208"
+    );
+    assert_eq!(
+        outcome(&tmux.cmd().args(["showenv", "-gh", "HIDVAR"]).run()),
+        "HIDVAR=x"
+    );
+    assert_eq!(
+        pane_output(&tmux, &[], r#"printf '%s|%s\n' "$CONFVAR" "$HIDVAR""#),
+        "colour208|"
+    );
+}

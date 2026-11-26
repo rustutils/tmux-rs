@@ -113,7 +113,12 @@ impl Environ {
 
     /// Sets `name` to `value` with `flags` (`environ_set`).
     pub fn set(&mut self, name: &[u8], value: impl Into<Vec<u8>>, flags: EnvironFlags) {
-        let value = Some(value.into());
+        let value = value.into();
+        debug_assert!(
+            !name.contains(&0) && !value.contains(&0),
+            "environment variable with a NUL byte"
+        );
+        let value = Some(value);
         match self.entries.get_mut(name) {
             Some(entry) => {
                 entry.value = value;

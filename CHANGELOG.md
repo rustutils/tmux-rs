@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- A `NAME=value` line in a configuration file made the server crash when it
+  started the first pane. This came with 0.3.0 and broke configurations and
+  themes that set variables this way.
+
 ## 0.3.0 (2026-11-26)
 
 This release is mostly about correctness. Names that are not UTF-8 no longer

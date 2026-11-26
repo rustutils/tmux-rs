@@ -1141,6 +1141,15 @@ unsafe fn yylex_token_tilde(ps: &mut cmd_parse_state, buf: &mut Vec<u8>) -> bool
     }
 }
 
+/// The bytes of a token from the lexer, without the NUL that ends it.
+/// Tokens are kept NUL terminated for the C-shaped code that reads them as
+/// strings. Code that takes bytes must not see the NUL: a `NAME=value`
+/// line put `value\0` into the environment, and starting a pane panicked.
+pub(crate) fn token_bytes(token: &[u8]) -> &[u8] {
+    debug_assert_eq!(token.last(), Some(&0), "token without its NUL");
+    token.strip_suffix(&[0]).unwrap_or(token)
+}
+
 unsafe fn yylex_token(ps: &mut cmd_parse_state, mut ch: i32) -> Option<Vec<u8>> {
     unsafe {
         #[derive(Copy, Clone, Eq, PartialEq)]
