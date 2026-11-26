@@ -296,6 +296,7 @@ impl TmuxTestHarness {
             bin: self.bin.clone().unwrap_or_else(server_bin),
             extra_args: Vec::new(),
             env_vars: Vec::new(),
+            env_removed: Vec::new(),
             stdin_data: None,
         }
     }
@@ -307,6 +308,7 @@ impl TmuxTestHarness {
             bin: self.bin.clone().unwrap_or_else(client_bin),
             extra_args: Vec::new(),
             env_vars: Vec::new(),
+            env_removed: Vec::new(),
             stdin_data: None,
         }
     }
@@ -371,7 +373,8 @@ pub struct TmuxCommandBuilder<'a> {
     harness: &'a TmuxTestHarness,
     bin: PathBuf,
     extra_args: Vec<std::ffi::OsString>,
-    env_vars: Vec<(String, String)>,
+    env_vars: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+    env_removed: Vec<std::ffi::OsString>,
     stdin_data: Option<String>,
 }
 
@@ -385,8 +388,20 @@ impl<'a> TmuxCommandBuilder<'a> {
         self
     }
 
-    pub fn env(mut self, key: &str, val: &str) -> Self {
-        self.env_vars.push((key.to_string(), val.to_string()));
+    /// Sets a variable in the environment of this command. Names and
+    /// values are OS strings, so a test can pass bytes that are not UTF-8.
+    pub fn env(
+        mut self,
+        key: impl Into<std::ffi::OsString>,
+        val: impl Into<std::ffi::OsString>,
+    ) -> Self {
+        self.env_vars.push((key.into(), val.into()));
+        self
+    }
+
+    /// Removes a variable from the environment of this command.
+    pub fn env_remove(mut self, key: impl Into<std::ffi::OsString>) -> Self {
+        self.env_removed.push(key.into());
         self
     }
 
@@ -435,6 +450,9 @@ impl<'a> TmuxCommandBuilder<'a> {
 
         for (k, v) in &self.env_vars {
             cmd.env(k, v);
+        }
+        for k in &self.env_removed {
+            cmd.env_remove(k);
         }
 
         if let Some(ref data) = self.stdin_data {
