@@ -94,7 +94,7 @@
 8 src/environ/mod.rs
 36 src/events/mod.rs
 60 src/file.rs
-441 src/format.rs
+443 src/format.rs
 28 src/format_draw_.rs
 22 src/hook_monitor.rs
 12 src/hooks.rs
@@ -109,7 +109,7 @@
 78 src/layout.rs
 16 src/layout_custom.rs
 26 src/layout_set.rs
-58 src/lib.rs
+60 src/lib.rs
 82 src/libc.rs
 11 src/main.rs
 24 src/menu_.rs
@@ -134,7 +134,7 @@
 19 src/server_acl/mod.rs
 130 src/server_client.rs
 55 src/server_fn.rs
-78 src/session_.rs
+76 src/session_.rs
 18 src/sort_get.rs
 8 src/spawn.rs
 56 src/status.rs

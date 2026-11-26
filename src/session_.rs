@@ -314,29 +314,6 @@ pub unsafe fn session_destroy(s: *mut session, notify: i32, from: *const u8) {
     }
 }
 
-/// Sanitize session name.
-pub unsafe fn session_check_name(name: *const u8) -> Option<String> {
-    unsafe {
-        if *name == b'\0' {
-            return None;
-        }
-        let copy = xstrdup(name).as_ptr();
-        let mut cp = copy;
-        while *cp != b'\0' {
-            if *cp == b':' || *cp == b'.' {
-                *cp = b'_';
-            }
-            cp = cp.add(1);
-        }
-        let new_name = utf8_stravis_(
-            CStr::from_ptr(copy.cast()).to_bytes(),
-            vis_flags::VIS_OCTAL | vis_flags::VIS_CSTYLE | vis_flags::VIS_TAB | vis_flags::VIS_NL,
-        );
-        free_(copy);
-        Some(String::from_utf8(new_name).unwrap())
-    }
-}
-
 /// Update activity time.
 pub unsafe fn session_update_activity(s: *mut session, from: *mut timeval) {
     unsafe {

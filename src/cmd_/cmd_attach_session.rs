@@ -180,7 +180,7 @@ unsafe fn cmd_attach_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
 
         cmd_attach_session(
             item,
-            cstr_to_str_(args_get(args, b't')),
+            cstr_to_target(args_get(args, b't')).as_deref(),
             args_has(args, 'd'),
             args_has(args, 'x'),
             args_has(args, 'r'),

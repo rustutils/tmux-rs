@@ -19,6 +19,10 @@
 - Killing a session's last window fires `session-closed` before
   `window-unlinked`, as in 3.8.
 - `swap-window` keeps the marked pane marked.
+- Session names are checked as in 3.8: `:` and `.` are kept and an empty
+  name is allowed, while names with control characters (a tab included)
+  or bytes that are not UTF-8 are refused with `invalid session name`, and
+  such group names with `invalid session group name`.
 
 ### Fixes
 
@@ -36,6 +40,10 @@
   as tmux does.
 - `new-session -t` with a group name that is not a session no longer
   crashes the server.
+- A session or group name that is not UTF-8 no longer crashes the server.
+- A target (`-t` or `-s`) that is not UTF-8 is reported as not found. It
+  used to act on the current session, so `kill-session -t` with such a
+  name killed a session.
 - `#{window_stack_index}` is 0 for a window that is not on the last window
   stack, instead of the size of the stack.
 - A window waits to be resized until it is the current window of an

@@ -239,7 +239,6 @@ fn new_group_by_name() {
 
 /// 3.8 keeps ':' and '.' in session names and allows an empty name.
 #[test]
-#[ignore = "session names not checked as in 3.8, run 17 task 5"]
 fn session_names_keep_colon_and_dot() {
     let tmux = server();
     run(&tmux, &["new-session", "-d", "-s", "x:y.z", "sleep 1000"]);
@@ -257,7 +256,6 @@ fn session_names_keep_colon_and_dot() {
 /// rejected. tmux-rs accepted control characters and crashed on the
 /// rest.
 #[test]
-#[ignore = "session names not checked as in 3.8, run 17 task 5"]
 fn bad_session_names_are_rejected() {
     use std::os::unix::ffi::OsStrExt;
     let tmux = server();
@@ -316,6 +314,27 @@ fn bad_session_names_are_rejected() {
         );
     }
     assert_eq!(session_names(&tmux), ["[a|]"]);
+}
+
+/// A target that is not UTF-8 names nothing. tmux-rs took it as no
+/// target and killed the current session.
+#[test]
+fn target_that_is_not_utf8_finds_nothing() {
+    use std::os::unix::ffi::OsStrExt;
+    let tmux = server();
+    run(&tmux, &["new-session", "-d", "-s", "b", "sleep 1000"]);
+    let target = std::ffi::OsStr::from_bytes(b"x\xff").to_os_string();
+    let r = tmux
+        .cmd()
+        .args(["kill-session".into(), "-t".into(), target])
+        .run();
+    r.assert_failure();
+    assert!(
+        r.stderr_str().starts_with("can't find session: "),
+        "{}",
+        r.stderr_str()
+    );
+    assert_eq!(session_names(&tmux), ["[a|]", "[b|]"]);
 }
 
 /// `window_stack_index` is a window's place on the last window stack, 0

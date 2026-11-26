@@ -15,7 +15,8 @@
 //! Checking and cleaning user supplied names, from tmux.c in 3.8.
 //!
 //! tmux 3.8 runs buffer, session and window names, pane titles and paths
-//! through these before storing them. So far only paste buffers use them.
+//! through these before storing them. So far paste buffer and session
+//! names use them.
 #![forbid(unsafe_code)]
 
 use tmux_utf8::utf8_is_valid;

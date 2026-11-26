@@ -63,7 +63,7 @@ unsafe fn cmd_move_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             if cmd_find_target(
                 &raw mut target,
                 item,
-                cstr_to_str_(tflag),
+                cstr_to_target(tflag).as_deref(),
                 cmd_find_type::CMD_FIND_SESSION,
                 cmd_find_flags::CMD_FIND_QUIET,
             ) != 0
@@ -81,7 +81,7 @@ unsafe fn cmd_move_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
         if cmd_find_target(
             &raw mut target,
             item,
-            cstr_to_str_(tflag),
+            cstr_to_target(tflag).as_deref(),
             cmd_find_type::CMD_FIND_WINDOW,
             cmd_find_flags::CMD_FIND_WINDOW_INDEX,
         ) != 0

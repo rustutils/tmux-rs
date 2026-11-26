@@ -40,7 +40,7 @@ unsafe fn cmd_switch_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         // A target with a window or pane part, or the mouse target "=",
         // selects a pane, so a click on the status line picks a window.
         if !tflag.is_null()
-            && (*tflag.add(strcspn(tflag, c!(":.%"))) != b'\0' || cstr_to_str_(tflag) == Some("="))
+            && (*tflag.add(strcspn(tflag, c!(":.%"))) != b'\0' || cstr_to_target(tflag).as_deref() == Some("="))
         {
             type_ = cmd_find_type::CMD_FIND_PANE;
             flags = cmd_find_flags::empty();
@@ -48,7 +48,7 @@ unsafe fn cmd_switch_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             type_ = cmd_find_type::CMD_FIND_SESSION;
             flags = cmd_find_flags::CMD_FIND_PREFER_UNATTACHED;
         }
-        if cmd_find_target(&raw mut target, item, cstr_to_str_(tflag), type_, flags) != 0 {
+        if cmd_find_target(&raw mut target, item, cstr_to_target(tflag).as_deref(), type_, flags) != 0 {
             return cmd_retval::CMD_RETURN_ERROR;
         }
         let mut s = target.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());

@@ -522,7 +522,7 @@ pub unsafe fn cmdq_find_flag(
         }
 
         let value = args_get(cmd_get_args((*item).cmd), (*flag).flag);
-        if cmd_find_target(fs, item, cstr_to_str_(value), (*flag).type_, (*flag).flags) != 0 {
+        if cmd_find_target(fs, item, cstr_to_target(value).as_deref(), (*flag).type_, (*flag).flags) != 0 {
             cmd_find_clear_state(fs, cmd_find_flags::empty());
             return cmd_retval::CMD_RETURN_ERROR;
         }

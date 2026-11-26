@@ -5334,10 +5334,28 @@ pub unsafe fn format_single(
     wp: *mut window_pane,
 ) -> *mut u8 {
     unsafe {
-        let ft = format_create_defaults(item, c, s, wl, wp);
         let fmt = CString::new(fmt).unwrap(); // TODO shim to not have to rewrite
                                                        // format_expand now, remove later
-        let expanded: *mut u8 = format_expand(ft, fmt.as_ptr().cast());
+        format_single_bytes(item, fmt.as_ptr().cast(), c, s, wl, wp)
+    }
+}
+
+/// Expand a single string given as a C string, which may hold bytes that
+/// are not UTF-8 (names from clients). They are expanded as they are.
+///
+/// # Safety
+/// `fmt` must be a valid C string, the others null or valid.
+pub unsafe fn format_single_bytes(
+    item: *mut cmdq_item,
+    fmt: *const u8,
+    c: *mut client,
+    s: *mut session,
+    wl: Option<WinlinkId>,
+    wp: *mut window_pane,
+) -> *mut u8 {
+    unsafe {
+        let ft = format_create_defaults(item, c, s, wl, wp);
+        let expanded: *mut u8 = format_expand(ft, fmt);
         format_free(ft);
         expanded
     }
@@ -5357,8 +5375,15 @@ pub unsafe fn format_single_from_state(
 pub unsafe fn format_single_from_target(item: *mut cmdq_item, fmt: *const u8) -> *mut u8 {
     unsafe {
         let tc = cmdq_get_target_client(item);
-
-        format_single_from_state(item, cstr_to_str(fmt), tc, cmdq_get_target(item))
+        let fs = cmdq_get_target(item);
+        format_single_bytes(
+            item,
+            fmt,
+            tc,
+            (*fs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()),
+            (*fs).wl,
+            (*fs).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()),
+        )
     }
 }
 

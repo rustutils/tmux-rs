@@ -2729,6 +2729,22 @@ pub(crate) unsafe fn cstr_to_bytes<'a>(ptr: *const u8) -> Option<&'a [u8]> {
     Some(unsafe { std::ffi::CStr::from_ptr(ptr.cast()) }.to_bytes())
 }
 
+/// A target argument (`-t` or `-s`) as a string for `cmd_find`. Bytes that
+/// are not UTF-8 are replaced, so the target names nothing and the lookup
+/// fails as it does in C. Treating it as missing would pick the current
+/// session instead.
+///
+/// # Safety
+/// `ptr` must be null or a valid C string.
+pub(crate) unsafe fn cstr_to_target(ptr: *const u8) -> Option<String> {
+    unsafe {
+        if ptr.is_null() {
+            return None;
+        }
+        Some(CStr::from_ptr(ptr.cast()).to_string_lossy().into_owned())
+    }
+}
+
 pub(crate) unsafe fn cstr_to_str_<'a>(ptr: *const u8) -> Option<&'a str> {
     unsafe {
         if ptr.is_null() {

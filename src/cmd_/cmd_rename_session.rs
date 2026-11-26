@@ -13,6 +13,7 @@
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 use crate::*;
+use crate::clean_name::clean_name;
 
 pub static CMD_RENAME_SESSION_ENTRY: cmd_entry = cmd_entry {
     name: "rename-session",
@@ -39,8 +40,9 @@ unsafe fn cmd_rename_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         let s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
 
         let tmp = format_single_from_target(item, args_string(args, 0));
-        let Some(newname) = session_check_name(tmp) else {
-            cmdq_error!(item, "invalid session: {}", _s(tmp));
+        let bytes = CStr::from_ptr(tmp.cast()).to_bytes();
+        let Some(newname) = clean_name(bytes, false) else {
+            cmdq_error!(item, "invalid session name: {}", String::from_utf8_lossy(bytes));
             free_(tmp);
             return cmd_retval::CMD_RETURN_ERROR;
         };

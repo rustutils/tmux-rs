@@ -13,6 +13,7 @@
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 use crate::libc::{sscanf, tcgetattr};
 use crate::*;
+use crate::clean_name::clean_name;
 use crate::options_::*;
 
 const NEW_SESSION_TEMPLATE: *const u8 = c!("#{session_name}:");
@@ -102,10 +103,11 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             let mut newname = None;
             tmp = args_get_(args, 's');
             if !tmp.is_null() {
-                name = format_single(item, cstr_to_str(tmp), c, null_mut(), None, null_mut());
-                newname = session_check_name(name);
+                name = format_single_bytes(item, tmp, c, null_mut(), None, null_mut());
+                let bytes = CStr::from_ptr(name.cast()).to_bytes();
+                newname = clean_name(bytes, false);
                 if newname.is_none() {
-                    cmdq_error!(item, "invalid session: {}", _s(name));
+                    cmdq_error!(item, "invalid session name: {}", String::from_utf8_lossy(bytes));
                     free_(name);
                     return cmd_retval::CMD_RETURN_ERROR;
                 }
@@ -141,9 +143,14 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             group = args_get_(args, 't');
             if !group.is_null() {
                 groupwith = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+                // Group names are checked names, so one that is not UTF-8
+                // finds no group.
+                let group_bytes = CStr::from_ptr(group.cast()).to_bytes();
                 sg = if groupwith.is_null() {
-                    let name = cstr_to_str(group);
-                    session_group_find(name).then(|| name.to_string())
+                    std::str::from_utf8(group_bytes)
+                        .ok()
+                        .filter(|name| session_group_find(name))
+                        .map(str::to_string)
                 } else {
                     session_group_contains(groupwith)
                 };
@@ -152,13 +159,15 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
                 } else if !groupwith.is_null() {
                     prefix = xstrdup__(&(*groupwith).name);
                 } else {
-                    prefix = session_check_name(group)
-                        .map(|s| CString::new(s).unwrap().into_raw().cast())
-                        .unwrap_or_default();
-                    if prefix.is_null() {
-                        cmdq_error!(item, "invalid session group: {}", _s(group));
+                    let Some(cleaned) = clean_name(group_bytes, false) else {
+                        cmdq_error!(
+                            item,
+                            "invalid session group name: {}",
+                            String::from_utf8_lossy(group_bytes)
+                        );
                         break 'fail;
-                    }
+                    };
+                    prefix = xstrdup__(&cleaned);
                 }
             }
 
