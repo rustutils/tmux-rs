@@ -21,8 +21,8 @@ pub static CMD_RUN_SHELL_ENTRY: cmd_entry = cmd_entry {
     name: "run-shell",
     alias: Some("run"),
 
-    args: args_parse::new("bd:Ct:c:", 0, 2, Some(cmd_run_shell_args_parse)),
-    usage: "[-bC] [-c start-directory] [-d delay] [-t target-pane] [shell-command]",
+    args: args_parse::new("bd:Ct:Ec:", 0, 2, Some(cmd_run_shell_args_parse)),
+    usage: "[-bCE] [-c start-directory] [-d delay] [-t target-pane] [shell-command]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -146,6 +146,9 @@ pub unsafe fn cmd_run_shell_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         } else {
             (*cdata).client = if tc.is_null() { None } else { Some((*tc).id) };
             (*cdata).flags |= job_flag::JOB_NOWAIT;
+        }
+        if args_has(args, 'E') {
+            (*cdata).flags |= job_flag::JOB_SHOWSTDERR;
         }
         if let Some(c) = (*cdata).client.and_then(|id| client_from_id(id)) {
             (*c).references += 1;

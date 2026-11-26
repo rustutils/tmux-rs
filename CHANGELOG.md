@@ -12,6 +12,7 @@
 - `run-shell`, `if-shell` and `#()` leave `SHELL` as the environment has
   it. Only popups set it to `default-shell`.
 - `show-messages -J` lists the newest job first.
+- `run-shell -E` shows the command's standard error as well.
 
 ### Fixes
 

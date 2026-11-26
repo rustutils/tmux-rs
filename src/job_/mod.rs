@@ -208,21 +208,31 @@ pub unsafe fn job_run(
                         if dup2(out[1], STDOUT_FILENO) == -1 {
                             libc::_exit(1);
                         }
-                        if out[1] != STDIN_FILENO && out[1] != STDOUT_FILENO {
+
+                        if flags.intersects(job_flag::JOB_SHOWSTDERR) {
+                            if dup2(out[1], STDERR_FILENO) == -1 {
+                                libc::_exit(1);
+                            }
+                        } else {
+                            nullfd = open(_PATH_DEVNULL, O_RDWR, 0);
+                            if nullfd == -1 {
+                                libc::_exit(1);
+                            }
+                            if dup2(nullfd, STDERR_FILENO) == -1 {
+                                libc::_exit(1);
+                            }
+                            if nullfd != STDERR_FILENO {
+                                close(nullfd);
+                            }
+                        }
+                        let show_stderr = flags.intersects(job_flag::JOB_SHOWSTDERR);
+                        if out[1] != STDIN_FILENO
+                            && out[1] != STDOUT_FILENO
+                            && !(show_stderr && out[1] == STDERR_FILENO)
+                        {
                             close(out[1]);
                         }
                         close(out[0]);
-
-                        nullfd = open(_PATH_DEVNULL, O_RDWR, 0);
-                        if nullfd == -1 {
-                            libc::_exit(1);
-                        }
-                        if dup2(nullfd, STDERR_FILENO) == -1 {
-                            libc::_exit(1);
-                        }
-                        if nullfd != STDERR_FILENO {
-                            close(nullfd);
-                        }
                     }
                     closefrom(STDERR_FILENO + 1);
 

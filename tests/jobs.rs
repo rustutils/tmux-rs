@@ -57,7 +57,6 @@ fn run_shell_shell_and_directory() {
 
 /// run-shell -E shows the command's standard error too.
 #[test]
-#[ignore = "run-shell -E is not ported, run 16 task 4"]
 fn run_shell_shows_stderr_with_dash_e() {
     let tmux = server();
     assert_eq!(out(&tmux, &["run-shell", "echo out; echo err >&2"]), "out");
