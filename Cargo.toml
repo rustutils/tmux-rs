@@ -227,4 +227,5 @@ wildcard_imports                    = "allow" # too many, c style codebase, even
 
 [dev-dependencies]
 nix = { version = "0.31.2", features = ["term"] }
+proptest = "1.11.0"
 tempfile = "3.27.0"

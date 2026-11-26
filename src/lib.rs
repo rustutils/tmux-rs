@@ -104,6 +104,7 @@ cfg_pub_mods! {
     mod server_client;
     mod server_fn;
     mod session_;
+    mod links;
     mod sort;
     mod wait_channel;
     mod sort_get;
@@ -1280,7 +1281,7 @@ type windows = BTreeMap<u32, *mut window>;
 
 bitflags::bitflags! {
     #[repr(transparent)]
-    #[derive(Copy, Clone, Eq, PartialEq)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     struct winlink_flags: i32 {
         const WINLINK_BELL = 0x1;
         const WINLINK_ACTIVITY = 0x2;
