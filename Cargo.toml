@@ -18,7 +18,7 @@ description  = "A Rust port of tmux"
 autotests = false
 
 [workspace.package]
-version    = "0.2.0"
+version    = "0.3.0"
 authors    = ["Collin Richards <richardscollin@gatech.edu>", "Patrick Elsen"]
 license    = "ISC"
 repository = "https://gitlab.com/rustutils/tmux-rs"
