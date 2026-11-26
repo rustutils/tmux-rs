@@ -534,7 +534,7 @@ fn repeating_bindings() {
 
 /// Key table names need not be UTF-8.
 #[test]
-#[ignore = "table names that are not UTF-8 panic, run 15 task 2"]
+#[ignore = "table names that are not UTF-8 panic, run 15 task 3"]
 fn key_table_names_that_are_not_utf8() {
     use std::os::unix::ffi::OsStrExt;
     let name = std::ffi::OsStr::from_bytes(b"x\xff");

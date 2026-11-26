@@ -105,7 +105,7 @@
 166 src/input.rs
 17 src/input_keys.rs
 35 src/job_.rs
-32 src/key_bindings_.rs
+32 src/key_bindings_/mod.rs
 22 src/key_string.rs
 78 src/layout.rs
 16 src/layout_custom.rs
