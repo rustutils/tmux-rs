@@ -11,6 +11,7 @@ pub mod harness;
 mod hook_monitors;
 mod hooks;
 mod input_keys;
+mod jobs;
 mod key_bindings;
 mod layout;
 mod messages;

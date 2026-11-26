@@ -171,3 +171,84 @@ fn user_hooks_show_in_show_hooks() {
     let all = run(&tmux, &["show-options", "-gH"]).stdout_lines();
     assert!(all.iter().any(|l| l.starts_with("@mine")), "{all:?}");
 }
+
+/// A signal before anyone waits is kept for the next waiter, and only
+/// for one.
+#[test]
+fn signal_before_wait_is_kept_once() {
+    let tmux = server();
+    run(&tmux, &["wait-for", "-S", "c"]).assert_success();
+    run(&tmux, &["wait-for", "c"]).assert_success();
+    std::thread::scope(|scope| {
+        let waiter = scope.spawn(|| run(&tmux, &["wait-for", "c"]));
+        waiters(&tmux, &["wait-for", "-l", "c"], 1);
+        run(&tmux, &["wait-for", "-S", "c"]).assert_success();
+        waiter.join().unwrap().assert_success();
+    });
+}
+
+/// One signal lets every waiter run on.
+#[test]
+fn signal_wakes_all_waiters() {
+    let tmux = server();
+    std::thread::scope(|scope| {
+        let a = scope.spawn(|| run(&tmux, &["wait-for", "c"]));
+        let b = scope.spawn(|| run(&tmux, &["wait-for", "c"]));
+        waiters(&tmux, &["wait-for", "-l", "c"], 2);
+        run(&tmux, &["wait-for", "-S", "c"]).assert_success();
+        a.join().unwrap().assert_success();
+        b.join().unwrap().assert_success();
+        waiters(&tmux, &["wait-for", "-l", "c"], 0);
+    });
+}
+
+/// A locked channel queues the next locker until it is unlocked, which
+/// hands the lock over. Unlocking a free channel is an error.
+#[test]
+fn lock_and_unlock() {
+    let tmux = server();
+    run(&tmux, &["wait-for", "-L", "c"]).assert_success();
+    std::thread::scope(|scope| {
+        let locker = scope.spawn(|| run(&tmux, &["wait-for", "-L", "c"]));
+        waiters(&tmux, &["wait-for", "-l", "c"], 1);
+        run(&tmux, &["wait-for", "-U", "c"]).assert_success();
+        locker.join().unwrap().assert_success();
+    });
+    // The second locker holds it now.
+    run(&tmux, &["wait-for", "-U", "c"]).assert_success();
+    let r = run(&tmux, &["wait-for", "-U", "c"]);
+    r.assert_failure();
+    assert_eq!(r.stderr_str().trim(), "channel c not locked");
+    let r = run(&tmux, &["wait-for", "-U", "never"]);
+    assert_eq!(r.stderr_str().trim(), "channel never not locked");
+}
+
+/// -w lets a queued locker run on without the lock, which stays with its
+/// holder.
+#[test]
+fn wake_a_locker() {
+    let tmux = server();
+    run(&tmux, &["wait-for", "-L", "c"]).assert_success();
+    std::thread::scope(|scope| {
+        let locker = scope.spawn(|| run(&tmux, &["wait-for", "-L", "c"]));
+        let names = waiters(&tmux, &["wait-for", "-l", "c"], 1);
+        run(&tmux, &["wait-for", "-w", &names[0], "c"]).assert_success();
+        locker.join().unwrap().assert_success();
+    });
+    run(&tmux, &["wait-for", "-U", "c"]).assert_success();
+    run(&tmux, &["wait-for", "-U", "c"]).assert_failure();
+}
+
+/// Channel names need not be UTF-8.
+#[test]
+#[ignore = "channel names that are not UTF-8 panic, run 16 task 2"]
+fn channel_names_that_are_not_utf8() {
+    use std::os::unix::ffi::OsStrExt;
+    let name = std::ffi::OsStr::from_bytes(b"c\xff");
+    let tmux = server();
+    let cmd = |flag: &str| tmux.cmd().args(["wait-for", flag]).args([name]).run();
+    cmd("-S").assert_success();
+    cmd("-L").assert_success();
+    cmd("-U").assert_success();
+    run(&tmux, &["display", "-p", "ok"]).assert_success();
+}
