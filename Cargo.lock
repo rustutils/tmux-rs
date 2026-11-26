@@ -754,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "tmux-compat"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitflags",
  "libc",
@@ -762,7 +762,7 @@ dependencies = [
 
 [[package]]
 name = "tmux-event"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "calloop",
  "libc",
@@ -774,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "tmux-grid"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitflags",
  "libc",
@@ -785,7 +785,7 @@ dependencies = [
 
 [[package]]
 name = "tmux-log"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "log",
@@ -795,21 +795,21 @@ dependencies = [
 
 [[package]]
 name = "tmux-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "tmux-regsub"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "tmux-rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bitflags",
  "calloop",
@@ -836,11 +836,11 @@ dependencies = [
 
 [[package]]
 name = "tmux-types"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "tmux-utf8"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libc",
  "log",
@@ -1169,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "syn",

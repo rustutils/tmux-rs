@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-26)
 
 This release brings the command prompt up to tmux 3.8. Prompts are drawn
 through the new `message-format` option and show the terminal cursor, which
