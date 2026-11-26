@@ -502,7 +502,6 @@ fn formats_look_up_the_environment() {
 /// A client whose environment has a variable name that is not UTF-8 works,
 /// both for the client that starts the server and for a later one.
 #[test]
-#[ignore = "show-environment prints names as lossy UTF-8, run 14 task 4"]
 fn environment_names_that_are_not_utf8() {
     use std::os::unix::ffi::OsStrExt;
     let name = std::ffi::OsStr::from_bytes(b"BAD\xffNAME");

@@ -127,7 +127,7 @@ impl session {
             std::ptr::write(&raw mut s.lastw, Vec::new());
             std::ptr::write(&raw mut s.windows, BTreeMap::new());
 
-            std::ptr::write(&raw mut s.environ, Box::new(env));
+            std::ptr::write(&raw mut s.environ, Rc::new(env));
             s.options = oo;
 
             status_update_cache(s.as_mut());

@@ -95,10 +95,6 @@ pub unsafe fn strchr(cs: *const u8, c: i32) -> *mut u8 {
     unsafe { ::libc::strchr(cs.cast(), c).cast() }
 }
 
-pub unsafe fn strchr_(cs: *const u8, c: char) -> *mut u8 {
-    unsafe { ::libc::strchr(cs.cast(), c as i32).cast() }
-}
-
 pub unsafe fn strstr(cs: *const u8, ct: *const u8) -> *mut u8 {
     unsafe { ::libc::strstr(cs.cast(), ct.cast()).cast() }
 }

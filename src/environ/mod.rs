@@ -26,11 +26,6 @@ use crate::global::with_global_environ;
 use crate::options_::*;
 use crate::*;
 
-/// A copy of the global environment.
-pub fn global_environ() -> Environ {
-    with_global_environ(|env| env.clone())
-}
-
 /// The value of `name` in the global environment, None when it is missing
 /// or removed.
 pub fn global_environ_value(name: &[u8]) -> Option<Vec<u8>> {
@@ -47,14 +42,10 @@ pub fn global_environ_put(var: &[u8], flags: EnvironFlags) {
     with_global_environ(|env| env.put(var, flags));
 }
 
-/// Marks `name` as removed in the global environment.
-pub fn global_environ_clear(name: &[u8]) {
-    with_global_environ(|env| env.clear(name));
-}
-
-/// Deletes `name` from the global environment.
-pub fn global_environ_unset(name: &[u8]) {
-    with_global_environ(|env| env.unset(name));
+/// Changes the global environment with `f`, which must not reach it
+/// again (see the bridge rules in src/global.rs).
+pub fn global_environ_change(f: impl FnOnce(&mut Environ)) {
+    with_global_environ(f);
 }
 
 /// Applies the update-environment option of `oo` to `dst`, with the

@@ -1671,7 +1671,9 @@ struct session {
 
     tio: Option<Box<termios>>,
 
-    environ: Box<Environ>,
+    /// Shared, so a command can take a snapshot cheaply. Changed with
+    /// `Rc::make_mut`.
+    environ: Rc<Environ>,
 
     references: i32,
 }

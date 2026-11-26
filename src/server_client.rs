@@ -3706,7 +3706,11 @@ pub unsafe fn server_client_print(c: *mut client, parse: i32, evb: *mut evbuffer
                 } else if (*c).flags.intersects(client_flag::CONTROL) {
                     control_write!(c, "{}", _s(msg));
                 } else {
-                    file_print!(c, "{}\n", _s(msg));
+                    // The bytes as they are, which need not be UTF-8
+                    // (show-environment prints names and values as they are).
+                    let mut line = CStr::from_ptr(msg.cast()).to_bytes().to_vec();
+                    line.push(b'\n');
+                    file_print_buffer(c, line.as_mut_ptr().cast(), line.len());
                 }
                 break 'out;
             }

@@ -5,6 +5,8 @@
 ### Compatibility with tmux 3.8
 
 - New panes and jobs get `COLORTERM=truecolor` with `TERM`, as in 3.8.
+- The `set-environment` and `show-environment` usage says `variable`, as
+  in 3.8.
 
 ### Fixes
 
@@ -12,7 +14,8 @@
   new panes and jobs when the server process itself had it. They now get
   exactly the environment tmux builds, as in tmux.
 - A variable name that is not UTF-8 in the environment no longer crashes
-  the client or the server.
+  the client or the server, and `show-environment` prints names and
+  values as they are instead of replacing bytes that are not UTF-8.
 
 ## 0.2.0 (2026-11-26)
 

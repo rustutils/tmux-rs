@@ -11,14 +11,22 @@
 // WHATSOEVER RESULTING FROM LOSS OF MIND, USE, DATA OR PROFITS, WHETHER
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-use crate::*;
+//! set-environment, converted to run in a [`CmdCtx`].
+
+#![forbid(unsafe_code)]
+
+use crate::cmd_::context::{CmdCtx, CmdFlow, CmdResult, EnvironChange};
+use crate::{
+    CmdExec, SessionId, args_parse, cmd_entry, cmd_entry_flag, cmd_find_flags, cmd_find_type,
+    cmd_flag,
+};
 
 pub static CMD_SET_ENVIRONMENT_ENTRY: cmd_entry = cmd_entry {
     name: "set-environment",
     alias: Some("setenv"),
 
     args: args_parse::new("Fhgrt:u", 1, 2, None),
-    usage: "[-Fhgru] [-t target-session] name [value]",
+    usage: "[-Fhgru] [-t target-session] variable [value]",
 
     target: cmd_entry_flag::new(
         b't',
@@ -27,102 +35,139 @@ pub static CMD_SET_ENVIRONMENT_ENTRY: cmd_entry = cmd_entry {
     ),
 
     flags: cmd_flag::CMD_AFTERHOOK,
-    exec: CmdExec::Old(cmd_set_environment_exec),
+    exec: CmdExec::Ctx(cmd_set_environment_exec),
     source: cmd_entry_flag::zeroed(),
 };
 
-unsafe fn cmd_set_environment_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval {
-    unsafe {
-        let args = cmd_get_args(self_);
-        let target = cmdq_get_target(item);
-        // None for the global environment.
-        let env: Option<*mut Environ>;
-        let name = args_string(args, 0);
-        let mut value: *const u8;
-        let tflag;
-        let mut expanded = null_mut();
-        let mut retval = cmd_retval::CMD_RETURN_NORMAL;
+/// Errors of set-environment and show-environment, with C's messages.
+#[derive(Debug, thiserror::Error)]
+pub enum EnvironError {
+    #[error("empty variable name")]
+    EmptyName,
+    #[error("variable name contains =")]
+    NameHasEquals,
+    #[error("can't specify a value with -{0}")]
+    ValueWith(char),
+    #[error("no value specified")]
+    NoValue,
+    /// -t names no session.
+    #[error("no such session: {0}")]
+    NoSuchSession(String),
+    #[error("no current session")]
+    NoCurrentSession,
+    #[error("unknown variable: {0}")]
+    UnknownVariable(String),
+}
 
-        'out: {
-            if *name == b'\0' {
-                cmdq_error!(item, "empty variable name");
-                return cmd_retval::CMD_RETURN_ERROR;
-            }
-            if !strchr_(name, '=').is_null() {
-                cmdq_error!(item, "variable name contains =");
-                return cmd_retval::CMD_RETURN_ERROR;
-            }
+/// The session whose environment a command changes or shows: None with
+/// -g for the global environment, otherwise the target session.
+pub fn environ_session(ctx: &CmdCtx<'_>) -> Result<Option<SessionId>, EnvironError> {
+    if ctx.args().has('g') {
+        return Ok(None);
+    }
+    match (ctx.target_session(), ctx.args().get('t')) {
+        (Some(s), _) => Ok(Some(s.id)),
+        (None, Some(t)) => Err(EnvironError::NoSuchSession(
+            String::from_utf8_lossy(t).into_owned(),
+        )),
+        (None, None) => Err(EnvironError::NoCurrentSession),
+    }
+}
 
-            if args_count(args) < 2 {
-                value = null_mut();
-            } else {
-                value = args_string(args, 1);
-            }
-            if !value.is_null() && args_has(args, 'F') {
-                expanded = format_single_from_target(item, value);
-                value = expanded;
-            }
-            if args_has(args, 'g') {
-                env = None;
-            } else {
-                if (*target).s.is_none() {
-                    tflag = args_get_(args, 't');
-                    if !tflag.is_null() {
-                        cmdq_error!(item, "no such session: {}", _s(tflag));
-                    } else {
-                        cmdq_error!(item, "no current session");
-                    }
-                    retval = cmd_retval::CMD_RETURN_ERROR;
-                    break 'out;
-                }
-                env = Some(&raw mut *(*(*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut())).environ);
-            }
+/// set-environment: set, remove (-r) or delete (-u) a variable of the
+/// global (-g) or the target session's environment.
+fn cmd_set_environment_exec(ctx: &mut CmdCtx<'_>) -> CmdResult {
+    let args = ctx.args();
+    let name = args.string(0).unwrap_or_default().to_vec();
+    if name.is_empty() {
+        return Err(EnvironError::EmptyName.into());
+    }
+    if name.contains(&b'=') {
+        return Err(EnvironError::NameHasEquals.into());
+    }
+    let value = args.string(1);
+    let session = environ_session(ctx)?;
 
-            if args_has(args, 'u') {
-                if !value.is_null() {
-                    cmdq_error!(item, "can't specify a value with -u");
-                    retval = cmd_retval::CMD_RETURN_ERROR;
-                    break 'out;
-                }
-                let name = std::ffi::CStr::from_ptr(name.cast()).to_bytes();
-                match env {
-                    Some(env) => (*env).unset(name),
-                    None => global_environ_unset(name),
-                }
-            } else if args_has(args, 'r') {
-                if !value.is_null() {
-                    cmdq_error!(item, "can't specify a value with -r");
-                    retval = cmd_retval::CMD_RETURN_ERROR;
-                    break 'out;
-                }
-                let name = std::ffi::CStr::from_ptr(name.cast()).to_bytes();
-                match env {
-                    Some(env) => (*env).clear(name),
-                    None => global_environ_clear(name),
-                }
-            } else {
-                if value.is_null() {
-                    cmdq_error!(item, "no value specified");
-                    retval = cmd_retval::CMD_RETURN_ERROR;
-                    break 'out;
-                }
-
-                let flags = if args_has(args, 'h') {
-                    EnvironFlags::HIDDEN
-                } else {
-                    EnvironFlags::empty()
-                };
-                let name = std::ffi::CStr::from_ptr(name.cast()).to_bytes();
-                let value = std::ffi::CStr::from_ptr(value.cast()).to_bytes();
-                match env {
-                    Some(env) => (*env).set(name, value, flags),
-                    None => global_environ_set(name, value, flags),
-                }
-            }
+    let change = if args.has('u') {
+        if value.is_some() {
+            return Err(EnvironError::ValueWith('u').into());
         }
+        EnvironChange::Unset { name }
+    } else if args.has('r') {
+        if value.is_some() {
+            return Err(EnvironError::ValueWith('r').into());
+        }
+        EnvironChange::Clear { name }
+    } else {
+        let value = value.ok_or(EnvironError::NoValue)?;
+        EnvironChange::Set {
+            name,
+            value: value.to_vec(),
+            format: args.has('F'),
+            hidden: args.has('h'),
+        }
+    };
+    ctx.change_environ(session, change);
+    Ok(CmdFlow::Done)
+}
 
-        // out:
-        free_(expanded);
-        retval
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use super::*;
+    use crate::cmd_::context::testing::{args, ctx, parts};
+    use crate::cmd_::context::{CmdEffect, SessionInfo};
+    use crate::environ::Environ;
+
+    fn session_parts() -> crate::cmd_::context::CmdCtxParts {
+        let mut p = parts();
+        p.target_session = Some(SessionInfo {
+            id: SessionId(3),
+            environ: Rc::new(Environ::new()),
+        });
+        p
+    }
+
+    fn run(
+        flags: &[(char, Option<&str>)],
+        values: &[&str],
+        p: crate::cmd_::context::CmdCtxParts,
+    ) -> Result<(Option<SessionId>, EnvironChange), String> {
+        let a = args(flags, values);
+        let mut c = ctx(&a, p);
+        cmd_set_environment_exec(&mut c).map_err(|e| e.to_string())?;
+        match c.take_effects().pop() {
+            Some(CmdEffect::Environ { session, change }) => Ok((session, change)),
+            _ => panic!("no change recorded"),
+        }
+    }
+
+    #[test]
+    fn errors() {
+        let err = |flags: &[(char, Option<&str>)], values: &[&str], p| run(flags, values, p).err().unwrap();
+        assert_eq!(err(&[], &["", "x"], session_parts()), "empty variable name");
+        assert_eq!(err(&[], &["A=B", "x"], session_parts()), "variable name contains =");
+        assert_eq!(err(&[('u', None)], &["A", "x"], session_parts()), "can't specify a value with -u");
+        assert_eq!(err(&[('r', None)], &["A", "x"], session_parts()), "can't specify a value with -r");
+        assert_eq!(err(&[], &["A"], session_parts()), "no value specified");
+        assert_eq!(err(&[], &["A", "x"], parts()), "no current session");
+        assert_eq!(err(&[('t', Some("nosuch"))], &["A", "x"], parts()), "no such session: nosuch");
+    }
+
+    #[test]
+    fn changes() {
+        let (s, change) = run(&[('h', None), ('F', None)], &["A", "#{x}"], session_parts()).unwrap();
+        assert_eq!(s, Some(SessionId(3)));
+        assert!(matches!(
+            change,
+            EnvironChange::Set { name, value, format: true, hidden: true }
+                if name == b"A" && value == b"#{x}"
+        ));
+        let (s, change) = run(&[('g', None), ('u', None)], &["A"], parts()).unwrap();
+        assert_eq!(s, None);
+        assert!(matches!(change, EnvironChange::Unset { name } if name == b"A"));
+        let (_, change) = run(&[('r', None)], &["A"], session_parts()).unwrap();
+        assert!(matches!(change, EnvironChange::Clear { name } if name == b"A"));
     }
 }

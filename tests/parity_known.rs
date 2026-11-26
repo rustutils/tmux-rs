@@ -201,8 +201,6 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("differs:run-shell", "Track 3: new command flags"),
     ("differs:send-keys", "Track 3: new command flags"),
     ("differs:send-prefix", "Track 3: new command flags"),
-    ("differs:set-environment", "Track 3: new command flags"),
-    ("differs:show-environment", "Track 3: new command flags"),
     ("differs:split-window", "Track 3: new command flags"),
     ("differs:swap-pane", "Track 3: new command flags"),
     ("missing:new-pane", "Track 3: floating panes"),

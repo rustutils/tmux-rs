@@ -76,9 +76,7 @@
 2 src/cmd_/cmd_select_window.rs
 6 src/cmd_/cmd_send_keys.rs
 4 src/cmd_/cmd_server_access.rs
-2 src/cmd_/cmd_set_environment.rs
 12 src/cmd_/cmd_set_option.rs
-4 src/cmd_/cmd_show_environment.rs
 4 src/cmd_/cmd_show_messages.rs
 8 src/cmd_/cmd_show_options.rs
 12 src/cmd_/cmd_source_file.rs
@@ -89,7 +87,7 @@
 2 src/cmd_/cmd_unbind_key.rs
 34 src/cmd_/cmd_wait_for.rs
 59 src/cmd_/mod.rs
-14 src/cmd_/run.rs
+16 src/cmd_/run.rs
 128 src/cmd_parse.rs
 4 src/colour.rs
 2 src/compat/getopt.rs
@@ -114,7 +112,7 @@
 16 src/layout_custom.rs
 26 src/layout_set.rs
 58 src/lib.rs
-84 src/libc.rs
+82 src/libc.rs
 11 src/main.rs
 24 src/menu_.rs
 2 src/message_log/mod.rs

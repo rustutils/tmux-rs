@@ -22,7 +22,7 @@
 
 use crate::cmd_::context::{
     ClientInfo, CmdArgs, CmdCtx, CmdCtxParts, CmdEffect, CmdFlow, CmdResult,
-    FileError, FilePath, FileThen, FormatSubject, PaneInfo,
+    EnvironChange, FileError, FilePath, FileThen, FormatSubject, PaneInfo, SessionInfo,
 };
 use crate::libc::{O_APPEND, O_TRUNC, strerror};
 use crate::paste::{buffer_limit, now, paste_notify};
@@ -91,6 +91,13 @@ unsafe fn cmd_ctx_parts(item: *mut cmdq_item) -> CmdCtxParts {
             client: client_info(cmdq_get_client(item)),
             target_client: client_info(cmdq_get_target_client(item)),
             target_pane: (*target).wp.and_then(pane_info),
+            target_session: (*target).s.and_then(|id| {
+                let s = session_from_id(id)?;
+                Some(SessionInfo {
+                    id,
+                    environ: Rc::clone(&(*s).environ),
+                })
+            }),
             now: now(),
             buffer_limit: buffer_limit(),
         }
@@ -183,6 +190,59 @@ unsafe fn cmd_apply_effects(item: *mut cmdq_item, effects: Vec<CmdEffect>) {
                     if let Some(wp) = pane_from_id(pane) {
                         window_pane_write_to_pty(wp, data.as_ptr().cast(), data.len());
                     }
+                }
+                CmdEffect::Environ { session, change } => cmd_change_environ(item, session, change),
+            }
+        }
+    }
+}
+
+/// Changes the global environment (`session` None) or a session's,
+/// expanding a -F value for the item's target first.
+///
+/// # Safety
+/// `item` must be a valid queue item.
+unsafe fn cmd_change_environ(item: *mut cmdq_item, session: Option<SessionId>, change: EnvironChange) {
+    unsafe {
+        let change = match change {
+            EnvironChange::Set {
+                name,
+                value,
+                format: true,
+                hidden,
+            } => {
+                let template = CString::new(value).unwrap_or_default();
+                let expanded = format_single_from_target(item, template.as_ptr().cast());
+                let value = CStr::from_ptr(expanded.cast()).to_bytes().to_vec();
+                free_(expanded);
+                EnvironChange::Set {
+                    name,
+                    value,
+                    format: false,
+                    hidden,
+                }
+            }
+            other => other,
+        };
+        let apply = |env: &mut Environ| match change {
+            EnvironChange::Set {
+                name, value, hidden, ..
+            } => {
+                let flags = if hidden {
+                    EnvironFlags::HIDDEN
+                } else {
+                    EnvironFlags::empty()
+                };
+                env.set(&name, value, flags);
+            }
+            EnvironChange::Clear { name } => env.clear(&name),
+            EnvironChange::Unset { name } => env.unset(&name),
+        };
+        match session {
+            None => global_environ_change(apply),
+            Some(id) => {
+                if let Some(s) = session_from_id(id) {
+                    apply(Rc::make_mut(&mut (*s).environ));
                 }
             }
         }

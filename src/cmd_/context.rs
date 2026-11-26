@@ -16,7 +16,8 @@
 //! A converted command is a safe function, [`CmdExecFn`], that takes a
 //! [`CmdCtx`] and returns a [`CmdResult`]. The context gives it its
 //! arguments ([`CmdArgs`]), its client and targets as plain values
-//! ([`ClientInfo`], [`PaneInfo`]) and the paste buffers ([`PasteAccess`]).
+//! ([`ClientInfo`], [`PaneInfo`], [`SessionInfo`]), the paste buffers
+//! ([`PasteAccess`]) and a copy of the global environment.
 //!
 //! Everything a command wants done to unconverted parts of tmux (printing,
 //! writing to a pane, setting a client's clipboard, raising notifications
@@ -35,12 +36,13 @@
 
 use std::rc::Rc;
 
-use crate::global::{with_paste, with_prompt_history};
+use crate::environ::Environ;
+use crate::global::{with_global_environ, with_paste, with_prompt_history};
 use crate::paste::{PasteBuffer, PasteError, PasteEvent};
 use crate::prompt_history::PromptType;
 use crate::sort::SortCriteria;
 use crate::sort_get::sort_buffers;
-use crate::{ClientId, PaneId, args, args_value};
+use crate::{ClientId, PaneId, SessionId, args, args_value};
 
 /// What a converted command returns.
 pub type CmdResult = Result<CmdFlow, Box<dyn std::error::Error>>;
@@ -112,6 +114,28 @@ pub enum CmdEffect {
     SetSelection { client: ClientId, data: Rc<[u8]> },
     /// Write bytes to a pane's program.
     WritePane { pane: PaneId, data: Vec<u8> },
+    /// Change a variable of the global environment (`session` None) or
+    /// of a session's.
+    Environ {
+        session: Option<SessionId>,
+        change: EnvironChange,
+    },
+}
+
+/// A change to one environment variable.
+pub enum EnvironChange {
+    /// Set `name`. With `format` the value is a format, expanded for the
+    /// command's target first (set-environment -F).
+    Set {
+        name: Vec<u8>,
+        value: Vec<u8>,
+        format: bool,
+        hidden: bool,
+    },
+    /// Mark `name` as removed (-r).
+    Clear { name: Vec<u8> },
+    /// Delete `name` (-u).
+    Unset { name: Vec<u8> },
 }
 
 /// What a format is expanded for, which decides the format variables.
@@ -140,6 +164,14 @@ pub struct PaneInfo {
     pub input_off: bool,
     /// Whether its program asked for bracketed paste.
     pub bracket_paste: bool,
+}
+
+/// A session, as a command sees it.
+#[derive(Clone, Debug)]
+pub struct SessionInfo {
+    pub id: SessionId,
+    /// Its environment, shared with the session until either changes.
+    pub environ: Rc<Environ>,
 }
 
 /// A command's parsed arguments.
@@ -198,6 +230,7 @@ pub struct CmdCtx<'a> {
     client: Option<ClientInfo>,
     target_client: Option<ClientInfo>,
     target_pane: Option<PaneInfo>,
+    target_session: Option<SessionInfo>,
     now: i64,
     buffer_limit: u32,
     effects: Vec<CmdEffect>,
@@ -211,6 +244,8 @@ pub struct CmdCtxParts {
     pub target_client: Option<ClientInfo>,
     /// The pane of the command's target.
     pub target_pane: Option<PaneInfo>,
+    /// The session of the command's target.
+    pub target_session: Option<SessionInfo>,
     /// Seconds since the epoch.
     pub now: i64,
     /// The buffer-limit option.
@@ -224,6 +259,7 @@ impl<'a> CmdCtx<'a> {
             client: parts.client,
             target_client: parts.target_client,
             target_pane: parts.target_pane,
+            target_session: parts.target_session,
             now: parts.now,
             buffer_limit: parts.buffer_limit,
             effects: Vec::new(),
@@ -288,6 +324,22 @@ impl<'a> CmdCtx<'a> {
     /// The prompt history.
     pub fn prompt_history(&self) -> PromptHistoryAccess {
         PromptHistoryAccess
+    }
+
+    /// The session of the command's target, if it has one.
+    pub fn target_session(&self) -> Option<&SessionInfo> {
+        self.target_session.as_ref()
+    }
+
+    /// A copy of the global environment.
+    pub fn global_environ(&self) -> Environ {
+        with_global_environ(|env| env.clone())
+    }
+
+    /// Changes a variable of the global environment (`session` None) or
+    /// of a session's environment, once the command returns.
+    pub fn change_environ(&mut self, session: Option<SessionId>, change: EnvironChange) {
+        self.effects.push(CmdEffect::Environ { session, change });
     }
 
     /// Takes the recorded effects, oldest first.
@@ -409,6 +461,7 @@ pub(crate) mod testing {
             client: None,
             target_client: None,
             target_pane: None,
+            target_session: None,
             now: 1000,
             buffer_limit: 50,
         }
