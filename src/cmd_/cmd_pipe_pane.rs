@@ -102,7 +102,7 @@ pub unsafe fn cmd_pipe_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             FORMAT_NONE,
             format_flags::empty(),
         );
-        format_defaults(ft, tc, NonNull::new(s), NonNull::new(wl), NonNull::new(wp));
+        format_defaults(ft, tc, NonNull::new(s), wl, NonNull::new(wp));
         let cmd = format_expand_time(ft, args_string(args, 0));
         format_free(ft);
 

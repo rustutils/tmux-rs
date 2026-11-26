@@ -188,6 +188,7 @@ use crate::{
     layout::*,
     layout_custom::*,
     layout_set::*,
+    links::{LinkEvent, Winlink, WinlinkId},
     menu_::*,
     message_log::*,
     mode_tree::*,
@@ -1043,7 +1044,7 @@ struct window_mode {
             NonNull<window_mode_entry>,
             *mut client,
             *mut session,
-            *mut winlink,
+            Option<WinlinkId>,
             key_code,
             *mut mouse_event,
         ),
@@ -1055,7 +1056,7 @@ struct window_mode {
             NonNull<window_mode_entry>,
             *mut client,
             *mut session,
-            *mut winlink,
+            Option<WinlinkId>,
             *mut args,
             *mut mouse_event,
         ),
@@ -1274,8 +1275,6 @@ struct window {
     options: *mut options,
 
     references: u32,
-    /// All winlinks pointing to this window across all sessions.
-    winlinks: Vec<*mut winlink>,
 }
 type windows = BTreeMap<u32, *mut window>;
 
@@ -1293,22 +1292,8 @@ const WINLINK_ALERTFLAGS: winlink_flags = winlink_flags::WINLINK_BELL
     .union(winlink_flags::WINLINK_ACTIVITY)
     .union(winlink_flags::WINLINK_SILENCE);
 
-/// A link between a session and a window. Each session has a `BTreeMap` of
-/// winlinks keyed by index. Windows track all their winlinks via a Vec,
-/// and sessions track a most-recently-used stack of winlinks.
-
-#[derive(Copy, Clone)]
-struct winlink {
-    idx: i32,
-    session: Option<SessionId>,
-    window: Option<WindowId>,
-
-    flags: winlink_flags,
-}
-
-type winlinks = BTreeMap<i32, *mut winlink>;
-/// Most-recently-used stack of winlinks in a session. Head = most recent.
-type winlink_stack = Vec<*mut winlink>;
+// A winlink (a window in a session at an index) is links::Winlink, kept in
+// the Links store and named by WinlinkId.
 
 /// Window size option.
 #[repr(i32)]
@@ -1617,13 +1602,6 @@ mod layout_arena_tests {
     }
 }
 
-/// Client session.
-struct session_group {
-    name: Cow<'static, str>,
-    sessions: Vec<*mut session>,
-}
-type session_groups = BTreeMap<String, Box<session_group>>;
-
 const SESSION_ALERTED: i32 = 0x2;
 
 /// Unique session identifier, wrapping the existing tmux session `id` field.
@@ -1657,10 +1635,6 @@ struct session {
     activity_time: timeval,
 
     lock_timer: Option<TimerHandle>,
-
-    curw: *mut winlink,
-    lastw: winlink_stack,
-    windows: winlinks,
 
     statusat: i32,
     statuslines: u32,
@@ -2053,7 +2027,7 @@ struct cmd_find_state {
     current: *mut cmd_find_state,
 
     s: Option<SessionId>,
-    wl: *mut winlink,
+    wl: Option<WinlinkId>,
     w: Option<WindowId>,
     wp: Option<PaneId>,
     idx: i32,
@@ -2531,7 +2505,7 @@ struct spawn_context {
     item: *mut cmdq_item,
 
     s: Option<SessionId>,
-    wl: *mut winlink,
+    wl: Option<WinlinkId>,
     tc: *mut client,
 
     wp0: Option<PaneId>,

@@ -26,7 +26,7 @@ use crate::options_::*;
 pub unsafe fn spawn_log(from: &str, sc: *mut spawn_context) {
     unsafe {
         let s = (*sc).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-        let wl = (*sc).wl;
+        let wl = (*sc).wl.and_then(winlink_get);
         let wp0 = pane_ptr_from_id((*sc).wp0);
         let name = cmdq_get_name((*sc).item);
         type tmp_type = [u8; 128];
@@ -34,20 +34,20 @@ pub unsafe fn spawn_log(from: &str, sc: *mut spawn_context) {
 
         log_debug!("{}: {}, flags={:#x}", from, _s(name), (*sc).flags);
 
-        if !wl.is_null() && !wp0.is_null() {
+        if let (Some(wl), false) = (wl, wp0.is_null()) {
             _ = xsnprintf_!(
                 tmp.as_mut_ptr().cast(),
                 size_of::<tmp_type>(),
                 "wl={} wp0=%{}",
-                (*wl).idx,
+                wl.idx,
                 (*wp0).id,
             );
-        } else if !wl.is_null() {
+        } else if let Some(wl) = wl {
             _ = xsnprintf_!(
                 tmp.as_mut_ptr().cast(),
                 size_of::<tmp_type>(),
                 "wl={} wp0=none",
-                (*wl).idx,
+                wl.idx,
             );
         } else if !wp0.is_null() {
             _ = xsnprintf_!(
@@ -82,7 +82,7 @@ pub unsafe fn spawn_log(from: &str, sc: *mut spawn_context) {
     }
 }
 
-pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, String> {
+pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<WinlinkId, String> {
     unsafe {
         let item = (*sc).item;
         let c = cmdq_get_client(item);
@@ -94,7 +94,7 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
         // If the window already exists, we are respawning, so destroy all the
         // panes except one.
         if (*sc).flags.intersects(spawn_flags::SPAWN_RESPAWN) {
-            w = (*(*sc).wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
+            w = winlink_window(winlink_of((*sc).wl));
             if !(*sc).flags.intersects(SPAWN_KILL) {
                 // Check if any pane is still alive (fd != -1).
                 // In the C code, TAILQ_FOREACH left wp as NULL if no
@@ -105,7 +105,7 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
                     .copied()
                     .any(|p| (*p).fd != -1);
                 if alive {
-                    return Err(format!("window {}:{} still active", (*s).name, (*(*sc).wl).idx));
+                    return Err(format!("window {}:{} still active", (*s).name, winlink_of((*sc).wl).idx));
                 }
             }
 
@@ -127,20 +127,21 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
         // Otherwise we have no window so we will need to create one. First
         // check if the given index already exists and destroy it if so.
         if !(*sc).flags.intersects(SPAWN_RESPAWN) && idx != -1 {
-            let wl = winlink_find_by_index(&raw mut (*s).windows, idx);
-            if !wl.is_null() && !(*sc).flags.intersects(SPAWN_KILL) {
+            let wl = winlink_find_by_index((*s).sid(), idx);
+            if wl.is_some() && !(*sc).flags.intersects(SPAWN_KILL) {
                 return Err(format!("index {idx} in use"));
             }
-            if !wl.is_null() {
+            if let Some(wl) = wl {
                 // Can't use session_detach as it will destroy session
                 // if this makes it empty.
-                (*wl).flags &= !WINLINK_ALERTFLAGS;
-                events_fire_winlink("window-unlinked", wl);
-                winlink_stack_remove(&raw mut (*s).lastw, wl);
-                winlink_remove(&raw mut (*s).windows, wl);
+                winlink_remove_flags(wl.id, WINLINK_ALERTFLAGS);
+                events_fire_winlink("window-unlinked", winlink_of(Some(wl.id)));
+                let was_current = (*s).curw_id() == Some(wl.id);
+                // This also takes it off the stack and leaves the session
+                // without a current window if it was that one.
+                winlink_remove(wl.id);
 
-                if (*s).curw == wl {
-                    (*s).curw = null_mut();
+                if was_current {
                     (*sc).flags &= !SPAWN_DETACHED;
                 }
             }
@@ -151,10 +152,11 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
             if idx == -1 {
                 idx = -1 - options_get_number_((*s).options, "base-index") as i32;
             }
-            (*sc).wl = winlink_add(&raw mut (*s).windows, idx);
-            if (*sc).wl.is_null() {
+            // The index is taken when the window exists (C adds the
+            // winlink first and sets its window after).
+            let Some(idx) = winlink_free_index((*s).sid(), idx) else {
                 return Err(format!("couldn't add window {idx}"));
-            }
+            };
             let mut sx = 0u32;
             let mut sy = 0u32;
             let mut xpixel = 0u32;
@@ -171,15 +173,14 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
             );
             w = window_create(sx, sy, xpixel, ypixel);
             if w.is_null() {
-                winlink_remove(&raw mut (*s).windows, (*sc).wl);
                 return Err(format!("couldn't create window {idx}"));
             }
-            if (*s).curw.is_null() {
-                (*s).curw = (*sc).wl;
-            }
-            (*(*sc).wl).session = Some(SessionId((*s).id));
             (*w).latest = (*sc).tc.cast();
-            winlink_set_window((*sc).wl, w);
+            let wl = winlink_add((*s).sid(), idx, w).expect("free index");
+            (*sc).wl = Some(wl.id);
+            if (*s).curw().is_none() {
+                session_set_curw_only((*s).sid(), Some(wl.id));
+            }
         } else {
             w = null_mut();
         }
@@ -187,8 +188,10 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
 
         // Spawn the pane.
         if let Err(e) = spawn_pane(sc) {
-            if !(*sc).flags.intersects(SPAWN_RESPAWN) {
-                winlink_remove(&raw mut (*s).windows, (*sc).wl);
+            if !(*sc).flags.intersects(SPAWN_RESPAWN)
+                && let Some(wl) = (*sc).wl
+            {
+                winlink_remove(wl);
             }
             return Err(e);
         }
@@ -196,7 +199,7 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
         // Set the name of the new window.
         if !(*sc).flags.intersects(SPAWN_RESPAWN) {
             if !(*sc).name.is_null() {
-                let p = format_single(item, cstr_to_str((*sc).name), c, s, null_mut(), null_mut());
+                let p = format_single(item, cstr_to_str((*sc).name), c, s, None, null_mut());
                 (*w).name = Some(
                     std::ffi::CStr::from_ptr(p.cast())
                         .to_string_lossy()
@@ -211,17 +214,17 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
 
         // Switch to the new window if required.
         if !(*sc).flags.intersects(SPAWN_DETACHED) {
-            session_select(s, (*(*sc).wl).idx);
+            session_select(s, winlink_of((*sc).wl).idx);
         }
 
         // Fire notification if new window.
         if !(*sc).flags.intersects(SPAWN_RESPAWN) {
             events_fire_window("window-created", w);
-            events_fire_winlink("window-linked", (*sc).wl);
+            events_fire_winlink("window-linked", winlink_of((*sc).wl));
         }
 
         session_group_synchronize_from(s);
-        Ok(NonNull::new((*sc).wl).unwrap())
+        Ok((*sc).wl.expect("winlink"))
     }
 }
 
@@ -233,7 +236,7 @@ pub unsafe fn spawn_window(sc: *mut spawn_context) -> Result<NonNull<winlink>, S
 /// pane in a valid window.
 unsafe fn spawn_fire_pane_created(sc: *mut spawn_context, wp: *mut window_pane) {
     unsafe {
-        let wl = (*sc).wl;
+        let wl = winlink_of((*sc).wl);
         let mut fs: cmd_find_state = zeroed();
         cmd_find_from_winlink_pane(&raw mut fs, wl, wp, cmd_find_flags::empty());
         let mut payload = crate::events::Payload::new();
@@ -244,7 +247,7 @@ unsafe fn spawn_fire_pane_created(sc: *mut spawn_context, wp: *mut window_pane) 
         if let Some(w) = (*wp).window.and_then(|id| window_from_id(id)) {
             payload.set("window", crate::events::payload_window(w));
         }
-        payload.set_int("window_index", (*wl).idx);
+        payload.set_int("window_index", wl.idx);
         payload.set("pane", crate::events::payload_pane(wp));
 
         let cmd = if (*wp).argc != 0 {
@@ -272,7 +275,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
         let target = cmdq_get_target(item);
         let c = cmdq_get_client(item);
         let s = (*sc).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-        let w = (*(*sc).wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
+        let w = winlink_window(winlink_of((*sc).wl));
         let new_wp: *mut window_pane;
         let mut child: Environ;
         let argv: *mut *mut u8;
@@ -296,7 +299,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
 
             let target_s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
             if !(*sc).cwd.is_null() {
-                cwd = format_single(item, cstr_to_str((*sc).cwd), c, target_s, null_mut(), null_mut());
+                cwd = format_single(item, cstr_to_str((*sc).cwd), c, target_s, None, null_mut());
                 if *cwd != b'/' {
                     let base = server_client_get_cwd(c, target_s);
                     new_cwd = format_nul!("{}/{}", base.display(), _s(cwd));
@@ -320,7 +323,7 @@ pub unsafe fn spawn_pane(sc: *mut spawn_context) -> Result<NonNull<window_pane>,
                     let msg = format!(
                         "pane {}:{}.{} still active",
                         (*s).name,
-                        (*(*sc).wl).idx,
+                        winlink_of((*sc).wl).idx,
                         idx
                     );
                     free_(cwd);

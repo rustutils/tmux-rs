@@ -65,20 +65,20 @@ unsafe fn cmd_kill_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
                 cmdq_error!(item, "window only linked to one session");
                 return cmd_retval::CMD_RETURN_ERROR;
             }
-            server_unlink_window(s, wl);
+            server_unlink_window(s, wl.expect("winlink"));
             recalculate_sizes();
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
         if args_has(args, 'a') {
-            if (*(&raw mut (*s).windows)).len() <= 1 {
+            if (winlink_count((*s).sid()) as usize) <= 1 {
                 return cmd_retval::CMD_RETURN_NORMAL;
             }
 
             // Kill all windows except the current one.
             loop {
                 found = 0;
-                for &loop_ in (*(&raw mut (*s).windows)).values() {
+                for loop_ in (*s).windows() {
                     if winlink_window(loop_) != winlink_window(wl) {
                         server_kill_window(winlink_window(loop_), 0);
                         found += 1;
@@ -94,7 +94,7 @@ unsafe fn cmd_kill_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             // If the current window appears in the session more than once,
             // kill it as well.
             found = 0;
-            for &loop_ in (*(&raw mut (*s).windows)).values() {
+            for loop_ in (*s).windows() {
                 if winlink_window(loop_) == winlink_window(wl) {
                     found += 1;
                 }

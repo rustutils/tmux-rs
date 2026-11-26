@@ -161,24 +161,27 @@ unsafe fn hooks_monitor_tick(id: u32) {
 /// `hooks_monitor_cb`.
 unsafe fn hooks_monitor_report(id: u32, s: *mut session, change: &MonitorChange) {
     unsafe {
-        let mut wl: *mut winlink = null_mut();
+        let mut wl: Option<Winlink> = None;
         let mut wp: *mut window_pane = null_mut();
         match change.key {
             MonitorKey::Session => {}
             MonitorKey::Pane { pane, index } => {
                 wp = window_pane_find_by_id(pane);
-                wl = winlink_find_by_index(&raw mut (*s).windows, index);
+                wl = winlink_find_by_index((*s).sid(), index);
             }
             MonitorKey::Window { index, .. } => {
-                wl = winlink_find_by_index(&raw mut (*s).windows, index);
+                wl = winlink_find_by_index((*s).sid(), index);
             }
         }
 
         let mut fs: cmd_find_state = zeroed();
         cmd_find_clear_state(&raw mut fs, cmd_find_flags::empty());
-        if !wl.is_null() && !wp.is_null() && winlink_window(wl) == window_pane_window(wp) {
+        if let Some(wl) = wl
+            && !wp.is_null()
+            && winlink_window(wl) == window_pane_window(wp)
+        {
             cmd_find_from_winlink_pane(&raw mut fs, wl, wp, cmd_find_flags::empty());
-        } else if !wl.is_null() {
+        } else if let Some(wl) = wl {
             cmd_find_from_winlink(&raw mut fs, wl, cmd_find_flags::empty());
         } else if !wp.is_null() {
             cmd_find_from_pane(&raw mut fs, wp, cmd_find_flags::empty());
@@ -192,13 +195,13 @@ unsafe fn hooks_monitor_report(id: u32, s: *mut session, change: &MonitorChange)
         payload.set_string("value", change.value.as_str());
         payload.set_string("last", change.last.as_deref().unwrap_or(""));
         payload.set("session", payload_session(s));
-        if !wl.is_null() {
+        if let Some(wl) = wl {
             payload.set("window", payload_window(winlink_window(wl)));
-            payload.set_int("window_index", (*wl).idx);
+            payload.set_int("window_index", wl.idx);
         }
         if !wp.is_null() {
             payload.set("pane", payload_pane(wp));
-            if wl.is_null() {
+            if wl.is_none() {
                 payload.set("window", payload_window(window_pane_window(wp)));
             }
         }

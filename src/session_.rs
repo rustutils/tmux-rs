@@ -16,6 +16,7 @@ use std::time::Duration;
 use crate::*;
 use crate::sort::SortCriteria;
 use crate::options_::*;
+use crate::global::with_links;
 
 pub static mut SESSIONS: sessions = BTreeMap::new();
 
@@ -25,8 +26,6 @@ pub static mut SESSIONS: sessions = BTreeMap::new();
 pub static mut SESSION_REGISTRY: BTreeMap<SessionId, Box<session>> = BTreeMap::new();
 
 pub static NEXT_SESSION_ID: AtomicU32 = AtomicU32::new(0);
-
-pub static mut SESSION_GROUPS: session_groups = BTreeMap::new();
 
 /// Iterate over all **alive** sessions as `*mut session` pointers.
 ///
@@ -99,6 +98,35 @@ pub unsafe fn session_find_by_id(id: u32) -> Option<NonNull<session>> {
 }
 
 impl session {
+    /// The session's ID.
+    pub fn sid(&self) -> SessionId {
+        SessionId(self.id)
+    }
+
+    /// The current winlink. None only while the session is built or
+    /// destroyed.
+    pub fn curw(&self) -> Option<Winlink> {
+        let sid = self.sid();
+        with_links(|l| l.current(sid))
+    }
+
+    /// The ID of the current winlink.
+    pub fn curw_id(&self) -> Option<WinlinkId> {
+        self.curw().map(|wl| wl.id)
+    }
+
+    /// The winlinks in index order.
+    pub fn windows(&self) -> Vec<Winlink> {
+        let sid = self.sid();
+        with_links(|l| l.windows(sid))
+    }
+
+    /// The last window stack, most recent first.
+    pub fn lastw(&self) -> Vec<Winlink> {
+        let sid = self.sid();
+        with_links(|l| l.last_stack(sid))
+    }
+
     unsafe fn create(
         prefix: *const u8,
         name: Option<&str>,
@@ -124,8 +152,6 @@ impl session {
             );
 
             std::ptr::write(&raw mut s.lock_timer, None);
-            std::ptr::write(&raw mut s.lastw, Vec::new());
-            std::ptr::write(&raw mut s.windows, BTreeMap::new());
 
             std::ptr::write(&raw mut s.environ, Rc::new(env));
             s.options = oo;
@@ -255,10 +281,12 @@ pub unsafe fn session_destroy(s: *mut session, notify: i32, from: *const u8) {
     unsafe {
         log_debug!("session {} destroyed ({})", (*s).name, _s(from));
 
-        if (*s).curw.is_null() {
+        // Destroyed already. C checks for a current window, which a
+        // session whose first window failed has as a dangling pointer, and
+        // here does not.
+        if !session_alive(s) {
             return;
         }
-        (*s).curw = null_mut();
 
         (*(&raw mut SESSIONS)).remove(&*(*s).name);
         if notify != 0 {
@@ -272,13 +300,13 @@ pub unsafe fn session_destroy(s: *mut session, notify: i32, from: *const u8) {
 
         session_group_remove(s);
 
-        while let Some(&wl) = (*s).lastw.first() {
-            winlink_stack_remove(&raw mut (*s).lastw, wl);
-        }
-        while let Some(&wl) = (*(&raw mut (*s).windows)).values().next() {
+        // Each window is unlinked while it is still linked, as in C.
+        for wl in (*s).windows() {
             events_fire_winlink("window-unlinked", wl);
-            winlink_remove(&raw mut (*s).windows, wl);
+            winlink_remove(wl.id);
         }
+        let sid = (*s).sid();
+        with_links(|l| l.remove_session(sid));
 
         // `cwd` is `Option<PathBuf>`, dropped automatically by Box drop in session_free.
 
@@ -393,44 +421,70 @@ pub unsafe fn session_previous_session(s: *mut session, criteria: &SortCriteria)
     }
 }
 
+/// The winlinks of a session by ID, in index order.
+pub fn session_windows(s: Option<SessionId>) -> Vec<Winlink> {
+    match s {
+        Some(s) => with_links(|l| l.windows(s)),
+        None => Vec::new(),
+    }
+}
+
+/// The last window stack of a session by ID, most recent first.
+pub fn session_lastw(s: Option<SessionId>) -> Vec<Winlink> {
+    match s {
+        Some(s) => with_links(|l| l.last_stack(s)),
+        None => Vec::new(),
+    }
+}
+
+/// The current winlink of a session by ID.
+pub fn session_curw_id(s: Option<SessionId>) -> Option<WinlinkId> {
+    let s = s?;
+    with_links(|l| l.current(s)).map(|wl| wl.id)
+}
+
+/// Sets a session's current winlink without the effects of
+/// `session_set_current`, for a session that has none (a new one).
+pub fn session_set_curw_only(s: SessionId, wl: Option<WinlinkId>) {
+    with_links(|l| l.set_current_only(s, wl));
+}
+
 /// Attach a window to a session.
 pub unsafe fn session_attach(
     s: *mut session,
     w: *mut window,
     idx: i32,
-) -> Result<*mut winlink, String> {
+) -> Result<WinlinkId, String> {
     unsafe {
-        let wl = winlink_add(&raw mut (*s).windows, idx);
-
-        if wl.is_null() {
+        let Some(wl) = winlink_add((*s).sid(), idx, w) else {
             return Err(format!("index in use: {idx}"));
-        }
-        (*wl).session = Some(SessionId((*s).id));
-        winlink_set_window(wl, w);
+        };
         events_fire_winlink("window-linked", wl);
 
         session_group_synchronize_from(s);
-        Ok(wl)
+        Ok(wl.id)
     }
 }
 
-/// Detach a window from a session.
-pub unsafe fn session_detach(s: *mut session, wl: *mut winlink) -> i32 {
+/// Detach a window from a session. Returns 1 if the window has not been
+/// detached because it is the session's only one: the caller must destroy
+/// the session.
+pub unsafe fn session_detach(s: *mut session, wl: WinlinkId) -> i32 {
     unsafe {
-        if (*s).curw == wl && session_last(s) != 0 && session_previous(s, false) != 0 {
-            session_next(s, false);
-        }
-
-        (*wl).flags &= !WINLINK_ALERTFLAGS;
-        events_fire_winlink("window-unlinked", wl);
-        winlink_stack_remove(&raw mut (*s).lastw, wl);
-        winlink_remove(&raw mut (*s).windows, wl);
-
-        session_group_synchronize_from(s);
-
-        if (*(&raw mut (*s).windows)).is_empty() {
+        let mut events = Vec::new();
+        if !with_links(|l| l.detach_prepare(wl, &mut events)) {
             return 1;
         }
+        links_apply(events);
+
+        // Fired while the window is still linked, so control clients see
+        // %window-close rather than %unlinked-window-close.
+        if let Some(wl) = winlink_get(wl) {
+            events_fire_winlink("window-unlinked", wl);
+        }
+        winlink_remove(wl);
+
+        session_group_synchronize_from(s);
         0
     }
 }
@@ -443,157 +497,154 @@ pub unsafe fn session_has(s: *mut session, w: &window) -> bool {
     if s.is_null() {
         return false;
     }
-    let target = Some(SessionId(unsafe { (*s).id }));
-    w.winlinks.iter()
-        .any(|&wl| unsafe { (*wl).session } == target)
+    let sid = unsafe { (*s).sid() };
+    let wid = WindowId(w.id);
+    with_links(|l| l.has(sid, wid))
 }
 
-/// Return 1 if a window is linked outside this session (not including session groups). The window must be in this session!
+/// Return if a window is linked outside this session (not including
+/// session groups). The window must be in this session. Like 3.8 this
+/// compares the window's reference count with the group size.
 pub unsafe fn session_is_linked(s: *mut session, w: &window) -> bool {
     unsafe {
-        let sg = session_group_contains(s);
-        if !sg.is_null() {
-            return w.references != session_group_count(&*sg);
+        match session_group_contains(s) {
+            Some(name) => w.references != session_group_count(&name),
+            None => w.references != 1,
         }
-        w.references != 1
     }
 }
 
-pub unsafe fn session_next_alert(mut wl: *mut winlink, s: *mut session) -> *mut winlink {
+/// Carries out what a change to the links did, in order: window
+/// references, window-linked and window-unlinked, and the effects of a
+/// new current window.
+///
+/// # Safety
+/// The sessions and windows the events name must be valid or gone from
+/// the registries.
+pub unsafe fn links_apply(events: Vec<LinkEvent>) {
     unsafe {
-        while !wl.is_null() {
-            if (*wl).flags.intersects(WINLINK_ALERTFLAGS) {
-                break;
+        for event in events {
+            match event {
+                LinkEvent::Linked(wl) => {
+                    let w = winlink_window(wl);
+                    if !w.is_null() {
+                        window_add_ref(w, c!("winlink_set_window"));
+                    }
+                    events_fire_winlink("window-linked", wl);
+                }
+                LinkEvent::Unlinked(wl) => events_fire_winlink("window-unlinked", wl),
+                LinkEvent::Removed(wl) => {
+                    let w = winlink_window(wl);
+                    if !w.is_null() {
+                        window_remove_ref(w, c!("winlink_remove"));
+                    }
+                }
+                LinkEvent::CurrentChanged(change) => session_current_changed(change),
             }
-            wl = winlink_next(&raw mut (*s).windows, wl);
         }
     }
-    wl
 }
 
 /// Move session to next window.
 pub unsafe fn session_next(s: *mut session, alert: bool) -> i32 {
     unsafe {
-        if (*s).curw.is_null() {
-            return -1;
+        let sid = (*s).sid();
+        match with_links(|l| l.next_target(sid, alert)) {
+            Some(wl) => session_set_current(s, Some(wl)),
+            None => -1,
         }
-
-        let mut wl = winlink_next(&raw mut (*s).windows, (*s).curw);
-        if alert {
-            wl = session_next_alert(wl, s);
-        }
-        if wl.is_null() {
-            wl = (*(&raw mut (*s).windows)).values().next().copied().unwrap_or(null_mut());
-            if alert
-                && ({
-                    (wl = session_next_alert(wl, s));
-                    wl.is_null()
-                })
-            {
-                return -1;
-            }
-        }
-        session_set_current(s, wl)
-    }
-}
-
-pub unsafe fn session_previous_alert(mut wl: *mut winlink, s: *mut session) -> *mut winlink {
-    unsafe {
-        while !wl.is_null() {
-            if (*wl).flags.intersects(WINLINK_ALERTFLAGS) {
-                break;
-            }
-            wl = winlink_previous(&raw mut (*s).windows, wl);
-        }
-        wl
     }
 }
 
 /// Move session to previous window.
 pub unsafe fn session_previous(s: *mut session, alert: bool) -> i32 {
     unsafe {
-        if (*s).curw.is_null() {
-            return -1;
+        let sid = (*s).sid();
+        match with_links(|l| l.previous_target(sid, alert)) {
+            Some(wl) => session_set_current(s, Some(wl)),
+            None => -1,
         }
-
-        let mut wl = winlink_previous(&raw mut (*s).windows, (*s).curw);
-        if alert {
-            wl = session_previous_alert(wl, s);
-        }
-        if wl.is_null() {
-            wl = (*(&raw mut (*s).windows)).values().next_back().copied().unwrap_or(null_mut());
-            if alert
-                && ({
-                    (wl = session_previous_alert(wl, s));
-                    wl.is_null()
-                })
-            {
-                return -1;
-            }
-        }
-        session_set_current(s, wl)
     }
 }
 
 /// Move session to specific window.
 pub unsafe fn session_select(s: *mut session, idx: i32) -> i32 {
     unsafe {
-        let wl = winlink_find_by_index(&raw mut (*s).windows, idx);
-        session_set_current(s, wl)
+        let wl = winlink_find_by_index((*s).sid(), idx);
+        session_set_current(s, wl.map(|wl| wl.id))
     }
 }
 
 /// Move session to last used window.
 pub unsafe fn session_last(s: *mut session) -> i32 {
     unsafe {
-        let wl = (*s).lastw.first().copied().unwrap_or(null_mut());
-        if wl.is_null() {
-            return -1;
+        let sid = (*s).sid();
+        match with_links(|l| l.last_target(sid)) {
+            crate::links::LastTarget::None => -1,
+            crate::links::LastTarget::Current => 1,
+            crate::links::LastTarget::Window(wl) => session_set_current(s, Some(wl)),
         }
-        if wl == (*s).curw {
-            return 1;
-        }
-
-        session_set_current(s, wl)
     }
 }
 
-/// Set current winlink to wl.
-pub unsafe fn session_set_current(s: *mut session, wl: *mut winlink) -> i32 {
+/// Set current winlink to wl. Returns -1 if it is missing, 1 if it is
+/// current already.
+pub unsafe fn session_set_current(s: *mut session, wl: Option<WinlinkId>) -> i32 {
     unsafe {
-        let old: *mut winlink = (*s).curw;
-
-        if wl.is_null() {
+        let Some(wl) = wl else {
             return -1;
-        }
-        if wl == (*s).curw {
+        };
+        let sid = (*s).sid();
+        if (*s).curw_id() == Some(wl) {
             return 1;
         }
+        match with_links(|l| l.set_current(sid, wl)) {
+            Some(change) => {
+                session_current_changed(change);
+                0
+            }
+            None => -1,
+        }
+    }
+}
 
-        winlink_stack_remove(&raw mut (*s).lastw, wl);
-        winlink_stack_push(&raw mut (*s).lastw, (*s).curw);
-        (*s).curw = wl;
-        let w_cur = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
+/// The effects of a new current window (the rest of `session_set_current`):
+/// focus, the window's alert flags, activity, the offset and
+/// session-window-changed.
+unsafe fn session_current_changed(change: crate::links::CurrentChange) {
+    unsafe {
+        let w_cur = winlink_window(change.new);
+        if w_cur.is_null() {
+            return;
+        }
         if options_get_number_(GLOBAL_OPTIONS, "focus-events") != 0 {
-            if !old.is_null() {
-                let w_old = (*old).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-                window_update_focus(w_old);
+            if let Some(old) = change.old {
+                let w_old = winlink_window(old);
+                if !w_old.is_null() {
+                    window_update_focus(w_old);
+                }
             }
             window_update_focus(w_cur);
         }
-        winlink_clear_flags(wl);
+        (*w_cur).flags &= !WINDOW_ALERTFLAGS;
+        for sid in change.cleared {
+            if let Some(s) = session_from_id(sid) {
+                server_status_session(s);
+            }
+        }
         window_update_activity(NonNull::new_unchecked(w_cur));
         tty_update_window_offset(w_cur);
-        session_fire_window_changed(s, wl, old);
-        0
+        if let Some(s) = session_from_id(change.session) {
+            session_fire_window_changed(s, change.new, change.old);
+        }
     }
 }
 
 /// Fires session-window-changed, with the new and old current window.
 ///
 /// # Safety
-/// `s` and `wl` must be valid, `old` null or a valid winlink.
-unsafe fn session_fire_window_changed(s: *mut session, wl: *mut winlink, old: *mut winlink) {
+/// `s` must be valid.
+unsafe fn session_fire_window_changed(s: *mut session, wl: Winlink, old: Option<Winlink>) {
     unsafe {
         let mut fs: cmd_find_state = zeroed();
         cmd_find_from_winlink(&raw mut fs, wl, cmd_find_flags::empty());
@@ -603,78 +654,58 @@ unsafe fn session_fire_window_changed(s: *mut session, wl: *mut winlink, old: *m
         let w = winlink_window(wl);
         payload.set("window", crate::events::payload_window(w));
         payload.set("new_window", crate::events::payload_window(w));
-        payload.set_int("window_index", (*wl).idx);
-        payload.set_int("new_window_index", (*wl).idx);
-        if !old.is_null() {
+        payload.set_int("window_index", wl.idx);
+        payload.set_int("new_window_index", wl.idx);
+        if let Some(old) = old {
             payload.set("old_window", crate::events::payload_window(winlink_window(old)));
-            payload.set_int("old_window_index", (*old).idx);
+            payload.set_int("old_window_index", old.idx);
         }
         crate::events::events_fire("session-window-changed", payload, null_mut());
     }
 }
 
-/// Find the session group containing a session.
-pub unsafe fn session_group_contains(target: *mut session) -> *mut session_group {
-    unsafe {
-        for sg in (*(&raw mut SESSION_GROUPS)).values_mut() {
-            for &s in &sg.sessions {
-                if s == target {
-                    return &mut **sg as *mut session_group;
-                }
-            }
-        }
-
-        null_mut()
+/// The name of the session group containing a session.
+pub unsafe fn session_group_contains(target: *mut session) -> Option<String> {
+    if target.is_null() {
+        return None;
     }
+    let sid = unsafe { (*target).sid() };
+    with_links(|l| l.group_of(sid).map(str::to_string))
 }
 
-/// Find session group by name.
-pub unsafe fn session_group_find(name: &str) -> *mut session_group {
-    unsafe {
-        (*(&raw mut SESSION_GROUPS))
-            .get_mut(name)
-            .map_or(null_mut(), |sg| &mut **sg as *mut session_group)
-    }
+/// Whether a session group exists.
+pub fn session_group_find(name: &str) -> bool {
+    with_links(|l| l.group_exists(name))
 }
 
-/// Create a new session group.
-pub unsafe fn session_group_new(name: &str) -> *mut session_group {
-    unsafe {
-        let sg = session_group_find(name);
-        if !sg.is_null() {
-            return sg;
-        }
-
-        let sg_box = Box::new(session_group {
-            name: name.to_string().into(),
-            sessions: Vec::new(),
-        });
-
-        let sg_groups = &mut *(&raw mut SESSION_GROUPS);
-        sg_groups.insert(name.to_string(), sg_box);
-        &mut **sg_groups.get_mut(name).unwrap() as *mut session_group
-    }
+/// The sessions of a group, in the order they joined.
+pub unsafe fn session_group_sessions(name: &str) -> Vec<*mut session> {
+    let ids = with_links(|l| l.group_sessions(name));
+    ids.into_iter()
+        .filter_map(|id| unsafe { session_from_id(id) })
+        .collect()
 }
 
-/// Add a session to a session group.
 /// Fires a session group event, with the group's name and size.
 ///
 /// # Safety
-/// `sg` and `s` must be valid.
-unsafe fn session_group_fire(name: &str, sg: *mut session_group, s: *mut session) {
+/// `s` must be valid.
+unsafe fn session_group_fire(event: &str, name: &str, s: *mut session) {
     unsafe {
         let mut payload = crate::events::payload_for_session(s);
-        payload.set_string("group", &*(*sg).name);
-        payload.set_uint("group_size", session_group_count(&*sg));
-        crate::events::events_fire(name, payload, null_mut());
+        payload.set_string("group", name);
+        payload.set_uint("group_size", session_group_count(name));
+        crate::events::events_fire(event, payload, null_mut());
     }
 }
 
-pub unsafe fn session_group_add(sg: *mut session_group, s: *mut session) {
+/// Add a session to a session group, creating the group if needed
+/// (`session_group_new` and `session_group_add`).
+pub unsafe fn session_group_add(name: &str, s: *mut session) {
     unsafe {
-        if session_group_contains(s).is_null() {
-            (*sg).sessions.push(s);
-            session_group_fire("session-added-to-group", sg, s);
+        let sid = (*s).sid();
+        if with_links(|l| l.group_add(name, sid)) {
+            session_group_fire("session-added-to-group", name, s);
         }
     }
 }
@@ -682,205 +713,57 @@ pub unsafe fn session_group_add(sg: *mut session_group, s: *mut session) {
 /// Remove a session from its group and destroy the group if empty.
 pub unsafe fn session_group_remove(s: *mut session) {
     unsafe {
-        let sg = session_group_contains(s);
-
-        if sg.is_null() {
+        let Some(name) = session_group_contains(s) else {
             return;
-        }
-        session_group_fire("session-removed-from-group", sg, s);
-        (*sg).sessions.retain(|&p| p != s);
-        if (*sg).sessions.is_empty() {
-            let name = (*sg).name.to_string();
-            (*(&raw mut SESSION_GROUPS)).remove(&name);
-        }
+        };
+        session_group_fire("session-removed-from-group", &name, s);
+        let sid = (*s).sid();
+        with_links(|l| l.group_remove(sid));
     }
 }
 
 /// Count number of sessions in session group.
-pub fn session_group_count(sg: &session_group) -> u32 {
-    sg.sessions.len() as u32
+pub fn session_group_count(name: &str) -> u32 {
+    with_links(|l| l.group_sessions(name).len() as u32)
 }
 
 /// Count number of clients attached to sessions in session group.
-///
-/// Sums `attached` across the group's sessions. The session pointers are
-/// still raw, so the dereference stays inside an `unsafe` block.
-pub unsafe fn session_group_attached_count(sg: &session_group) -> u32 {
-    sg.sessions.iter()
-        .map(|&s| unsafe { (*s).attached })
-        .sum()
+pub unsafe fn session_group_attached_count(name: &str) -> u32 {
+    unsafe {
+        session_group_sessions(name)
+            .iter()
+            .map(|&s| (*s).attached)
+            .sum()
+    }
 }
 
 /// Synchronize a session to its session group.
 pub unsafe fn session_group_synchronize_to(s: *mut session) {
     unsafe {
-        let sg = session_group_contains(s);
-        if sg.is_null() {
-            return;
-        }
-
-        let mut target = null_mut();
-        for &target_ in &(*sg).sessions {
-            target = target_;
-            if target != s {
-                break;
-            }
-        }
-        if !target.is_null() {
-            session_group_synchronize1(target, s);
-        }
+        let sid = (*s).sid();
+        let mut events = Vec::new();
+        with_links(|l| l.sync_to(sid, &mut events));
+        links_apply(events);
     }
 }
 
 /// Synchronize a session group to a session.
 pub unsafe fn session_group_synchronize_from(target: *mut session) {
     unsafe {
-        let sg = session_group_contains(target);
-        if sg.is_null() {
-            return;
-        }
-
-        for &s in &(*sg).sessions {
-            if s != target {
-                session_group_synchronize1(target, s);
-            }
-        }
-    }
-}
-
-// Synchronize a session with a target session. This means destroying all
-// winlinks then recreating them, then updating the current window, last window
-// stack and alerts.
-pub unsafe fn session_group_synchronize1(target: *mut session, s: *mut session) {
-    unsafe {
-        // Don't do anything if the session is empty (it'll be destroyed).
-        let ww: *mut winlinks = &raw mut (*target).windows;
-        if (*ww).is_empty() {
-            return;
-        }
-
-        // If the current window has vanished, move to the next now.
-        if !(*s).curw.is_null()
-            && winlink_find_by_index(ww, (*(*s).curw).idx).is_null()
-            && session_last(s) != 0
-            && session_previous(s, false) != 0
-        {
-            session_next(s, false);
-        }
-
-        // Save the old pointer and reset it.
-        let mut old_windows = std::mem::take(&mut (*s).windows);
-
-        // Link all the windows from the target.
-        for &wl in (*ww).values() {
-            let wl2 = winlink_add(&raw mut (*s).windows, (*wl).idx);
-            (*wl2).session = Some(SessionId((*s).id));
-            let w_src = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-            winlink_set_window(wl2, w_src);
-            events_fire_winlink("window-linked", wl2);
-            (*wl2).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
-        }
-
-        // Fix up the current window.
-        if !(*s).curw.is_null() {
-            (*s).curw = winlink_find_by_index(&raw mut (*s).windows, (*(*s).curw).idx);
-        } else if !(*target).curw.is_null() {
-            (*s).curw = winlink_find_by_index(&raw mut (*s).windows, (*(*target).curw).idx);
-        }
-        // Either may be gone, fall back to the first window (upstream
-        // 1995b555).
-        if (*s).curw.is_null() {
-            (*s).curw = (*s).windows.values().next().copied().unwrap_or(null_mut());
-        }
-
-        // Fix up the last window stack.
-        let old_lastw = std::mem::take(&mut (*s).lastw);
-
-        for &wl in &old_lastw {
-            if let Some(wl2) = NonNull::new(winlink_find_by_index(&raw mut (*s).windows, (*wl).idx))
-            {
-                (*s).lastw.push(wl2.as_ptr());
-                (*wl2.as_ptr()).flags |= winlink_flags::WINLINK_VISITED;
-            }
-        }
-
-        // Then free the old winlinks list.
-        while let Some(&wl) = old_windows.values().next() {
-            let w_old = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-            let wl2 = if w_old.is_null() { null_mut() } else { winlink_find_by_window_id(&raw mut (*s).windows, (*w_old).id) };
-            if wl2.is_null() {
-                events_fire_winlink("window-unlinked", wl);
-            }
-            winlink_remove(&raw mut old_windows, wl);
-        }
+        let sid = (*target).sid();
+        let mut events = Vec::new();
+        with_links(|l| l.sync_from(sid, &mut events));
+        links_apply(events);
     }
 }
 
 /// Renumber the windows across winlinks attached to a specific session.
+/// The winlinks keep their IDs, so the marked pane needs no fixing.
 pub unsafe fn session_renumber_windows(s: *mut session) {
     unsafe {
-        let mut marked_idx = -1;
-
-        // Start renumbering from the base-index if it's set.
-        let mut new_idx = options_get_number_((*s).options, "base-index") as i32;
-
-        // Leave the indexes alone if they do not all fit from there.
-        let n = (*s).windows.len() as u64;
-        if n > (i32::MAX as u64) - (new_idx as u64) + 1 {
-            return;
-        }
-
-        // Save and replace old window list.
-        let mut old_wins = std::mem::take(&mut (*s).windows);
-        let mut new_curw_idx = 0;
-
-        // Go through the winlinks and assign new indexes.
-        let old_values: Vec<*mut winlink> = old_wins.values().copied().collect();
-        for wl in old_values.iter().copied() {
-            let wl_new = winlink_add(&raw mut (*s).windows, new_idx);
-            (*wl_new).session = Some(SessionId((*s).id));
-            let w_src = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-            winlink_set_window(wl_new, w_src);
-            (*wl_new).flags |= (*wl).flags & WINLINK_ALERTFLAGS;
-
-            if wl == MARKED_PANE.wl {
-                marked_idx = (*wl_new).idx;
-            }
-            if wl == (*s).curw {
-                new_curw_idx = (*wl_new).idx;
-            }
-
-            // Do not step past the last index after the last window.
-            if Some(&wl) != old_values.last() {
-                new_idx += 1;
-            }
-        }
-
-        // Fix the stack of last windows now.
-        let old_lastw = std::mem::take(&mut (*s).lastw);
-        for &wl in &old_lastw {
-            (*wl).flags &= !winlink_flags::WINLINK_VISITED;
-
-            let w_lookup = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-            if let Some(wl_new) = winlink_find_by_window(&raw mut (*s).windows, w_lookup) {
-                (*s).lastw.push(wl_new.as_ptr());
-                (*wl_new.as_ptr()).flags |= winlink_flags::WINLINK_VISITED;
-            }
-        }
-
-        // Set the current window.
-        if marked_idx != -1 {
-            MARKED_PANE.wl = winlink_find_by_index(&raw mut (*s).windows, marked_idx);
-            if MARKED_PANE.wl.is_null() {
-                server_clear_marked();
-            }
-        }
-        (*s).curw = winlink_find_by_index(&raw mut (*s).windows, new_curw_idx);
-
-        // Free the old winlinks (reducing window references too).
-        for wl in old_values {
-            winlink_remove(&raw mut old_wins, wl);
-        }
+        let base = options_get_number_((*s).options, "base-index") as i32;
+        let sid = (*s).sid();
+        with_links(|l| l.renumber(sid, base));
     }
 }
 
@@ -892,8 +775,7 @@ pub unsafe fn session_renumber_windows(s: *mut session) {
 pub unsafe fn session_update_history(s: *mut session) {
     unsafe {
         let limit: u32 = options_get_number___(&*(*s).options, "history-limit");
-        let winlinks: Vec<*mut winlink> = (*s).windows.values().copied().collect();
-        for wl in winlinks {
+        for wl in (*s).windows() {
             let w = winlink_window(wl);
             for &wp in &(*w).panes {
                 let gd = &mut (*wp).base.grid;

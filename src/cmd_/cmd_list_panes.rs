@@ -70,8 +70,8 @@ unsafe fn cmd_list_panes_session(
     type_: i32,
 ) {
     unsafe {
-        for &wl in (*(&raw mut (*s).windows)).values() {
-            cmd_list_panes_window(self_, s, wl, item, type_);
+        for wl in (*s).windows() {
+            cmd_list_panes_window(self_, s, Some(wl.id), item, type_);
         }
     }
 }
@@ -79,7 +79,7 @@ unsafe fn cmd_list_panes_session(
 unsafe fn cmd_list_panes_window(
     self_: *mut cmd,
     s: *mut session,
-    wl: *mut winlink,
+    wl: Option<WinlinkId>,
     item: *mut cmdq_item,
     type_: i32,
 ) {
@@ -145,7 +145,7 @@ unsafe fn cmd_list_panes_window(
             );
             // C sets line to the number of panes, not the line number.
             format_add!(ft, "line", "{n}");
-            format_defaults(ft, c, NonNull::new(s), NonNull::new(wl), NonNull::new(wp));
+            format_defaults(ft, c, NonNull::new(s), wl, NonNull::new(wp));
 
             let flag;
             if !filter.is_null() {

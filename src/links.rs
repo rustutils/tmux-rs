@@ -14,7 +14,6 @@
 //! window references and fires the events. Winlink IDs are never reused,
 //! so an ID kept after its winlink went finds nothing.
 #![forbid(unsafe_code)]
-#![allow(dead_code, reason = "the session adapter starts using it in the next change")]
 
 use std::collections::BTreeMap;
 
@@ -393,7 +392,11 @@ impl Links {
 
     /// Renumbers a session's windows from `base` on, keeping their order
     /// (`session_renumber_windows`). Nothing changes if they do not all
-    /// fit. Winlinks keep their IDs, flags and places on the stack.
+    /// fit. Winlinks keep their IDs and flags. The last window stack is
+    /// rebuilt as C does, each entry becoming the first winlink of its
+    /// window, which differs only for a window linked twice into the
+    /// session (an entry already on the stack is not added again, where
+    /// C would corrupt its list).
     pub fn renumber(&mut self, s: SessionId, base: i32) {
         let Some(sl) = self.sessions.get_mut(&s) else {
             return;
@@ -407,6 +410,20 @@ impl Links {
             let idx = base + i as i32;
             sl.windows.insert(idx, id);
             self.winlinks.get_mut(&id).expect("winlink").idx = idx;
+        }
+
+        let old_last = std::mem::take(&mut self.sessions.get_mut(&s).expect("session").lastw);
+        for id in &old_last {
+            self.clear_flags(*id, winlink_flags::WINLINK_VISITED);
+        }
+        for id in old_last {
+            let w = self.winlinks[&id].window;
+            let first = self.find_by_window(s, w).expect("window in session").id;
+            let sl = self.sessions.get_mut(&s).expect("session");
+            if !sl.lastw.contains(&first) {
+                sl.lastw.push(first);
+                self.add_flags(first, winlink_flags::WINLINK_VISITED);
+            }
         }
     }
 
@@ -589,11 +606,6 @@ impl Links {
     /// Whether a group exists (`session_group_find`).
     pub fn group_exists(&self, name: &str) -> bool {
         self.groups.contains_key(name)
-    }
-
-    /// The names of all groups, in name order.
-    pub fn group_names(&self) -> Vec<String> {
-        self.groups.keys().cloned().collect()
     }
 
     /// Adds a session to a group, creating the group if needed

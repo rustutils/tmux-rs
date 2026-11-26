@@ -43,7 +43,7 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
         let tc = cmdq_get_target_client(item);
         let s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         let wl = (*target).wl;
-        let mut new_wl: *mut winlink = null_mut();
+        let mut new_wl: Option<WinlinkId> = None;
         let mut idx = (*target).idx;
         // before;
 
@@ -51,13 +51,13 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
         // name already exists, select it.
         let name = args_get(args, b'n');
         if args_has(args, 'S') && !name.is_null() && (*target).idx == -1 {
-            let expanded = format_single(item, cstr_to_str(name), c, s, null_mut(), null_mut());
-            for &wl in (*(&raw mut (*s).windows)).values() {
+            let expanded = format_single(item, cstr_to_str(name), c, s, None, null_mut());
+            for wl in (*s).windows() {
                 if (*winlink_window(wl)).name.as_deref() != Some(cstr_to_str(expanded)) {
                     continue;
                 }
-                if new_wl.is_null() {
-                    new_wl = wl;
+                if new_wl.is_none() {
+                    new_wl = Some(wl.id);
                     continue;
                 }
                 cmdq_error!(item, "multiple windows named {}", _s(name));
@@ -66,7 +66,7 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
             }
 
             free_(expanded);
-            if !new_wl.is_null() {
+            if new_wl.is_some() {
                 if args_has(args, 'd') {
                     return cmd_retval::CMD_RETURN_NORMAL;
                 }
@@ -74,7 +74,7 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
                     server_redraw_session(s);
                 }
                 if !c.is_null() && !client_get_session(c).is_null() {
-                    (*winlink_window((*s).curw)).latest = c as _;
+                    (*winlink_window((*s).curw_id())).latest = c as _;
                 }
                 recalculate_sizes();
                 return cmd_retval::CMD_RETURN_NORMAL;
@@ -116,7 +116,7 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
         }
 
         let new_wl = match spawn_window(&raw mut sc) {
-            Ok(wl) => wl.as_ptr(),
+            Ok(wl) => winlink_of(Some(wl)),
             Err(cause) => {
                 cmdq_error!(item, "create window failed: {}", cause);
                 if !sc.argv.is_null() {
@@ -125,7 +125,7 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         };
-        if !args_has(args, 'd') || new_wl == (*s).curw {
+        if !args_has(args, 'd') || Some(new_wl.id) == (*s).curw_id() {
             cmd_find_from_winlink(current, new_wl, cmd_find_flags::empty());
             server_redraw_session_group(s);
         } else {
@@ -137,7 +137,7 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
             if template.is_null() {
                 template = NEW_WINDOW_TEMPLATE;
             }
-            let cp = format_single(item, cstr_to_str(template), tc, s, new_wl, window_active_pane(winlink_window(new_wl)));
+            let cp = format_single(item, cstr_to_str(template), tc, s, Some(new_wl.id), window_active_pane(winlink_window(new_wl)));
             cmdq_print!(item, "{}", _s(cp));
             free_(cp);
         }

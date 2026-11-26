@@ -1312,12 +1312,12 @@ pub unsafe fn tty_keys_next(tty: *mut tty) -> i32 {
                 // Check for focus events.
                 if key == keyc::KEYC_FOCUS_OUT as u64 {
                     (*c).flags &= !client_flag::FOCUSED;
-                    window_update_focus(winlink_window((*client_get_session(c)).curw));
+                    window_update_focus(winlink_window((*client_get_session(c)).curw_id()));
                     events_fire_client("client-focus-out", c);
                 } else if key == keyc::KEYC_FOCUS_IN as u64 {
                     (*c).flags |= client_flag::FOCUSED;
                     events_fire_client("client-focus-in", c);
-                    window_update_focus(winlink_window((*client_get_session(c)).curw));
+                    window_update_focus(winlink_window((*client_get_session(c)).curw_id()));
                 }
 
                 // Fire the key.

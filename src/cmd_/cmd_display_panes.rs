@@ -225,7 +225,7 @@ unsafe fn cmd_display_panes_draw_pane(ctx: *mut screen_redraw_ctx, wp: *mut wind
 
 unsafe fn cmd_display_panes_draw(c: *mut client, _data: *mut c_void, ctx: *mut screen_redraw_ctx) {
     unsafe {
-        let w: *mut window = winlink_window((*client_get_session(c)).curw);
+        let w: *mut window = winlink_window((*client_get_session(c)).curw_id());
 
         log_debug!(
             "{}: {} @{}",
@@ -258,7 +258,7 @@ unsafe fn cmd_display_panes_key(c: *mut client, data: *mut c_void, event: *mut k
     unsafe {
         let cdata = data as *mut cmd_display_panes_data;
         let item = (*cdata).item;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
 
         let index: u32;
         let key: key_code;

@@ -179,7 +179,7 @@ pub unsafe fn window_buffer_build(
 
         if cmd_find_valid_state(&raw mut (*data).fs) {
             s = NonNull::new((*data).fs.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()));
-            wl = NonNull::new((*data).fs.wl);
+            wl = (*data).fs.wl;
             wp = NonNull::new((*data).fs.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()));
         }
 
@@ -288,7 +288,7 @@ pub unsafe fn window_buffer_menu(modedata: NonNull<c_void>, c: *mut client, key:
         if let Some(wme) = (*wp).modes.first().copied().and_then(NonNull::new)
             && (*wme.as_ptr()).data == modedata.as_ptr()
         {
-            window_buffer_key(wme, c, null_mut(), null_mut(), key, null_mut());
+            window_buffer_key(wme, c, null_mut(), None, key, null_mut());
         }
     }
 }
@@ -307,7 +307,7 @@ pub unsafe fn window_buffer_get_key(
 
         if cmd_find_valid_state(&raw mut (*data.as_ptr()).fs) {
             s = NonNull::new((*data.as_ptr()).fs.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()));
-            wl = NonNull::new((*data.as_ptr()).fs.wl);
+            wl = (*data.as_ptr()).fs.wl;
             wp = NonNull::new((*data.as_ptr()).fs.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()));
         }
         let Some(pb) = paste_get_name(&(*item.as_ptr()).name) else {
@@ -544,7 +544,7 @@ pub unsafe fn window_buffer_key(
     wme: NonNull<window_mode_entry>,
     c: *mut client,
     _s: *mut session,
-    _wl: *mut winlink,
+    _wl: Option<WinlinkId>,
     mut key: key_code,
     m: *mut mouse_event,
 ) {

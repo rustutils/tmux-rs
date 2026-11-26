@@ -87,7 +87,7 @@ pub struct window_copy_cmd_state {
 
     c: *mut client,
     s: Option<SessionId>,
-    wl: *mut winlink,
+    wl: Option<WinlinkId>,
 }
 
 #[repr(i32)]
@@ -944,7 +944,7 @@ pub unsafe fn window_copy_expand_search_string(cs: *mut window_copy_cmd_state) -
                 cstr_to_str(ss),
                 null_mut(),
                 null_mut(),
-                null_mut(),
+                None,
                 pane_ptr_from_id((*wme).wp),
             );
             if *expanded == b'\0' {
@@ -1261,7 +1261,7 @@ pub unsafe fn window_copy_cmd_copy_selection_no_clear(
         let wme: *mut window_mode_entry = (*cs).wme;
         let c: *mut client = (*cs).c;
         let s: *mut session = (*cs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-        let wl: *mut winlink = (*cs).wl;
+        let wl: Option<WinlinkId> = (*cs).wl;
         let wp: *mut window_pane = pane_ptr_from_id((*wme).wp);
         let mut prefix = null_mut();
         let arg1 = args_string((*cs).args, 1);
@@ -2353,7 +2353,7 @@ pub unsafe fn window_copy_cmd_copy_pipe_no_clear(
         let wme: *mut window_mode_entry = (*cs).wme;
         let c: *mut client = (*cs).c;
         let s: *mut session = (*cs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-        let wl: *mut winlink = (*cs).wl;
+        let wl: Option<WinlinkId> = (*cs).wl;
         let wp: *mut window_pane = pane_ptr_from_id((*wme).wp);
         let mut command = null_mut();
         let mut prefix = null_mut();
@@ -2404,7 +2404,7 @@ pub unsafe fn window_copy_cmd_pipe_no_clear(
         let wme: *mut window_mode_entry = (*cs).wme;
         let c: *mut client = (*cs).c;
         let s: *mut session = (*cs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-        let wl: *mut winlink = (*cs).wl;
+        let wl: Option<WinlinkId> = (*cs).wl;
         let wp: *mut window_pane = pane_ptr_from_id((*wme).wp);
         let mut command = null_mut();
         let arg1 = args_string((*cs).args, 1);
@@ -3427,7 +3427,7 @@ pub unsafe fn window_copy_command(
     wme: NonNull<window_mode_entry>,
     c: *mut client,
     s: *mut session,
-    wl: *mut winlink,
+    wl: Option<WinlinkId>,
     args: *mut args,
     m: *mut mouse_event,
 ) {

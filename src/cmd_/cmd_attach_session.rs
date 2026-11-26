@@ -81,11 +81,11 @@ pub unsafe fn cmd_attach_session(
         let wl = target.wl;
         let wp = target.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
 
-        if !wl.is_null() {
+        if let Some(wl) = wl.and_then(winlink_get) {
             if !wp.is_null() {
                 window_set_active_pane(window_pane_window(wp), wp, 1);
             }
-            session_set_current(s, wl);
+            session_set_current(s, Some(wl.id));
             if !wp.is_null() {
                 cmd_find_from_winlink_pane(current, wl, wp, cmd_find_flags::empty());
             } else {

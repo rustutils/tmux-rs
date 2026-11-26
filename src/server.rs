@@ -68,12 +68,12 @@ pub static mut SERVER_EV_TIDY: Option<TimerHandle> = None;
 pub static mut MARKED_PANE: cmd_find_state = unsafe { zeroed() };
 pub static mut CURRENT_TIME: time_t = unsafe { zeroed() };
 
-pub unsafe fn server_set_marked(s: *mut session, wl: *mut winlink, wp: *mut window_pane) {
+pub unsafe fn server_set_marked(s: *mut session, wl: Option<WinlinkId>, wp: *mut window_pane) {
     unsafe {
         cmd_find_clear_state(&raw mut MARKED_PANE, cmd_find_flags::empty());
         MARKED_PANE.s = if s.is_null() { None } else { Some(SessionId((*s).id)) };
         MARKED_PANE.wl = wl;
-        MARKED_PANE.w = if wl.is_null() { None } else { (*wl).window };
+        MARKED_PANE.w = wl.and_then(winlink_get).map(|wl| wl.window);
         MARKED_PANE.wp = if wp.is_null() { None } else { Some(PaneId((*wp).id)) };
     }
 }
@@ -84,8 +84,8 @@ pub unsafe fn server_clear_marked() {
     }
 }
 
-pub unsafe fn server_is_marked(s: *mut session, wl: *mut winlink, wp: *mut window_pane) -> bool {
-    if s.is_null() || wl.is_null() || wp.is_null() {
+pub unsafe fn server_is_marked(s: *mut session, wl: Option<WinlinkId>, wp: *mut window_pane) -> bool {
+    if s.is_null() || wl.is_none() || wp.is_null() {
         return false;
     }
 

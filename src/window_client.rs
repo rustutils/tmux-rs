@@ -160,7 +160,7 @@ pub unsafe fn window_client_build(
             let c = (*item).c;
 
             if !filter.is_null() {
-                let cp = format_single(null_mut(), cstr_to_str(filter), c, null_mut(), null_mut(), null_mut());
+                let cp = format_single(null_mut(), cstr_to_str(filter), c, null_mut(), None, null_mut());
                 if !format_true(cp) {
                     free_(cp);
                     continue;
@@ -173,7 +173,7 @@ pub unsafe fn window_client_build(
                 cstr_to_str((*data).format),
                 c,
                 null_mut(),
-                null_mut(),
+                None,
                 null_mut(),
             );
             mode_tree_add(
@@ -208,7 +208,7 @@ pub unsafe fn window_client_draw(
         if client_get_session(c).is_null() || (*c).flags.intersects(CLIENT_UNATTACHEDFLAGS) {
             return;
         }
-        let wp = window_active_pane(winlink_window((*client_get_session(c)).curw));
+        let wp = window_active_pane(winlink_window((*client_get_session(c)).curw_id()));
 
         let mut lines = status_line_size(c);
         if lines >= sy {
@@ -243,7 +243,7 @@ pub unsafe fn window_client_menu(modedata: NonNull<c_void>, c: *mut client, key:
         if let Some(wme) = (*wp).modes.first().copied().and_then(NonNull::new)
             && (*wme.as_ptr()).data == modedata.as_ptr()
         {
-            window_client_key(wme, c, null_mut(), null_mut(), key, null_mut());
+            window_client_key(wme, c, null_mut(), None, key, null_mut());
         }
     }
 }
@@ -395,7 +395,7 @@ pub unsafe fn window_client_key(
     wme: NonNull<window_mode_entry>,
     c: *mut client,
     _: *mut session,
-    _wl: *mut winlink,
+    _wl: Option<WinlinkId>,
     mut key: key_code,
     m: *mut mouse_event,
 ) {

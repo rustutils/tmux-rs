@@ -238,7 +238,7 @@ pub unsafe fn window_clock_key(
     wme: NonNull<window_mode_entry>,
     _c: *mut client,
     _s: *mut session,
-    _wl: *mut winlink,
+    _wl: Option<WinlinkId>,
     _key: key_code,
     _m: *mut mouse_event,
 ) {

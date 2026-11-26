@@ -110,7 +110,7 @@ unsafe fn cmd_switch_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             if cmdq_get_client(item).is_null() {
                 return cmd_retval::CMD_RETURN_NORMAL;
             }
-            if !wl.is_null() && !wp.is_null() && wp != window_active_pane(winlink_window(wl)) {
+            if wl.is_some() && !wp.is_null() && wp != window_active_pane(winlink_window(wl)) {
                 let w = winlink_window(wl);
                 if window_push_zoom(w, false, args_has(args, 'Z')) {
                     server_redraw_window(w);
@@ -121,7 +121,7 @@ unsafe fn cmd_switch_client_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
                     server_redraw_window(w);
                 }
             }
-            if !wl.is_null() {
+            if wl.is_some() {
                 session_set_current(s, wl);
                 cmd_find_from_session(current, s, cmd_find_flags::empty());
             }

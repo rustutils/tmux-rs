@@ -470,7 +470,7 @@ pub unsafe fn status_message_redraw(c: *mut client) -> i32 {
 
         let (ax, aw) = status_message_area(c);
 
-        let ft = format_create_defaults(null_mut(), c, null_mut(), null_mut(), null_mut());
+        let ft = format_create_defaults(null_mut(), c, null_mut(), None, null_mut());
         style_apply(&raw mut gc, (*s).options, c!("message-style"), ft);
 
         // With styles ignored, # is doubled so format_draw shows the

@@ -77,7 +77,7 @@ unsafe fn cmd_server_access_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
             cstr_to_str(args_string(args, 0)),
             c,
             null_mut(),
-            null_mut(),
+            None,
             null_mut(),
         );
         let arg_name = CStr::from_ptr(arg.cast()).to_owned();

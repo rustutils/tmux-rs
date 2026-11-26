@@ -161,13 +161,13 @@ pub unsafe fn control_notify_event(name: &str, payload: &Payload) {
                 let Some(s) = payload.get_session("session").and_then(|id| session_from_id(id)) else {
                     return;
                 };
-                if (*s).curw.is_null() {
+                if (*s).curw().is_none() {
                     return;
                 }
                 let line = format!(
                     "%session-window-changed ${} @{}",
                     (*s).id,
-                    (*winlink_window((*s).curw)).id
+                    (*winlink_window((*s).curw_id())).id
                 );
                 control_notify_all(&line, false);
             }
@@ -192,15 +192,15 @@ unsafe fn control_notify_layout_changed(w: *mut window) {
     unsafe {
         // When the last pane in a window is closed it has no layout root,
         // and the window goes away soon, so there is nothing to tell.
-        if (*w).winlinks.is_empty() || window_layout_root(w).is_null() {
+        if (*w).winlinks().is_empty() || window_layout_root(w).is_null() {
             return;
         }
         for c in control_clients(true) {
             let s = client_get_session(c);
-            let Some(wl) = winlink_find_by_window(&raw mut (*s).windows, w) else {
+            let Some(wl) = winlink_find_by_window((*s).sid(), WindowId((*w).id)) else {
                 continue;
             };
-            let cp = format_single(null_mut(), TEMPLATE, c, s, wl.as_ptr(), null_mut());
+            let cp = format_single(null_mut(), TEMPLATE, c, s, Some(wl.id), null_mut());
             control_notify_write!(c, "{}", _s(cp));
             free_(cp);
         }
@@ -224,7 +224,7 @@ unsafe fn control_notify_window(event: &str, w: *mut window) {
         };
         for c in control_clients(true) {
             let cs = client_get_session(c);
-            if winlink_find_by_window_id(&raw mut (*cs).windows, (*w).id).is_null() {
+            if winlink_find_by_window_id((*cs).sid(), (*w).id).is_none() {
                 control_notify_write!(c, "%unlinked-{} @{}{}", kind, (*w).id, suffix);
             } else {
                 control_notify_write!(c, "%{} @{}{}", kind, (*w).id, suffix);

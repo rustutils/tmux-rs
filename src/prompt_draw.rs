@@ -195,7 +195,7 @@ unsafe fn prompt_state_format_tree(fs: *mut cmd_find_state) -> *mut format_tree 
         if !fs.is_null() && cmd_find_valid_state(fs) {
             format_create_from_state(null_mut(), null_mut(), fs)
         } else {
-            format_create_defaults(null_mut(), null_mut(), null_mut(), null_mut(), null_mut())
+            format_create_defaults(null_mut(), null_mut(), null_mut(), None, null_mut())
         }
     }
 }

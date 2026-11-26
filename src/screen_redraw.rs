@@ -197,7 +197,7 @@ pub unsafe fn screen_redraw_pane_border(
 pub unsafe fn screen_redraw_cell_border(ctx: *mut screen_redraw_ctx, px: u32, py: u32) -> i32 {
     unsafe {
         let c = (*ctx).c;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
 
         // Outside the window?
         if px > (*w).sx || py > (*w).sy {
@@ -242,7 +242,7 @@ pub unsafe fn screen_redraw_type_of_cell(
     unsafe {
         let c = (*ctx).c;
         let pane_status = (*ctx).pane_status;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
         let sx = (*w).sx;
         let sy = (*w).sy;
         let mut borders = 0;
@@ -316,7 +316,7 @@ pub unsafe fn screen_redraw_check_cell(
 ) -> cell_type {
     unsafe {
         let c = (*ctx).c;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
         let mut wp: *mut window_pane;
         let mut active: *mut window_pane;
         let pane_status = (*ctx).pane_status;
@@ -440,7 +440,7 @@ pub unsafe fn screen_redraw_make_pane_status(
             ft,
             c,
             NonNull::new(client_get_session(c)),
-            NonNull::new((*client_get_session(c)).curw),
+            (*client_get_session(c)).curw_id(),
             Some(wp),
         );
 
@@ -505,7 +505,7 @@ pub unsafe fn screen_redraw_make_pane_status(
 pub unsafe fn screen_redraw_draw_pane_status(ctx: *mut screen_redraw_ctx) {
     unsafe {
         let c = (*ctx).c;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
         let tty = &raw mut (*c).tty;
         log_debug!(
             "{}: {} @{}",
@@ -572,7 +572,7 @@ pub unsafe fn screen_redraw_draw_pane_status(ctx: *mut screen_redraw_ctx) {
 /// Update status line and change flags if unchanged.
 unsafe fn screen_redraw_update(c: *mut client, mut flags: client_flag) -> client_flag {
     unsafe {
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
         let wo = (*w).options;
         let mut ctx = MaybeUninit::<screen_redraw_ctx>::uninit();
 
@@ -624,7 +624,7 @@ pub unsafe fn screen_redraw_set_context(c: *mut client, ctx: *mut screen_redraw_
     unsafe {
         let s = client_get_session(c);
         let oo = (*s).options;
-        let w = winlink_window((*s).curw);
+        let w = winlink_window((*s).curw_id());
         let wo = (*w).options;
 
         // Zero out context
@@ -746,7 +746,7 @@ pub unsafe fn screen_redraw_draw_borders_style(
     unsafe {
         let c = (*ctx).c;
         let s = client_get_session(c);
-        let w = winlink_window((*s).curw);
+        let w = winlink_window((*s).curw_id());
         let active = server_client_get_pane(c);
         let oo = (*w).options;
 
@@ -755,7 +755,7 @@ pub unsafe fn screen_redraw_draw_borders_style(
         }
         (*wp).border_gc_set = 1;
 
-        let ft = format_create_defaults(null_mut(), c, s, (*s).curw, wp);
+        let ft = format_create_defaults(null_mut(), c, s, (*s).curw_id(), wp);
         if screen_redraw_check_is(ctx, x, y, active) {
             style_apply(
                 &raw mut (*wp).border_gc,
@@ -777,7 +777,7 @@ pub unsafe fn screen_redraw_draw_borders_cell(ctx: *mut screen_redraw_ctx, i: u3
     unsafe {
         let c = (*ctx).c;
         let s = client_get_session(c);
-        let w = winlink_window((*s).curw);
+        let w = winlink_window((*s).curw_id());
         let oo = (*w).options;
         let tty = &raw mut (*c).tty;
         let active = server_client_get_pane(c);
@@ -803,7 +803,7 @@ pub unsafe fn screen_redraw_draw_borders_cell(ctx: *mut screen_redraw_ctx, i: u3
 
         if wp.is_null() {
             if (*ctx).no_pane_gc_set == 0 {
-                let ft = format_create_defaults(null_mut(), c, s, (*s).curw, null_mut());
+                let ft = format_create_defaults(null_mut(), c, s, (*s).curw_id(), null_mut());
                 memcpy__(&raw mut (*ctx).no_pane_gc, &raw const GRID_DEFAULT_CELL);
                 style_add(&raw mut (*ctx).no_pane_gc, oo, c!("pane-border-style"), ft);
                 format_free(ft);
@@ -818,7 +818,7 @@ pub unsafe fn screen_redraw_draw_borders_cell(ctx: *mut screen_redraw_ctx, i: u3
             memcpy__(&raw mut gc, tmp);
 
             let marked_wp = MARKED_PANE.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
-            if server_is_marked(s, (*s).curw, marked_wp)
+            if server_is_marked(s, (*s).curw_id(), marked_wp)
                 && screen_redraw_check_is(ctx, x, y, marked_wp)
             {
                 gc.attr ^= GridAttr::GRID_ATTR_REVERSE;
@@ -880,7 +880,7 @@ pub unsafe fn screen_redraw_draw_borders(ctx: *mut screen_redraw_ctx) {
     unsafe {
         let c = (*ctx).c;
         let s = client_get_session(c);
-        let w = winlink_window((*s).curw);
+        let w = winlink_window((*s).curw_id());
 
         log_debug!(
             "{}: {} @{}",
@@ -905,7 +905,7 @@ pub unsafe fn screen_redraw_draw_borders(ctx: *mut screen_redraw_ctx) {
 pub unsafe fn screen_redraw_draw_panes(ctx: *mut screen_redraw_ctx) {
     unsafe {
         let c = (*ctx).c;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
 
         log_debug!(
             "{}: {} @{}",
@@ -926,7 +926,7 @@ pub unsafe fn screen_redraw_draw_panes(ctx: *mut screen_redraw_ctx) {
 pub unsafe fn screen_redraw_draw_status(ctx: *mut screen_redraw_ctx) {
     unsafe {
         let c = (*ctx).c;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
         let tty = &raw mut (*c).tty;
         let s = (*c).status.active;
 
@@ -963,7 +963,7 @@ pub unsafe fn screen_redraw_draw_status(ctx: *mut screen_redraw_ctx) {
 pub unsafe fn screen_redraw_draw_pane(ctx: *mut screen_redraw_ctx, wp: *mut window_pane) {
     unsafe {
         let c = (*ctx).c;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
         let tty = &raw mut (*c).tty;
         let s = (*wp).screen;
         let palette = &raw mut (*wp).palette;

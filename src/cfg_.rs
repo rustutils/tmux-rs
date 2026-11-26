@@ -273,7 +273,7 @@ pub unsafe fn cfg_show_causes(mut s: *mut session) {
         if s.is_null() || (*s).attached == 0 {
             return;
         }
-        let cfg_w = (*(*s).curw).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
+        let cfg_w = winlink_window((*s).curw_id());
         if cfg_w.is_null() { return; }
         let wp = window_active_pane(cfg_w);
 

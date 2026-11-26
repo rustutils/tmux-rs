@@ -60,16 +60,16 @@ unsafe fn alerts_callback() {
     }
 }
 
-unsafe fn alerts_action_applies(wl: &winlink, name: &str) -> bool {
+unsafe fn alerts_action_applies(wl: Winlink, name: &str) -> bool {
     unsafe {
-        let s = wl.session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+        let s = session_from_id(wl.session).unwrap_or(null_mut());
         if s.is_null() {
             return false;
         }
         match alert_option::try_from(options_get_number___::<i32>(&*(*s).options, name)) {
             Ok(alert_option::ALERT_ANY) => true,
-            Ok(alert_option::ALERT_CURRENT) => std::ptr::eq(wl, (*s).curw),
-            Ok(alert_option::ALERT_OTHER) => !std::ptr::eq(wl, (*s).curw),
+            Ok(alert_option::ALERT_CURRENT) => Some(wl.id) == (*s).curw_id(),
+            Ok(alert_option::ALERT_OTHER) => Some(wl.id) != (*s).curw_id(),
             _ => false,
         }
     }
@@ -81,8 +81,8 @@ unsafe fn alerts_check_all(w: &window) -> window_flag {
 
 pub(crate) unsafe fn alerts_check_session(s: &session) {
     unsafe {
-        for &wl in s.windows.values() {
-            let w = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
+        for wl in s.windows() {
+            let w = winlink_window(wl);
             if !w.is_null() { alerts_check_all(&*w); }
         }
     }
@@ -175,21 +175,21 @@ unsafe fn alerts_check_bell(w: &window) -> window_flag {
             return window_flag::empty();
         }
 
-        for &wl in &w.winlinks {
-            let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+        for wl in w.winlinks() {
+            let s = session_from_id(wl.session).unwrap_or(null_mut());
             if !s.is_null() { (*s).flags &= !SESSION_ALERTED; }
         }
 
-        for &wl in &w.winlinks {
+        for wl in w.winlinks() {
             // Bells are allowed even if there is an existing bell (so do
             // not check WINLINK_BELL).
-            let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+            let s = session_from_id(wl.session).unwrap_or(null_mut());
             if s.is_null() { continue; }
-            if (*s).curw != wl || (*s).attached == 0 {
-                (*wl).flags |= winlink_flags::WINLINK_BELL;
+            if (*s).curw_id() != Some(wl.id) || (*s).attached == 0 {
+                winlink_add_flags(wl.id, winlink_flags::WINLINK_BELL);
                 server_status_session(s);
             }
-            if !alerts_action_applies(&*wl, "bell-action") {
+            if !alerts_action_applies(wl, "bell-action") {
                 continue;
             }
             events_fire_winlink("alert-bell", wl);
@@ -199,7 +199,7 @@ unsafe fn alerts_check_bell(w: &window) -> window_flag {
             }
             (*s).flags |= SESSION_ALERTED;
 
-            alerts_set_message(&*wl, "Bell", "visual-bell");
+            alerts_set_message(wl, "Bell", "visual-bell");
         }
     }
     window_flag::BELL
@@ -214,19 +214,19 @@ unsafe fn alerts_check_activity(w: &window) -> window_flag {
             return window_flag::empty();
         }
 
-        for &wl in &w.winlinks {
-            let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+        for wl in w.winlinks() {
+            let s = session_from_id(wl.session).unwrap_or(null_mut());
             if !s.is_null() { (*s).flags &= !SESSION_ALERTED; }
         }
 
-        for &wl in &w.winlinks {
-            let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+        for wl in w.winlinks() {
+            let s = session_from_id(wl.session).unwrap_or(null_mut());
             if s.is_null() { continue; }
-            if (*s).curw != wl || (*s).attached == 0 {
-                (*wl).flags |= winlink_flags::WINLINK_ACTIVITY;
+            if (*s).curw_id() != Some(wl.id) || (*s).attached == 0 {
+                winlink_add_flags(wl.id, winlink_flags::WINLINK_ACTIVITY);
                 server_status_session(s);
             }
-            if !alerts_action_applies(&*wl, "activity-action") {
+            if !alerts_action_applies(wl, "activity-action") {
                 continue;
             }
             events_fire_winlink("alert-activity", wl);
@@ -236,7 +236,7 @@ unsafe fn alerts_check_activity(w: &window) -> window_flag {
             }
             (*s).flags |= SESSION_ALERTED;
 
-            alerts_set_message(&*wl, "Activity", "visual-activity");
+            alerts_set_message(wl, "Activity", "visual-activity");
         }
     }
     window_flag::ACTIVITY
@@ -251,22 +251,22 @@ unsafe fn alerts_check_silence(w: &window) -> window_flag {
             return window_flag::empty();
         }
 
-        for &wl in &w.winlinks {
-            let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+        for wl in w.winlinks() {
+            let s = session_from_id(wl.session).unwrap_or(null_mut());
             if !s.is_null() { (*s).flags &= !SESSION_ALERTED; }
         }
 
-        for &wl in &w.winlinks {
-            if (*wl).flags.intersects(winlink_flags::WINLINK_SILENCE) {
+        for wl in w.winlinks() {
+            if wl.flags.intersects(winlink_flags::WINLINK_SILENCE) {
                 continue;
             }
-            let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+            let s = session_from_id(wl.session).unwrap_or(null_mut());
             if s.is_null() { continue; }
-            if (*s).curw != wl || (*s).attached == 0 {
-                (*wl).flags |= winlink_flags::WINLINK_SILENCE;
+            if (*s).curw_id() != Some(wl.id) || (*s).attached == 0 {
+                winlink_add_flags(wl.id, winlink_flags::WINLINK_SILENCE);
                 server_status_session(s);
             }
-            if !alerts_action_applies(&*wl, "silence-action") {
+            if !alerts_action_applies(wl, "silence-action") {
                 continue;
             }
             events_fire_winlink("alert-silence", wl);
@@ -276,16 +276,16 @@ unsafe fn alerts_check_silence(w: &window) -> window_flag {
             }
             (*s).flags |= SESSION_ALERTED;
 
-            alerts_set_message(&*wl, "Silence", "visual-silence");
+            alerts_set_message(wl, "Silence", "visual-silence");
         }
     }
 
     window_flag::SILENCE
 }
 
-unsafe fn alerts_set_message(wl: &winlink, type_: &str, option: &str) {
+unsafe fn alerts_set_message(wl: Winlink, type_: &str, option: &str) {
     unsafe {
-        let s = wl.session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+        let s = session_from_id(wl.session).unwrap_or(null_mut());
         if s.is_null() { return; }
         let visual =
             visual_option::try_from(options_get_number___::<i32>(&*(*s).options, option));
@@ -304,7 +304,7 @@ unsafe fn alerts_set_message(wl: &winlink, type_: &str, option: &str) {
             if matches!(visual, Ok(visual_option::VISUAL_OFF)) {
                 continue;
             }
-            if std::ptr::eq((*client_get_session(c)).curw, wl) {
+            if (*client_get_session(c)).curw_id() == Some(wl.id) {
                 status_message_set!(c, -1, 1, false, "{type_} in current window",);
             } else {
                 status_message_set!(c, -1, 1, false, "{type_} in window {}", wl.idx);

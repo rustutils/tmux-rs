@@ -469,9 +469,9 @@ pub unsafe fn options_scope_from_name(
             if args_has(args, 'g') {
                 *oo = GLOBAL_W_OPTIONS;
                 Ok(OPTIONS_TABLE_WINDOW)
-            } else if wl.is_null() && !target.is_null() {
+            } else if wl.is_none() && !target.is_null() {
                 Err(format!("no such window: {}", _s(target)))
-            } else if wl.is_null() {
+            } else if wl.is_none() {
                 Err("no current window".into())
             } else {
                 *oo = (*winlink_window(wl)).options;
@@ -545,7 +545,7 @@ pub unsafe fn options_scope_from_flags(
                 *oo = GLOBAL_W_OPTIONS;
                 return Ok(OPTIONS_TABLE_WINDOW);
             }
-            if wl.is_null() {
+            if wl.is_none() {
                 if !target.is_null() {
                     return Err(format!("no such window: {}", _s(target)));
                 }

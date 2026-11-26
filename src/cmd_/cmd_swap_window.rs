@@ -43,35 +43,31 @@ unsafe fn cmd_swap_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
         let target = cmdq_get_target(item);
         let src = (*source).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         let dst = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-        let wl_src = (*source).wl;
-        let wl_dst = (*target).wl;
+        let wl_src = winlink_of((*source).wl);
+        let wl_dst = winlink_of((*target).wl);
 
         let sg_src = session_group_contains(src);
         let sg_dst = session_group_contains(dst);
 
-        if src != dst && !sg_src.is_null() && !sg_dst.is_null() && sg_src == sg_dst {
+        if src != dst && sg_src.is_some() && sg_src == sg_dst {
             cmdq_error!(item, "can't move window, sessions are grouped");
             return cmd_retval::CMD_RETURN_ERROR;
         }
 
-        if winlink_window(wl_dst) == winlink_window(wl_src) {
+        if wl_dst.window == wl_src.window {
             return cmd_retval::CMD_RETURN_NORMAL;
         }
 
-        let w_dst = winlink_window(wl_dst);
-        (*w_dst).winlinks.retain(|&p| p != wl_dst);
-        let w_src = winlink_window(wl_src);
-        (*w_src).winlinks.retain(|&p| p != wl_src);
+        winlink_swap_windows(wl_src.id, wl_dst.id);
 
-        (*wl_dst).window = Some(WindowId((*w_src).id));
-        (*w_src).winlinks.push(wl_dst);
-        (*wl_src).window = Some(WindowId((*w_dst).id));
-        (*w_dst).winlinks.push(wl_src);
-
+        // The marked pane moves with its window.
+        if MARKED_PANE.wl == Some(wl_src.id) {
+            MARKED_PANE.wl = Some(wl_dst.id);
+        }
         if args_has(args, 'd') {
-            session_select(dst, (*wl_dst).idx);
+            session_select(dst, wl_dst.idx);
             if src != dst {
-                session_select(src, (*wl_src).idx);
+                session_select(src, wl_src.idx);
             }
         }
         session_group_synchronize_from(src);

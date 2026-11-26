@@ -97,22 +97,22 @@ unsafe fn cmd_move_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
 
         let before = args_has(args, 'b');
         if args_has(args, 'a') || before {
-            if !target.wl.is_null() {
+            if target.wl.is_some() {
                 idx = winlink_shuffle_up(dst, target.wl, before);
             } else {
-                idx = winlink_shuffle_up(dst, (*dst).curw, before);
+                idx = winlink_shuffle_up(dst, (*dst).curw_id(), before);
             }
             if idx == -1 {
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         }
 
-        if let Err(cause) = server_link_window(src, wl, dst, idx, kflag, !dflag) {
+        if let Err(cause) = server_link_window(src, winlink_of(wl), dst, idx, kflag, !dflag) {
             cmdq_error!(item, "{}", cause);
             return cmd_retval::CMD_RETURN_ERROR;
         }
         if std::ptr::eq(cmd_get_entry(self_), &CMD_MOVE_WINDOW_ENTRY) {
-            server_unlink_window(src, wl);
+            server_unlink_window(src, wl.expect("winlink"));
         }
 
         // Renumber the winlinks in the src session only, the destination

@@ -76,7 +76,7 @@ unsafe fn cmd_list_windows_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
 
         let n = l.len();
         for wl in l {
-            let s = (*wl).session.and_then(|id| session_from_id(id));
+            let s = session_from_id(wl.session);
             let ft = format_create(
                 cmdq_get_client(item),
                 item,
@@ -85,7 +85,7 @@ unsafe fn cmd_list_windows_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
             );
             // C sets line to the number of windows, not the line number.
             format_add!(ft, "line", "{n}");
-            format_defaults(ft, c, s.and_then(NonNull::new), NonNull::new(wl), None);
+            format_defaults(ft, c, s.and_then(NonNull::new), Some(wl.id), None);
 
             let flag;
             if !filter.is_null() {

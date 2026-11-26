@@ -203,7 +203,7 @@ unsafe fn window_customize_scope_text(
                 format_nul!("session {}", (*(*fs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut())).name)
             }
             window_customize_scope::WINDOW_CUSTOMIZE_WINDOW => {
-                format_nul!("window {}", (*(*fs).wl).idx)
+                format_nul!("window {}", winlink_of((*fs).wl).idx)
             }
             _ => xstrdup_(c"").as_ptr(),
         }
@@ -1067,7 +1067,7 @@ unsafe fn window_customize_draw_option(
                         0,
                         &raw const GRID_DEFAULT_CELL,
                         "Window value (from window {}): {}{}{}",
-                        (*fs.wl).idx,
+                        winlink_of(fs.wl).idx,
                         _s(value),
                         space,
                         unit,
@@ -1139,7 +1139,7 @@ unsafe fn window_customize_menu(modedata: NonNull<c_void>, c: *mut client, key: 
             return;
         }
 
-        window_customize_key(wme, c, null_mut(), null_mut(), key, null_mut());
+        window_customize_key(wme, c, null_mut(), None, key, null_mut());
     }
 }
 
@@ -1803,7 +1803,7 @@ pub unsafe fn window_customize_key(
     wme: NonNull<window_mode_entry>,
     c: *mut client,
     __s: *mut session,
-    _wl: *mut winlink,
+    _wl: Option<WinlinkId>,
     mut key: key_code,
     m: *mut mouse_event,
 ) {

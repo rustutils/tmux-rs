@@ -417,7 +417,7 @@ pub unsafe fn popup_make_pane(pd: *mut popup_data, type_: layout_type) {
     unsafe {
         let c = (*pd).c;
         let s = client_get_session(c);
-        let w = winlink_window((*s).curw);
+        let w = winlink_window((*s).curw_id());
         let wp = window_active_pane(w);
 
         window_unzoom(w, 1);
@@ -795,9 +795,9 @@ pub unsafe fn popup_display(
 ) -> c_int {
     unsafe {
         let o = if !s.is_null() {
-            (*winlink_window((*s).curw)).options
+            (*winlink_window((*s).curw_id())).options
         } else {
-            (*winlink_window((*client_get_session(c)).curw)).options
+            (*winlink_window((*client_get_session(c)).curw_id())).options
         };
 
         lines = if lines == box_lines::BOX_LINES_DEFAULT {

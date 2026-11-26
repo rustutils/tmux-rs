@@ -95,7 +95,6 @@ fn linked_window_formats() {
 /// `window_linked` is 1. `window_linked_sessions` counts a group once
 /// (upstream stopped using the window's reference count for both).
 #[test]
-#[ignore = "window_linked uses the reference count, run 17 task 3"]
 fn linked_window_formats_in_a_group() {
     let tmux = server();
     run(&tmux, &["new-session", "-d", "-s", "b", "sleep 1000"]);
@@ -131,7 +130,6 @@ fn unlink_last_window_of_a_session() {
 /// Killing a session's last window closes the session before the window
 /// is unlinked (3.8 leaves the last window to `session_destroy`).
 #[test]
-#[ignore = "session_detach unlinks the last window, run 17 task 3"]
 fn kill_last_window_closes_session_first() {
     let tmux = server();
     run(&tmux, &["new-session", "-d", "-s", "b", "sleep 1000"]);
@@ -230,7 +228,6 @@ fn grouped_sessions_stay_in_step() {
 /// with that name. tmux-rs crashed synchronizing the new session with
 /// itself.
 #[test]
-#[ignore = "server crash in group sync, run 17 task 3"]
 fn new_group_by_name() {
     let tmux = server();
     run(&tmux, &["new-session", "-d", "-s", "s1", "-t", "grp"]);
@@ -319,6 +316,37 @@ fn bad_session_names_are_rejected() {
         );
     }
     assert_eq!(session_names(&tmux), ["[a|]"]);
+}
+
+/// `window_stack_index` is a window's place on the last window stack, 0
+/// for one that is not on it. tmux-rs gave the stack's length.
+#[test]
+fn window_stack_index() {
+    let tmux = server();
+    run(&tmux, &["kill-window", "-t", "a:5"]);
+    run(&tmux, &["select-window", "-t", "a:1"]);
+    let f = "#{window_index}:#{window_stack_index}";
+    let lines = tmux
+        .cmd()
+        .args(["list-windows", "-t", "a", "-F", f])
+        .run()
+        .stdout_lines();
+    assert_eq!(lines, ["0:1", "1:0", "2:0"]);
+}
+
+/// The marked pane moves with its window when swap-window swaps it.
+#[test]
+fn swap_window_keeps_the_marked_pane() {
+    let tmux = server();
+    run(&tmux, &["select-pane", "-m", "-t", "a:1"]);
+    run(&tmux, &["swap-window", "-s", "a:1", "-t", "a:2"]);
+    let f = "#{window_index}:#{window_marked_flag}";
+    let lines = tmux
+        .cmd()
+        .args(["list-windows", "-t", "a", "-F", f])
+        .run()
+        .stdout_lines();
+    assert_eq!(lines, ["0:0", "1:0", "2:1", "5:0"]);
 }
 
 /// run-shell -t keeps working when its session is killed while the

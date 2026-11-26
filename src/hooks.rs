@@ -142,7 +142,7 @@ unsafe fn hooks_insert(mut item: *mut cmdq_item, hd: &mut HookData) {
                 oo = (*wp).options;
                 o = options_get(&mut *oo, hd.name);
             }
-            if o.is_null() && !fs.wl.is_null() {
+            if o.is_null() && fs.wl.is_some() {
                 oo = (*winlink_window(fs.wl)).options;
                 o = options_get(&mut *oo, hd.name);
             }

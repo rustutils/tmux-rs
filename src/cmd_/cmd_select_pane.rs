@@ -56,10 +56,10 @@ pub unsafe fn cmd_select_pane_redraw(w: *mut window) {
             if client_get_session(c).is_null() || ((*c).flags.intersects(client_flag::CONTROL)) {
                 continue;
             }
-            if winlink_window((*client_get_session(c)).curw) == w && tty_window_bigger(&raw mut (*c).tty) {
+            if winlink_window((*client_get_session(c)).curw_id()) == w && tty_window_bigger(&raw mut (*c).tty) {
                 server_redraw_client(c);
             } else {
-                if winlink_window((*client_get_session(c)).curw) == w {
+                if winlink_window((*client_get_session(c)).curw_id()) == w {
                     (*c).flags |= client_flag::REDRAWBORDERS;
                 }
                 if session_has(client_get_session(c), &*w) {

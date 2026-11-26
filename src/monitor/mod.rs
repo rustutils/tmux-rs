@@ -58,12 +58,12 @@ pub fn monitor_items(set: &MonitorSet) -> Vec<MonitorItem> {
 unsafe fn monitor_create_formats(
     c: *mut client,
     s: *mut session,
-    wl: *mut winlink,
+    wl: Option<WinlinkId>,
     wp: *mut window_pane,
 ) -> *mut format_tree {
     unsafe {
         let ft = format_create(null_mut(), null_mut(), 0, format_flags::FORMAT_NOJOBS);
-        format_defaults(ft, c, NonNull::new(s), NonNull::new(wl), NonNull::new(wp));
+        format_defaults(ft, c, NonNull::new(s), wl, NonNull::new(wp));
         ft
     }
 }
@@ -106,7 +106,7 @@ pub unsafe fn monitor_observe(
         let session_id = Some(SessionId((*s).id));
 
         if items.iter().any(|i| i.target == MonitorTarget::Session) {
-            let ft = monitor_create_formats(c, s, null_mut(), null_mut());
+            let ft = monitor_create_formats(c, s, None, null_mut());
             for item in items.iter().filter(|i| i.target == MonitorTarget::Session) {
                 observe(item, MonitorKey::Session, ft);
             }
@@ -121,14 +121,14 @@ pub unsafe fn monitor_observe(
                         continue;
                     }
                     let w = window_pane_window(wp);
-                    for &wl in &(*w).winlinks {
-                        if (*wl).session != session_id {
+                    for wl in (*w).winlinks() {
+                        if Some(wl.session) != session_id {
                             continue;
                         }
-                        let ft = monitor_create_formats(c, s, wl, wp);
+                        let ft = monitor_create_formats(c, s, Some(wl.id), wp);
                         let key = MonitorKey::Pane {
                             pane: id,
-                            index: (*wl).idx,
+                            index: wl.idx,
                         };
                         observe(item, key, ft);
                         format_free(ft);
@@ -139,14 +139,14 @@ pub unsafe fn monitor_observe(
                     if w.is_null() {
                         continue;
                     }
-                    for &wl in &(*w).winlinks {
-                        if (*wl).session != session_id {
+                    for wl in (*w).winlinks() {
+                        if Some(wl.session) != session_id {
                             continue;
                         }
-                        let ft = monitor_create_formats(c, s, wl, null_mut());
+                        let ft = monitor_create_formats(c, s, Some(wl.id), null_mut());
                         let key = MonitorKey::Window {
                             window: id,
-                            index: (*wl).idx,
+                            index: wl.idx,
                         };
                         observe(item, key, ft);
                         format_free(ft);
@@ -156,15 +156,15 @@ pub unsafe fn monitor_observe(
             }
         }
 
-        let winlinks: Vec<*mut winlink> = (*s).windows.values().copied().collect();
+        let winlinks = (*s).windows();
         if items.iter().any(|i| i.target == MonitorTarget::AllPanes) {
             for &wl in &winlinks {
                 let w = winlink_window(wl);
                 for &wp in &(*w).panes {
-                    let ft = monitor_create_formats(c, s, wl, wp);
+                    let ft = monitor_create_formats(c, s, Some(wl.id), wp);
                     let key = MonitorKey::Pane {
                         pane: (*wp).id,
-                        index: (*wl).idx,
+                        index: wl.idx,
                     };
                     for item in items.iter().filter(|i| i.target == MonitorTarget::AllPanes) {
                         observe(item, key, ft);
@@ -175,10 +175,10 @@ pub unsafe fn monitor_observe(
         }
         if items.iter().any(|i| i.target == MonitorTarget::AllWindows) {
             for &wl in &winlinks {
-                let ft = monitor_create_formats(c, s, wl, null_mut());
+                let ft = monitor_create_formats(c, s, Some(wl.id), null_mut());
                 let key = MonitorKey::Window {
                     window: (*winlink_window(wl)).id,
-                    index: (*wl).idx,
+                    index: wl.idx,
                 };
                 for item in items.iter().filter(|i| i.target == MonitorTarget::AllWindows) {
                     observe(item, key, ft);

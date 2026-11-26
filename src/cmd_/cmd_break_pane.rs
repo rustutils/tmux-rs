@@ -39,13 +39,13 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         let target = cmdq_get_target(item);
         let source = cmdq_get_source(item);
         let tc = cmdq_get_target_client(item);
-        let mut wl = (*source).wl;
+        let src_wl = winlink_of((*source).wl);
         let src_s = (*source).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         let dst_s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         let wp = (*source).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
-        let mut w = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
+        let mut w = winlink_window(src_wl);
         let old_w = w;
-        let old_idx = (*wl).idx;
+        let old_idx = src_wl.idx;
 
         let name: *mut u8;
         let cp: *mut u8;
@@ -54,10 +54,10 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
 
         let before = args_has(args, 'b');
         if args_has(args, 'a') || before {
-            idx = if !(*target).wl.is_null() {
+            idx = if (*target).wl.is_some() {
                 winlink_shuffle_up(dst_s, (*target).wl, before)
             } else {
-                winlink_shuffle_up(dst_s, (*dst_s).curw, before)
+                winlink_shuffle_up(dst_s, (*dst_s).curw_id(), before)
             };
             if idx == -1 {
                 return cmd_retval::CMD_RETURN_ERROR;
@@ -68,7 +68,7 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         if window_count_panes(&*w) == 1 {
             if let Err(cause) = server_link_window(
                 src_s,
-                wl,
+                src_wl,
                 dst_s,
                 idx,
                 false,
@@ -81,14 +81,14 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
                 window_set_name(w, args_get(args, b'n'));
                 options_set_number((*w).options, "automatic-rename", 0);
             }
-            server_unlink_window(src_s, wl);
-            let Some(new_wl) = winlink_find_by_window(&raw mut (*dst_s).windows, w) else {
+            server_unlink_window(src_s, src_wl.id);
+            let Some(new_wl) = winlink_find_by_window((*dst_s).sid(), WindowId((*w).id)) else {
                 return cmd_retval::CMD_RETURN_ERROR;
             };
-            window_fire_pane_moved(wp, old_w, old_idx, w, (*new_wl.as_ptr()).idx);
+            window_fire_pane_moved(wp, old_w, old_idx, w, new_wl.idx);
             return cmd_retval::CMD_RETURN_NORMAL;
         }
-        if idx != -1 && !winlink_find_by_index(&raw mut (*dst_s).windows, idx).is_null() {
+        if idx != -1 && winlink_find_by_index((*dst_s).sid(), idx).is_some() {
             cmdq_error!(item, "index in use: {}", idx);
             return cmd_retval::CMD_RETURN_ERROR;
         }
@@ -126,17 +126,17 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
         if idx == -1 {
             idx = -1 - options_get_number___::<i32>(&*(*dst_s).options, "base-index");
         }
-        wl = match session_attach(dst_s, w, idx) {
-            Ok(wl) => wl,
+        let wl = match session_attach(dst_s, w, idx) {
+            Ok(wl) => winlink_of(Some(wl)),
             Err(cause) => {
                 cmdq_error!(item, "{}", cause);
                 return cmd_retval::CMD_RETURN_ERROR;
             }
         };
         events_fire_window("window-created", w);
-        window_fire_pane_moved(wp, old_w, old_idx, w, (*wl).idx);
+        window_fire_pane_moved(wp, old_w, old_idx, w, wl.idx);
         if !args_has(args, 'd') {
-            session_select(dst_s, (*wl).idx);
+            session_select(dst_s, wl.idx);
             cmd_find_from_session(current, dst_s, cmd_find_flags::empty());
         }
 
@@ -154,7 +154,7 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
             if template.is_null() {
                 template = c!("#{session_name}:#{window_index}.#{pane_index}");
             }
-            cp = format_single(item, cstr_to_str(template), tc, dst_s, wl, wp);
+            cp = format_single(item, cstr_to_str(template), tc, dst_s, Some(wl.id), wp);
             cmdq_print!(item, "{}", _s(cp));
             free_(cp);
         }

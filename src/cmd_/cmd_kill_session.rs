@@ -38,9 +38,9 @@ unsafe fn cmd_kill_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
         let s = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
 
         if args_has(args, 'C') {
-            for &wl in (*(&raw mut (*s).windows)).values() {
+            for wl in (*s).windows() {
                 (*winlink_window(wl)).flags &= !WINDOW_ALERTFLAGS;
-                (*wl).flags &= !WINLINK_ALERTFLAGS;
+                winlink_remove_flags(wl.id, WINLINK_ALERTFLAGS);
             }
             server_redraw_session(s);
         } else if args_has(args, 'a') {

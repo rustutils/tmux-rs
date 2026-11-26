@@ -41,12 +41,12 @@ pub unsafe fn server_redraw_session(s: *mut session) {
 
 pub unsafe fn server_redraw_session_group(s: *mut session) {
     unsafe {
-        let sg = session_group_contains(s);
-        if sg.is_null() {
-            server_redraw_session(s);
-        } else {
-            for &s in &(*sg).sessions {
-                server_redraw_session(s);
+        match session_group_contains(s) {
+            None => server_redraw_session(s),
+            Some(name) => {
+                for s in session_group_sessions(&name) {
+                    server_redraw_session(s);
+                }
             }
         }
     }
@@ -64,12 +64,12 @@ pub unsafe fn server_status_session(s: *mut session) {
 
 pub unsafe fn server_status_session_group(s: *mut session) {
     unsafe {
-        let sg = session_group_contains(s);
-        if sg.is_null() {
-            server_status_session(s);
-        } else {
-            for &s in &(*sg).sessions {
-                server_status_session(s);
+        match session_group_contains(s) {
+            None => server_status_session(s),
+            Some(name) => {
+                for s in session_group_sessions(&name) {
+                    server_status_session(s);
+                }
             }
         }
     }
@@ -79,9 +79,10 @@ pub unsafe fn server_redraw_window(w: *mut window) {
     unsafe {
         for c in clients_iter() {
             // A session can be without a current window (upstream 77ce0a83).
-            if !client_get_session(c).is_null()
-                && !(*client_get_session(c)).curw.is_null()
-                && winlink_window((*client_get_session(c)).curw) == w
+            let s = client_get_session(c);
+            if !s.is_null()
+                && let Some(curw) = (*s).curw()
+                && winlink_window(curw) == w
             {
                 server_redraw_client(c);
             }
@@ -93,9 +94,10 @@ pub unsafe fn server_redraw_window_borders(w: *mut window) {
     unsafe {
         for c in clients_iter() {
             // A session can be without a current window (upstream 77ce0a83).
-            if !client_get_session(c).is_null()
-                && !(*client_get_session(c)).curw.is_null()
-                && winlink_window((*client_get_session(c)).curw) == w
+            let s = client_get_session(c);
+            if !s.is_null()
+                && let Some(curw) = (*s).curw()
+                && winlink_window(curw) == w
             {
                 (*c).flags |= client_flag::REDRAWBORDERS;
             }
@@ -208,8 +210,8 @@ pub unsafe fn server_kill_window(w: *mut window, renumber: i32) {
             }
 
             server_unzoom_window(w);
-            while let Some(wl) = winlink_find_by_window(&raw mut (*s).windows, w) {
-                if session_detach(s, wl.as_ptr()) != 0 {
+            while let Some(wl) = winlink_find_by_window((*s).sid(), WindowId((*w).id)) {
+                if session_detach(s, wl.id) != 0 {
                     server_destroy_session_group(s);
                     break;
                 }
@@ -229,13 +231,13 @@ pub unsafe fn server_kill_window(w: *mut window, renumber: i32) {
 pub unsafe fn server_renumber_session(s: *mut session) {
     unsafe {
         if options_get_number_((*s).options, "renumber-windows") != 0 {
-            let sg = session_group_contains(s);
-            if !sg.is_null() {
-                for &s in &(*sg).sessions {
-                    session_renumber_windows(s);
+            match session_group_contains(s) {
+                Some(name) => {
+                    for s in session_group_sessions(&name) {
+                        session_renumber_windows(s);
+                    }
                 }
-            } else {
-                session_renumber_windows(s);
+                None => session_renumber_windows(s),
             }
         }
     }
@@ -251,51 +253,50 @@ pub unsafe fn server_renumber_all() {
 
 pub unsafe fn server_link_window(
     src: *mut session,
-    srcwl: *mut winlink,
+    srcwl: Winlink,
     dst: *mut session,
     mut dstidx: i32,
     killflag: bool,
     mut selectflag: bool,
 ) -> Result<(), String> {
     unsafe {
-        let mut dstwl = null_mut();
-
         let srcsg = session_group_contains(src);
         let dstsg = session_group_contains(dst);
-        if src != dst && !srcsg.is_null() && !dstsg.is_null() && srcsg == dstsg {
+        if src != dst && srcsg.is_some() && srcsg == dstsg {
             return Err("sessions are grouped".to_string());
         }
 
+        let mut dstwl = None;
         if dstidx != -1 {
-            dstwl = winlink_find_by_index(&raw mut (*dst).windows, dstidx);
+            dstwl = winlink_find_by_index((*dst).sid(), dstidx);
         }
-        if !dstwl.is_null() {
-            if winlink_window(dstwl) == winlink_window(srcwl) {
+        if let Some(dstwl) = dstwl {
+            if dstwl.window == srcwl.window {
                 return Err(format!("same index: {dstidx}"));
             }
             if killflag {
                 // Can't use session_detach as it will destroy session
                 // if this makes it empty.
                 events_fire_winlink("window-unlinked", dstwl);
-                (*dstwl).flags &= !WINLINK_ALERTFLAGS;
-                winlink_stack_remove(&raw mut (*dst).lastw, dstwl);
-                winlink_remove(&raw mut (*dst).windows, dstwl);
+                winlink_remove_flags(dstwl.id, WINLINK_ALERTFLAGS);
 
                 // Force select/redraw if current.
-                if dstwl == (*dst).curw {
+                if Some(dstwl.id) == (*dst).curw_id() {
                     selectflag = true;
-                    (*dst).curw = null_mut();
                 }
+                // This also takes it off the stack and leaves the session
+                // without a current window if it was that one.
+                winlink_remove(dstwl.id);
             }
         }
 
         if dstidx == -1 {
             dstidx = -1 - options_get_number_((*dst).options, "base-index") as i32;
         }
-        dstwl = session_attach(dst, winlink_window(srcwl), dstidx)?;
+        let dstwl = session_attach(dst, winlink_window(srcwl), dstidx)?;
 
         if selectflag {
-            session_select(dst, (*dstwl).idx);
+            session_select(dst, winlink_of(Some(dstwl)).idx);
         }
         server_redraw_session_group(dst);
 
@@ -303,7 +304,7 @@ pub unsafe fn server_link_window(
     }
 }
 
-pub unsafe fn server_unlink_window(s: *mut session, wl: *mut winlink) {
+pub unsafe fn server_unlink_window(s: *mut session, wl: WinlinkId) {
     unsafe {
         if session_detach(s, wl) != 0 {
             server_destroy_session_group(s);
@@ -389,7 +390,7 @@ pub unsafe fn server_destroy_pane(wp: *mut window_pane, notify: i32) {
                         memcpy_(gc, &raw const GRID_DEFAULT_CELL, size_of::<GridCell>());
 
                         let expanded =
-                            format_single(null_mut(), cstr_to_str(s), null_mut(), null_mut(), null_mut(), wp);
+                            format_single(null_mut(), cstr_to_str(s), null_mut(), null_mut(), None, wp);
                         format_draw(ctx, gc, sx, cstr_to_str(expanded), null_mut(), 0);
                         free_(expanded);
 
@@ -422,15 +423,14 @@ pub unsafe fn server_destroy_pane(wp: *mut window_pane, notify: i32) {
 
 pub unsafe fn server_destroy_session_group(sess: *mut session) {
     unsafe {
-        let sg = session_group_contains(sess);
-        if sg.is_null() {
-            server_destroy_session(sess);
-            session_destroy(sess, 1, c!("server_destroy_session_group"));
-        } else {
+        match session_group_contains(sess) {
+            None => {
+                server_destroy_session(sess);
+                session_destroy(sess, 1, c!("server_destroy_session_group"));
+            }
             // Collect first: session_destroy removes the session from the
             // group, and frees the group with its last session.
-            let sessions: Vec<*mut session> = (*sg).sessions.clone();
-            for s in sessions {
+            Some(name) => for s in session_group_sessions(&name) {
                 server_destroy_session(s);
                 session_destroy(s, 1, c!("server_destroy_session_group"));
             }
@@ -523,14 +523,14 @@ pub unsafe fn server_check_unattached() {
                 2 => {
                     // keep-last
                     let sg = session_group_contains(s);
-                    if sg.is_null() || session_group_count(&*sg) <= 1 {
+                    if sg.is_none_or(|name| session_group_count(&name) <= 1) {
                         continue;
                     }
                 }
                 3 => {
                     // keep-group
                     let sg = session_group_contains(s);
-                    if !sg.is_null() && session_group_count(&*sg) == 1 {
+                    if sg.is_some_and(|name| session_group_count(&name) == 1) {
                         continue;
                     }
                 }

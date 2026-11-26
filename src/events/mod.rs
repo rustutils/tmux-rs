@@ -118,14 +118,13 @@ pub unsafe fn payload_target(fs: *const cmd_find_state) -> Target {
             pane: (*fs).wp,
             index: None,
         };
-        let wl = (*fs).wl;
-        if !wl.is_null() {
-            t.index = Some((*wl).idx);
+        if let Some(wl) = (*fs).wl.and_then(winlink_get) {
+            t.index = Some(wl.idx);
             if t.session.is_none() {
-                t.session = (*wl).session;
+                t.session = Some(wl.session);
             }
             if t.window.is_none() {
-                t.window = (*wl).window;
+                t.window = Some(wl.window);
             }
         }
         t
@@ -153,28 +152,28 @@ pub unsafe fn payload_get_target(payload: &Payload, fs: *mut cmd_find_state) -> 
         let wp = t.pane.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
         let s_alive = !s.is_null() && session_alive(s);
 
-        let mut wl: *mut winlink = null_mut();
+        let mut wl: Option<Winlink> = None;
         if let Some(idx) = t.index
             && s_alive
             && !w.is_null()
         {
-            wl = winlink_find_by_index(&raw mut (*s).windows, idx);
-            if !wl.is_null() && (*wl).window != t.window {
-                wl = null_mut();
-            }
+            wl = winlink_find_by_index((*s).sid(), idx).filter(|wl| Some(wl.window) == t.window);
         }
 
         cmd_find_clear_state(fs, flags);
         (*fs).s = if s.is_null() { None } else { t.session };
         (*fs).w = if w.is_null() { None } else { t.window };
         (*fs).wp = if wp.is_null() { None } else { t.pane };
-        (*fs).wl = wl;
-        (*fs).idx = if wl.is_null() { -1 } else { (*wl).idx };
+        (*fs).wl = wl.map(|wl| wl.id);
+        (*fs).idx = wl.map_or(-1, |wl| wl.idx);
         if cmd_find_valid_state(fs) {
             return true;
         }
 
-        if !wl.is_null() && !wp.is_null() && window_has_pane(&*winlink_window(wl), wp) {
+        if let Some(wl) = wl
+            && !wp.is_null()
+            && window_has_pane(&*winlink_window(wl), wp)
+        {
             cmd_find_from_winlink_pane(fs, wl, wp, flags);
             if cmd_find_valid_state(fs) {
                 return true;
@@ -183,7 +182,7 @@ pub unsafe fn payload_get_target(payload: &Payload, fs: *mut cmd_find_state) -> 
         if !wp.is_null() && cmd_find_from_pane(fs, wp, flags) == 0 && cmd_find_valid_state(fs) {
             return true;
         }
-        if !wl.is_null() {
+        if let Some(wl) = wl {
             cmd_find_from_winlink(fs, wl, flags);
             if cmd_find_valid_state(fs) {
                 return true;
@@ -264,8 +263,8 @@ pub unsafe fn payload_add_find_state(
         if let Some(w) = (*fs).w.and_then(|id| window_from_id(id)) {
             payload.set("window", payload_window(w));
         }
-        if !(*fs).wl.is_null() {
-            payload.set_int("window_index", (*(*fs).wl).idx);
+        if let Some(wl) = (*fs).wl.and_then(winlink_get) {
+            payload.set_int("window_index", wl.idx);
         } else if (*fs).idx != -1 {
             payload.set_int("window_index", (*fs).idx);
         }
@@ -373,23 +372,27 @@ pub unsafe fn events_fire_pane(name: &str, wp: *mut window_pane) {
     unsafe { events_fire(name, payload_for_pane(wp), null_mut()) }
 }
 
-/// The payload of a winlink event: its session, window and index.
+/// The payload of a winlink event: its session, window and index. The
+/// winlink is a copy, so this works for one that was just removed.
 ///
 /// # Safety
-/// `wl` must be a valid winlink whose session and window are valid.
-pub unsafe fn payload_for_winlink(wl: *mut winlink) -> Payload {
+/// The winlink's session and window must be valid or gone from the
+/// registries.
+pub unsafe fn payload_for_winlink(wl: Winlink) -> Payload {
     unsafe {
         let mut fs: cmd_find_state = zeroed();
         cmd_find_from_winlink(&raw mut fs, wl, cmd_find_flags::empty());
         let mut payload = Payload::new();
-        payload.set_target(payload_target(&raw const fs));
-        if let Some(s) = (*wl).session.and_then(|id| session_from_id(id)) {
+        let mut target = payload_target(&raw const fs);
+        target.index = Some(wl.idx);
+        payload.set_target(target);
+        if let Some(s) = session_from_id(wl.session) {
             payload.set("session", payload_session(s));
         }
-        if let Some(w) = (*wl).window.and_then(|id| window_from_id(id)) {
+        if let Some(w) = window_from_id(wl.window) {
             payload.set("window", payload_window(w));
         }
-        payload.set_int("window_index", (*wl).idx);
+        payload.set_int("window_index", wl.idx);
         payload
     }
 }
@@ -397,7 +400,8 @@ pub unsafe fn payload_for_winlink(wl: *mut winlink) -> Payload {
 /// Fires a winlink event.
 ///
 /// # Safety
-/// `wl` must be a valid winlink whose session and window are valid.
-pub unsafe fn events_fire_winlink(name: &str, wl: *mut winlink) {
+/// The winlink's session and window must be valid or gone from the
+/// registries.
+pub unsafe fn events_fire_winlink(name: &str, wl: Winlink) {
     unsafe { events_fire(name, payload_for_winlink(wl), null_mut()) }
 }

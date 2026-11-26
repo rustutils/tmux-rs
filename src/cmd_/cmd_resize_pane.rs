@@ -153,11 +153,10 @@ unsafe fn cmd_resize_pane_mouse_update(c: *mut client, m: *mut mouse_event) {
         let mut cells: [*mut layout_cell; OFFSETS.len()] = zeroed();
         let mut resizes: u32 = 0;
 
-        let wl: *mut winlink = transmute_ptr(cmd_mouse_window(&*m, null_mut()));
-        if wl.is_null() {
+        let Some(wl) = cmd_mouse_window(&*m, null_mut()) else {
             (*c).tty.mouse_drag_update = None;
             return;
-        }
+        };
         let w: *mut window = winlink_window(wl);
 
         y = (*m).y + (*m).oy;

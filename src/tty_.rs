@@ -1033,7 +1033,7 @@ pub unsafe fn tty_repeat_space(tty: *mut tty, mut n: u32) {
 pub unsafe fn tty_window_bigger(tty: *mut tty) -> bool {
     unsafe {
         let c = (*tty).client;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
 
         (*tty).sx < (*w).sx || (*tty).sy - status_line_size(c) < (*w).sy
     }
@@ -1067,7 +1067,7 @@ pub unsafe fn tty_window_offset1(
 ) -> i32 {
     unsafe {
         let c = (*tty).client;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
         let wp = server_client_get_pane(c);
         let cx: u32;
         let cy: u32;
@@ -1137,8 +1137,8 @@ pub unsafe fn tty_update_window_offset(w: *mut window) {
     unsafe {
         for c in clients_iter() {
             if !client_get_session(c).is_null()
-                && !(*client_get_session(c)).curw.is_null()
-                && winlink_window((*client_get_session(c)).curw) == w
+                && (*client_get_session(c)).curw().is_some()
+                && winlink_window((*client_get_session(c)).curw_id()) == w
             {
                 tty_update_client_offset(c);
             }
@@ -1935,7 +1935,7 @@ pub unsafe fn tty_set_client_cb(ttyctx: *mut tty_ctx, c: *mut client) -> i32 {
     unsafe {
         let wp: *mut window_pane = (*ttyctx).arg.cast();
 
-        if winlink_window((*client_get_session(c)).curw) != window_pane_window(wp) {
+        if winlink_window((*client_get_session(c)).curw_id()) != window_pane_window(wp) {
             return 0;
         }
         if pane_layout_cell(wp).is_null() {

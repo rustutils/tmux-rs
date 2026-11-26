@@ -178,7 +178,7 @@ pub unsafe fn control_window_pane(c: *mut client, pane: u32) -> Option<NonNull<w
         }
         let wp = NonNull::new(window_pane_find_by_id(pane))?;
 
-        winlink_find_by_window(&raw mut (*client_get_session(c)).windows, window_pane_window(wp.as_ptr()))?;
+        winlink_find_by_window((*client_get_session(c)).sid(), WindowId((*window_pane_window(wp.as_ptr())).id))?;
 
         Some(wp)
     }
@@ -449,7 +449,7 @@ pub unsafe fn control_write_output(c: *mut client, wp: *mut window_pane) {
         let mut new_size = 0usize;
 
         'ignore: {
-            if winlink_find_by_window(&raw mut (*client_get_session(c)).windows, window_pane_window(wp)).is_none() {
+            if winlink_find_by_window((*client_get_session(c)).sid(), WindowId((*window_pane_window(wp)).id)).is_none() {
                 return;
             }
 

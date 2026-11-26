@@ -133,7 +133,7 @@ unsafe fn cmd_select_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         } else {
             // If -T and select-window is invoked on same window as
             // current, switch to previous window.
-            if args_has(args, 'T') && wl == (*s).curw {
+            if args_has(args, 'T') && wl == (*s).curw_id() {
                 if session_last(s) != 0 {
                     cmdq_error!(item, "no last window");
                     return cmd_retval::CMD_RETURN_ERROR;
@@ -142,14 +142,14 @@ unsafe fn cmd_select_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
                     cmd_find_from_session(current, s, cmd_find_flags::empty());
                 }
                 server_redraw_session(s);
-            } else if session_select(s, (*wl).idx) == 0 {
+            } else if session_select(s, winlink_of(wl).idx) == 0 {
                 cmd_find_from_session(current, s, cmd_find_flags::empty());
                 server_redraw_session(s);
             }
             cmdq_insert_hook!(s, item, current, "after-select-window");
         }
         if !c.is_null() && !client_get_session(c).is_null() {
-            (*winlink_window((*s).curw)).latest = c as _;
+            (*winlink_window((*s).curw_id())).latest = c as _;
         }
         recalculate_sizes();
 

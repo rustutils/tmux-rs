@@ -134,10 +134,16 @@ struct window_tree_modedata {
     each: u32,
 }
 
+/// The mode tree tag of a winlink. C uses its address, the ID is as
+/// stable and cannot be taken for a session or pane address.
+fn window_tree_winlink_tag(wl: WinlinkId) -> u64 {
+    u64::from(wl.0)
+}
+
 unsafe fn window_tree_pull_item(
     item: NonNull<window_tree_itemdata>,
     sp: *mut Option<NonNull<session>>,
-    wlp: *mut Option<NonNull<winlink>>,
+    wlp: *mut Option<Winlink>,
     wp: *mut Option<NonNull<window_pane>>,
 ) {
     unsafe {
@@ -149,20 +155,17 @@ unsafe fn window_tree_pull_item(
         }
 
         if (*item.as_ptr()).type_ == window_tree_type::WINDOW_TREE_SESSION {
-            *wlp = std::mem::transmute::<*mut winlink, Option<NonNull<winlink>>>(
-                (*(*sp).unwrap().as_ptr()).curw,
-            );
+            *wlp = (*(*sp).unwrap().as_ptr()).curw();
             *wp = std::mem::transmute::<*mut window_pane, Option<NonNull<window_pane>>>(
-                window_active_pane(winlink_window((*wlp).unwrap().as_ptr())),
+                window_active_pane(winlink_window((*wlp).unwrap())),
             );
             return;
         }
 
-        *wlp =
-            std::mem::transmute::<*mut winlink, Option<NonNull<winlink>>>(winlink_find_by_index(
-                &raw mut (*transmute_ptr(*sp)).windows,
-                (*item.as_ptr()).winlink,
-            ));
+        *wlp = winlink_find_by_index(
+            (*(*sp).unwrap().as_ptr()).sid(),
+            (*item.as_ptr()).winlink,
+        );
         if (*wlp).is_none() {
             *sp = None;
             return;
@@ -170,7 +173,7 @@ unsafe fn window_tree_pull_item(
 
         if (*item.as_ptr()).type_ == window_tree_type::WINDOW_TREE_WINDOW {
             *wp = std::mem::transmute::<*mut window_pane, Option<NonNull<window_pane>>>(
-                window_active_pane(winlink_window((*wlp).unwrap().as_ptr())),
+                window_active_pane(winlink_window((*wlp).unwrap())),
             );
             return;
         }
@@ -178,7 +181,7 @@ unsafe fn window_tree_pull_item(
         *wp = std::mem::transmute::<*mut window_pane, Option<NonNull<window_pane>>>(
             window_pane_find_by_id((*item.as_ptr()).pane as u32),
         );
-        if !window_has_pane(&*winlink_window((*wlp).unwrap().as_ptr()), transmute_ptr(*wp)) {
+        if !window_has_pane(&*winlink_window((*wlp).unwrap()), transmute_ptr(*wp)) {
             *wp = None;
         }
         if (*wp).is_none() {
@@ -208,7 +211,7 @@ unsafe fn window_tree_free_item(item: *mut window_tree_itemdata) {
 
 unsafe fn window_tree_build_pane(
     s: *mut session,
-    wl: *mut winlink,
+    wl: Winlink,
     wp: *mut window_pane,
     modedata: NonNull<c_void>,
     parent: *mut mode_tree_item,
@@ -222,11 +225,11 @@ unsafe fn window_tree_build_pane(
         let item = window_tree_add_item(data);
         (*item).type_ = window_tree_type::WINDOW_TREE_PANE;
         (*item).session = (*s).id as i32;
-        (*item).winlink = (*wl).idx;
+        (*item).winlink = wl.idx;
         (*item).pane = (*wp).id as i32;
 
         let text: *mut u8 =
-            format_single(null_mut(), cstr_to_str((*data.as_ptr()).format), null_mut(), s, wl, wp);
+            format_single(null_mut(), cstr_to_str((*data.as_ptr()).format), null_mut(), s, Some(wl.id), wp);
         let name = format_nul!("{idx}");
 
         mode_tree_add(
@@ -245,7 +248,7 @@ unsafe fn window_tree_build_pane(
 
 unsafe fn window_tree_filter_pane(
     s: *mut session,
-    wl: *mut winlink,
+    wl: Winlink,
     wp: *mut window_pane,
     filter: Option<&str>,
 ) -> bool {
@@ -254,7 +257,7 @@ unsafe fn window_tree_filter_pane(
             return true;
         };
 
-        let cp: *mut u8 = format_single(null_mut(), filter, null_mut(), s, wl, wp);
+        let cp: *mut u8 = format_single(null_mut(), filter, null_mut(), s, Some(wl.id), wp);
         let result = format_true(cp);
         free_(cp);
 
@@ -264,7 +267,7 @@ unsafe fn window_tree_filter_pane(
 
 unsafe fn window_tree_build_window(
     s: *mut session,
-    wl: *mut winlink,
+    wl: Winlink,
     modedata: NonNull<c_void>,
     sort_crit: *mut mode_tree_sort_criteria,
     parent: *mut mode_tree_item,
@@ -286,7 +289,7 @@ unsafe fn window_tree_build_window(
             item = window_tree_add_item(data);
             (*item).type_ = window_tree_type::WINDOW_TREE_WINDOW;
             (*item).session = (*s).id as i32;
-            (*item).winlink = (*wl).idx;
+            (*item).winlink = wl.idx;
             (*item).pane = -1;
 
             text = format_single(
@@ -294,10 +297,10 @@ unsafe fn window_tree_build_window(
                 cstr_to_str((*data.as_ptr()).format),
                 null_mut(),
                 s,
-                wl,
+                Some(wl.id),
                 null_mut(),
             );
-            name = format_nul!("{}", (*wl).idx);
+            name = format_nul!("{}", wl.idx);
 
             let expanded = !matches!(
                 (*data.as_ptr()).type_,
@@ -308,7 +311,7 @@ unsafe fn window_tree_build_window(
                 (*data.as_ptr()).data,
                 parent,
                 item.cast(),
-                wl as u64,
+                window_tree_winlink_tag(wl.id),
                 cstr_to_str(name),
                 text,
                 Some(expanded),
@@ -396,7 +399,7 @@ unsafe fn window_tree_build_session(
             cstr_to_str((*data).format),
             null_mut(),
             s,
-            null_mut(),
+            None,
             null_mut(),
         );
 
@@ -412,19 +415,12 @@ unsafe fn window_tree_build_session(
         );
         free_(text);
 
-        let mut l: *mut *mut winlink = null_mut();
-        let mut n = 0;
-        for &wl in (*(&raw mut (*s).windows)).values() {
-            l = xreallocarray_(l, n + 1).as_ptr();
-            *l.add(n) = wl;
-            n += 1;
-        }
-
-        let winlink_list = std::slice::from_raw_parts_mut(l, n);
+        let mut winlink_list = (*s).windows();
+        let n = winlink_list.len();
         match window_tree_sort_type::try_from((*sort_crit).field as i32) {
             Ok(window_tree_sort_type::WINDOW_TREE_BY_INDEX) => {
                 winlink_list.sort_by(|a, b| {
-                    i32_to_ordering((**a).idx - (**b).idx).maybe_reverse((*sort_crit).reversed)
+                    i32_to_ordering(a.idx - b.idx).maybe_reverse((*sort_crit).reversed)
                 });
             }
             Ok(window_tree_sort_type::WINDOW_TREE_BY_TIME) => {
@@ -448,8 +444,8 @@ unsafe fn window_tree_build_session(
         }
 
         let mut empty = 0;
-        for i in 0..n {
-            if window_tree_build_window(s, *l.add(i), modedata, sort_crit, mti, filter) == 0 {
+        for &wl in &winlink_list {
+            if window_tree_build_window(s, wl, modedata, sort_crit, mti, filter) == 0 {
                 empty += 1;
             }
         }
@@ -458,7 +454,6 @@ unsafe fn window_tree_build_session(
             (*data).item_size -= 1;
             mode_tree_remove((*data).data, mti);
         }
-        free_(l);
     }
 }
 
@@ -471,8 +466,6 @@ unsafe fn window_tree_build(
     unsafe {
         let data: NonNull<window_tree_modedata> = modedata.cast();
         let data = data.as_ptr();
-
-        let mut sg: *mut session_group;
 
         // u_int n, i;
         let current = session_group_contains((*data).fs.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()));
@@ -488,13 +481,11 @@ unsafe fn window_tree_build(
         let mut n: u32 = 0;
         for s in sessions_iter() {
             if (*data).squash_groups
-                && ({
-                    sg = session_group_contains(s);
-                    !sg.is_null()
-                })
-                && ((sg == current && s != (*data).fs.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()))
-                    || (sg != current && s != (*sg).sessions.first().copied().unwrap_or(null_mut())))
-
+                && let Some(sg) = session_group_contains(s)
+                && ((Some(&sg) == current.as_ref()
+                    && s != (*data).fs.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()))
+                    || (Some(&sg) != current.as_ref()
+                        && s != session_group_sessions(&sg).first().copied().unwrap_or(null_mut())))
             {
                 continue;
             }
@@ -535,10 +526,12 @@ unsafe fn window_tree_build(
         match (*data).type_ {
             window_tree_type::WINDOW_TREE_NONE => (),
             window_tree_type::WINDOW_TREE_SESSION => *tag = (*data).fs.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()) as u64,
-            window_tree_type::WINDOW_TREE_WINDOW => *tag = (*data).fs.wl as u64,
+            window_tree_type::WINDOW_TREE_WINDOW => {
+                *tag = (*data).fs.wl.map_or(0, window_tree_winlink_tag);
+            }
             window_tree_type::WINDOW_TREE_PANE => {
-                if window_count_panes(&*winlink_window((*data).fs.wl)) == 1 {
-                    *tag = (*data).fs.wl as u64;
+                if window_count_panes(&*winlink_window(winlink_of((*data).fs.wl))) == 1 {
+                    *tag = (*data).fs.wl.map_or(0, window_tree_winlink_tag);
                 } else {
                     *tag = (*data).fs.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()) as u64;
                 }
@@ -606,7 +599,7 @@ unsafe fn window_tree_draw_session(
         let mut gc: GridCell = zeroed();
         let mut label: *mut u8;
 
-        let total = winlink_count(&raw mut (*s).windows);
+        let total = winlink_count((*s).sid());
 
         memcpy__(&raw mut gc, &raw const GRID_DEFAULT_CELL);
         let colour = options_get_number_(oo, "display-panes-colour");
@@ -622,8 +615,9 @@ unsafe fn window_tree_draw_session(
         }
 
         let mut current: u32 = 0;
-        for &wl in (*(&raw mut (*s).windows)).values() {
-            if wl == (*s).curw {
+        let curw = (*s).curw_id();
+        for wl in (*s).windows() {
+            if Some(wl.id) == curw {
                 break;
             }
             current += 1;
@@ -694,7 +688,8 @@ unsafe fn window_tree_draw_session(
 
         loop_ = 0;
         i = 0;
-        for &wl in (*(&raw mut (*s).windows)).values() {
+        let curw = (*s).curw_id();
+        for wl in (*s).windows() {
             if loop_ == end {
                 break;
             }
@@ -704,7 +699,7 @@ unsafe fn window_tree_draw_session(
             }
             let w = winlink_window(wl);
 
-            if wl == (*s).curw {
+            if Some(wl.id) == curw {
                 gc.fg = active_colour as i32;
             } else {
                 gc.fg = colour as i32;
@@ -724,11 +719,11 @@ unsafe fn window_tree_draw_session(
             screen_write_cursormove(ctx, (cx + offset) as i32, cy as i32, 0);
             screen_write_preview(ctx, &raw mut (*window_active_pane(w)).base, width, sy);
 
-            label = format_nul!(" {}:{} ", (*wl).idx, (*w).name.as_deref().unwrap_or(""));
+            label = format_nul!(" {}:{} ", wl.idx, (*w).name.as_deref().unwrap_or(""));
             if strlen(label) > width as usize {
                 // Free the long label before making the short one (upstream e6d275b3).
                 free_(label);
-                label = format_nul!(" {} ", (*wl).idx);
+                label = format_nul!(" {} ", wl.idx);
             }
             window_tree_draw_label(ctx, cx + offset, cy, width, sy, &raw mut gc, label);
             free_(label);
@@ -906,7 +901,7 @@ unsafe fn window_tree_draw(
     unsafe {
         let item: Option<NonNull<window_tree_itemdata>> = itemdata.map(NonNull::cast);
         let mut sp: Option<NonNull<session>> = None;
-        let mut wlp: Option<NonNull<winlink>> = None;
+        let mut wlp: Option<Winlink> = None;
         let mut wp: Option<NonNull<window_pane>> = None;
 
         window_tree_pull_item(item.unwrap(), &raw mut sp, &raw mut wlp, &raw mut wp);
@@ -922,7 +917,7 @@ unsafe fn window_tree_draw(
             window_tree_type::WINDOW_TREE_WINDOW => window_tree_draw_window(
                 modedata.cast(),
                 transmute_ptr(sp),
-                winlink_window(transmute_ptr(wlp)),
+                winlink_window(wlp.unwrap()),
                 ctx,
                 sx,
                 sy,
@@ -942,7 +937,7 @@ unsafe fn window_tree_search(
     unsafe {
         let item: NonNull<window_tree_itemdata> = itemdata.cast();
         let mut s: Option<NonNull<session>> = None;
-        let mut wl: Option<NonNull<winlink>> = None;
+        let mut wl: Option<Winlink> = None;
         let mut wp: Option<NonNull<window_pane>> = None;
         window_tree_pull_item(item, &raw mut s, &raw mut wl, &raw mut wp);
 
@@ -955,7 +950,7 @@ unsafe fn window_tree_search(
             }
             window_tree_type::WINDOW_TREE_WINDOW => {
                 if let (Some(_s), Some(wl)) = (s, wl) {
-                    return (*winlink_window(wl.as_ptr())).name.as_deref()
+                    return (*winlink_window(wl)).name.as_deref()
                         .is_some_and(|n| n.contains(cstr_to_str(ss)));
                 }
             }
@@ -985,7 +980,7 @@ unsafe fn window_tree_menu(modedata: NonNull<c_void>, c: *mut client, key: key_c
         if let Some(wme) = (*wp.as_ptr()).modes.first().copied().and_then(NonNull::new)
             && (*wme.as_ptr()).data == modedata.as_ptr()
         {
-            window_tree_key(wme, c, null_mut(), null_mut(), key, null_mut());
+            window_tree_key(wme, c, null_mut(), None, key, null_mut());
         }
     }
 }
@@ -1009,9 +1004,9 @@ unsafe fn window_tree_get_key(
         if (*item.as_ptr()).type_ == window_tree_type::WINDOW_TREE_SESSION {
             format_defaults(ft, null_mut(), s, None, None);
         } else if (*item.as_ptr()).type_ == window_tree_type::WINDOW_TREE_WINDOW {
-            format_defaults(ft, null_mut(), s, wl, None);
+            format_defaults(ft, null_mut(), s, wl.map(|wl| wl.id), None);
         } else {
-            format_defaults(ft, null_mut(), s, wl, wp);
+            format_defaults(ft, null_mut(), s, wl.map(|wl| wl.id), wp);
         }
         format_add!(ft, "line", "{line}");
 
@@ -1159,7 +1154,7 @@ unsafe fn window_tree_get_target(
             }
             window_tree_type::WINDOW_TREE_WINDOW => {
                 if let (Some(s), Some(wl)) = (s, wl) {
-                    target = Some(format!("={}:{}.", (*s.as_ptr()).name, (*wl.as_ptr()).idx));
+                    target = Some(format!("={}:{}.", (*s.as_ptr()).name, wl.idx));
                 }
             }
             window_tree_type::WINDOW_TREE_PANE => {
@@ -1167,7 +1162,7 @@ unsafe fn window_tree_get_target(
                     target = Some(format!(
                         "={}:{}.%{}",
                         (*s.as_ptr()).name,
-                        (*wl.as_ptr()).idx,
+                        wl.idx,
                         (*wp.as_ptr()).id
                     ));
                 }
@@ -1179,7 +1174,7 @@ unsafe fn window_tree_get_target(
         } else {
             cmd_find_from_winlink_pane(
                 fs,
-                transmute_ptr(wl),
+                wl.unwrap(),
                 transmute_ptr(wp),
                 cmd_find_flags::empty(),
             );
@@ -1313,7 +1308,7 @@ unsafe fn window_tree_kill_each(
             }
             window_tree_type::WINDOW_TREE_WINDOW => {
                 if let Some(wl) = wl {
-                    server_kill_window(winlink_window(wl.as_ptr()), 0);
+                    server_kill_window(winlink_window(wl), 0);
                 }
             }
             window_tree_type::WINDOW_TREE_PANE => {
@@ -1420,14 +1415,10 @@ unsafe fn window_tree_mouse(
             };
             mode_tree_expand_current((*data).data);
 
-            for (loop_, &wl_) in (*(&raw mut (*s.as_ptr()).windows)).values().enumerate() {
-                wl = NonNull::new(wl_);
-                if loop_ as u32 == (*data).start + x {
-                    break;
-                }
-            }
-            if let Some(wl) = wl {
-                mode_tree_set_current((*data).data, wl.addr().get() as u64);
+            // Nothing is selected when the click is past the last one.
+            let clicked = (*s.as_ptr()).windows().get(((*data).start + x) as usize).copied();
+            if let Some(wl) = clicked {
+                mode_tree_set_current((*data).data, window_tree_winlink_tag(wl.id));
             }
             return '\r' as key_code;
         }
@@ -1436,13 +1427,10 @@ unsafe fn window_tree_mouse(
                 return KEYC_NONE;
             };
             mode_tree_expand_current((*data).data);
-            for (loop_, &wp_) in (*winlink_window(wl.as_ptr())).panes.iter().enumerate() {
-                wp = Some(NonNull::new(wp_).unwrap());
-                if loop_ as u32 == (*data).start + x {
-                    break;
-                }
-            }
-            if let Some(wp) = wp {
+            let w = winlink_window(wl);
+            let panes = &(*w).panes;
+            let clicked = panes.get(((*data).start + x) as usize).copied();
+            if let Some(wp) = clicked.and_then(NonNull::new) {
                 mode_tree_set_current((*data).data, wp.addr().get() as u64);
             }
             return '\r' as key_code;
@@ -1455,7 +1443,7 @@ unsafe fn window_tree_key(
     wme: NonNull<window_mode_entry>,
     c: *mut client,
     _: *mut session,
-    _: *mut winlink,
+    _: Option<WinlinkId>,
     mut key: key_code,
     m: *mut mouse_event,
 ) {
@@ -1500,14 +1488,14 @@ unsafe fn window_tree_key(
                 b'>' => (*data).offset += 1,
                 b'H' => {
                     mode_tree_expand((*data).data, (*fsp).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()) as u64);
-                    mode_tree_expand((*data).data, (*fsp).wl as u64);
+                    mode_tree_expand((*data).data, (*fsp).wl.map_or(0, window_tree_winlink_tag));
                     if !mode_tree_set_current((*data).data, pane_ptr_from_id((*wme.as_ptr()).wp) as u64) {
-                        mode_tree_set_current((*data).data, (*fsp).wl as u64);
+                        mode_tree_set_current((*data).data, (*fsp).wl.map_or(0, window_tree_winlink_tag));
                     }
                 }
                 b'm' => {
                     window_tree_pull_item(item, &raw mut ns, &raw mut nwl, &raw mut nwp);
-                    server_set_marked(transmute_ptr(ns), transmute_ptr(nwl), transmute_ptr(nwp));
+                    server_set_marked(transmute_ptr(ns), nwl.map(|wl: Winlink| wl.id), transmute_ptr(nwp));
                     mode_tree_build((*data).data);
                 }
                 b'M' => {
@@ -1526,7 +1514,7 @@ unsafe fn window_tree_key(
                         }
                         window_tree_type::WINDOW_TREE_WINDOW => {
                             if let Some(nwl) = nwl {
-                                prompt = format_nul!("Kill window {}? ", (*nwl.as_ptr()).idx);
+                                prompt = format_nul!("Kill window {}? ", nwl.idx);
                             }
                         }
                         window_tree_type::WINDOW_TREE_PANE => {

@@ -361,7 +361,7 @@ pub unsafe fn server_client_attached_lost(c: *mut client) {
             let mut found: *mut client = null_mut();
             for loop_ in clients_iter() {
                 let s = client_get_session(loop_);
-                if loop_ == c || s.is_null() || winlink_window((*s).curw) != w {
+                if loop_ == c || s.is_null() || winlink_window((*s).curw_id()) != w {
                     continue;
                 }
                 if found.is_null()
@@ -413,16 +413,16 @@ pub unsafe fn server_client_set_session(c: *mut client, s: *mut session) {
         (*c).session = new_id;
         (*c).flags |= client_flag::FOCUSED;
 
-        if !old.is_null() && !(*old).curw.is_null() {
-            window_update_focus(winlink_window((*old).curw));
+        if !old.is_null() && !(*old).curw().is_none() {
+            window_update_focus(winlink_window((*old).curw_id()));
         }
         if !s.is_null() {
             recalculate_sizes();
-            window_update_focus(winlink_window((*s).curw));
+            window_update_focus(winlink_window((*s).curw_id()));
             session_update_activity(s, null_mut());
             libc::gettimeofday(&raw mut (*s).last_attached_time, null_mut());
-            (*(*s).curw).flags &= !WINLINK_ALERTFLAGS;
-            (*winlink_window((*s).curw)).latest = c.cast();
+            winlink_remove_flags((*s).curw_id().expect("current window"), WINLINK_ALERTFLAGS);
+            (*winlink_window((*s).curw_id())).latest = c.cast();
             alerts_check_session(&*s);
             tty_update_client_offset(c);
             status_timer_start(NonNull::new_unchecked(c));
@@ -692,7 +692,6 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
         let s = client_get_session(c);
         let fs: *mut session;
 
-        let fwl: *mut winlink;
         let fwp: *mut window_pane;
 
         // u_int x, y, b, sx, sy, px, py;
@@ -878,11 +877,11 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
                             where_ = where_::Status;
                         }
                         style_range_type::STYLE_RANGE_WINDOW => {
-                            fwl =
-                                winlink_find_by_index(&raw mut (*s).windows, (*sr).argument as i32);
-                            if fwl.is_null() {
+                            let Some(fwl) =
+                                winlink_find_by_index((*s).sid(), (*sr).argument as i32)
+                            else {
                                 return KEYC_UNKNOWN;
-                            }
+                            };
                             (*m).w = (*winlink_window(fwl)).id as i32;
 
                             log_debug!("mouse range: window @{}", (*m).w);
@@ -923,7 +922,7 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
                 );
                 log_debug!(
                     "mouse window @{} at {},{} ({}x{})",
-                    (*winlink_window((*s).curw)).id,
+                    (*winlink_window((*s).curw_id())).id,
                     (*m).ox,
                     (*m).oy,
                     sx,
@@ -938,8 +937,8 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
                 let mut wp = null_mut();
 
                 // Try the pane borders if not zoomed.
-                if !(*winlink_window((*s).curw)).flags.intersects(window_flag::ZOOMED)
-                    && let Some(&wp_) = (*winlink_window((*s).curw)).panes
+                if !(*winlink_window((*s).curw_id())).flags.intersects(window_flag::ZOOMED)
+                    && let Some(&wp_) = (*winlink_window((*s).curw_id())).panes
                     .iter()
                     .find(|&&wp| {
                         ((*wp).xoff + (*wp).sx == px
@@ -956,7 +955,7 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
 
                 // Otherwise try inside the pane.
                 if where_ == where_::Nowhere {
-                    wp = window_get_active_at(&*winlink_window((*s).curw), px, py);
+                    wp = window_get_active_at(&*winlink_window((*s).curw_id()), px, py);
                     if !wp.is_null() {
                         where_ = where_::Pane;
                     } else {
@@ -1910,7 +1909,7 @@ pub unsafe fn server_client_update_latest(c: *mut client) {
         if client_get_session(c).is_null() {
             return;
         }
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
 
         if (*w).latest == c.cast() {
             return;
@@ -1943,7 +1942,7 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
         let mut first: KeyTableRef;
         let wme: *mut window_mode_entry;
         let mut fs: cmd_find_state = zeroed();
-        let wl: *mut winlink;
+        let wl: Option<WinlinkId>;
         let wp: *mut window_pane;
 
         let xtimeout: i32;
@@ -1960,7 +1959,7 @@ pub unsafe fn server_client_key_callback(item: *mut cmdq_item, data: *mut c_void
                 if s.is_null() || (*c).flags.intersects(CLIENT_UNATTACHEDFLAGS) {
                     break 'out;
                 }
-                wl = (*s).curw;
+                wl = (*s).curw_id();
 
                 // Update the activity timer.
                 (*c).last_activity_time = (*c).activity_time;
@@ -2300,7 +2299,7 @@ unsafe fn server_client_handle_key0(
             // Then a pane prompt: the active pane's, or the first visible
             // pane with one. A pane prompt keeps cursor keys, and mouse
             // keys it does not use go nowhere.
-            let w = winlink_window((*s).curw);
+            let w = winlink_window((*s).curw_id());
             let mut wp = (*w).active.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
             if wp.is_null() || !pane_prompt::window_pane_has_prompt(wp) {
                 wp = (*w)
@@ -2382,15 +2381,13 @@ pub unsafe fn server_client_check_window_resize(w: *mut window) {
             return;
         }
 
-        let mut wl = null_mut();
-        for &wl_ in &(*w).winlinks {
-            wl = wl_;
-            let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-            if !s.is_null() && (*s).attached != 0 && (*s).curw == wl {
-                break;
-            }
-        }
-        if wl.is_null() {
+        // Only a window that is current in an attached session is
+        // resized now (C's loop ends with wl NULL otherwise).
+        let shown = (*w).winlinks().into_iter().any(|wl| {
+            let s = session_from_id(wl.session).unwrap_or(null_mut());
+            !s.is_null() && (*s).attached != 0 && (*s).curw_id() == Some(wl.id)
+        });
+        if !shown {
             return;
         }
 
@@ -2607,7 +2604,7 @@ pub unsafe fn server_client_check_pane_buffer(wp: *mut window_pane) {
 pub unsafe fn server_client_reset_state(c: *mut client) {
     unsafe {
         let tty = &raw mut (*c).tty;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
         let wp = server_client_get_pane(c);
         let mut s = null_mut();
         let oo = (*client_get_session(c)).options;
@@ -2896,7 +2893,7 @@ fn server_client_redraw_timer_fire() {
 // updated and it is done when the status line is redrawn.
 pub unsafe fn server_client_check_modes(c: *mut client) {
     unsafe {
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
 
         if (*c)
             .flags
@@ -2922,7 +2919,7 @@ pub unsafe fn server_client_check_redraw(c: *mut client) {
     unsafe {
         let s = client_get_session(c);
         let tty = &raw mut (*c).tty;
-        let w = winlink_window((*client_get_session(c)).curw);
+        let w = winlink_window((*client_get_session(c)).curw_id());
 
         let mode = (*tty).mode;
         let mut client_flags: client_flag = client_flag::empty();
@@ -3040,10 +3037,10 @@ pub unsafe fn server_client_set_path(c: *mut client) {
     unsafe {
         let s = client_get_session(c);
 
-        if (*s).curw.is_null() {
+        if (*s).curw().is_none() {
             return;
         }
-        let active = window_active_pane(winlink_window((*s).curw));
+        let active = window_active_pane(winlink_window((*s).curw_id()));
         let path_ptr = match (*active).base.path.as_ref() {
             Some(p) => p.as_ptr().cast::<u8>(),
             None => c!(""),
@@ -3652,7 +3649,7 @@ pub unsafe fn server_client_get_pane(c: *mut client) -> *mut window_pane {
         if s.is_null() {
             return null_mut();
         }
-        window_active_pane(winlink_window((*s).curw))
+        window_active_pane(winlink_window((*s).curw_id()))
     }
 }
 

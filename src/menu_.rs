@@ -89,7 +89,7 @@ pub unsafe fn menu_add_item(
                 &item.as_ref().unwrap().name,
                 c,
                 null_mut(),
-                null_mut(),
+                None,
                 null_mut(),
             )
         };
@@ -146,7 +146,7 @@ pub unsafe fn menu_add_item(
             if !fs.is_null() {
                 format_single_from_state(qitem, cstr_to_str(cmd), c, fs)
             } else {
-                format_single(qitem, cstr_to_str(cmd), c, null_mut(), null_mut(), null_mut())
+                format_single(qitem, cstr_to_str(cmd), c, null_mut(), None, null_mut())
             }
         } else {
             null_mut()
@@ -554,7 +554,7 @@ pub unsafe fn menu_set_style(
     option: *const u8,
 ) {
     unsafe {
-        let o = (*winlink_window((*client_get_session(c)).curw)).options;
+        let o = (*winlink_window((*client_get_session(c)).curw_id())).options;
 
         memcpy__(gc, &raw const GRID_DEFAULT_CELL);
         style_apply(gc, o, option, null_mut());
@@ -592,7 +592,7 @@ pub unsafe fn menu_prepare(
         let mut choice;
         let mut name: &str;
 
-        let o = (*winlink_window((*client_get_session(c)).curw)).options;
+        let o = (*winlink_window((*client_get_session(c)).curw_id())).options;
 
         if (*c).tty.sx < (*menu).width + 4 || (*c).tty.sy < (*menu).items.len() as u32 + 2 {
             return null_mut();

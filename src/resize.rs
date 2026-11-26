@@ -419,11 +419,11 @@ pub unsafe fn recalculate_size_skip_client(
         // If the current flag is set, then skip any client where this window
         // is not the current window - this is used for aggressive-resize.
         // Otherwise skip any session that doesn't contain the window.
-        if (*client_get_session(loop_)).curw.is_null() {
+        if (*client_get_session(loop_)).curw().is_none() {
             return true;
         }
         if current {
-            return winlink_window((*client_get_session(loop_)).curw) != w;
+            return winlink_window((*client_get_session(loop_)).curw_id()) != w;
         }
 
         !session_has(client_get_session(loop_), &*w)

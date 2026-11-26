@@ -65,7 +65,7 @@ unsafe fn cmd_join_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
         let dst_wl = (*target).wl;
         let dst_wp = (*target).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
         let dst_w = winlink_window(dst_wl);
-        let dst_idx = (*dst_wl).idx;
+        let dst_idx = winlink_of(dst_wl).idx;
         server_unzoom_window(dst_w);
 
         let src_wl = (*source).wl;
@@ -167,7 +167,7 @@ unsafe fn cmd_join_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
             server_status_session(dst_s);
         }
 
-        window_fire_pane_moved(src_wp, src_w, (*src_wl).idx, dst_w, dst_idx);
+        window_fire_pane_moved(src_wp, src_w, winlink_of(src_wl).idx, dst_w, dst_idx);
         if window_count_panes(&*src_w) == 0 {
             server_kill_window(src_w, 1);
         } else {

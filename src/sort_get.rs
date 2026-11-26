@@ -143,15 +143,15 @@ pub unsafe fn sort_get_panes_window(w: *mut window, criteria: &SortCriteria) -> 
 /// The sort key of a winlink. None if its window is gone.
 ///
 /// # Safety
-/// `wl` must be a valid winlink.
-unsafe fn winlink_key(wl: *mut winlink) -> Option<WinlinkKey> {
+/// The winlink's window must be valid or gone.
+unsafe fn winlink_key(wl: Winlink) -> Option<WinlinkKey> {
     unsafe {
         let w = winlink_window(wl);
         if w.is_null() {
             return None;
         }
         Some(WinlinkKey {
-            idx: (*wl).idx,
+            idx: wl.idx,
             name: (*w).name.clone().unwrap_or_default(),
             creation: timestamp(&(*w).creation_time),
             activity: timestamp(&(*w).activity_time),
@@ -163,13 +163,13 @@ unsafe fn winlink_key(wl: *mut winlink) -> Option<WinlinkKey> {
 /// Collects the keys of winlinks and sorts them.
 ///
 /// # Safety
-/// Every winlink must be valid.
+/// The windows of the winlinks must be valid or gone.
 unsafe fn sort_winlinks(
-    winlinks: impl Iterator<Item = *mut winlink>,
+    winlinks: impl Iterator<Item = Winlink>,
     criteria: &SortCriteria,
-) -> Vec<*mut winlink> {
+) -> Vec<Winlink> {
     unsafe {
-        let mut l: Vec<(WinlinkKey, *mut winlink)> = winlinks
+        let mut l: Vec<(WinlinkKey, Winlink)> = winlinks
             .filter_map(|wl| Some((winlink_key(wl)?, wl)))
             .collect();
         sort_by(&mut l, criteria, |(key, _)| key);
@@ -182,11 +182,9 @@ unsafe fn sort_winlinks(
 ///
 /// # Safety
 /// The session registry must hold valid sessions.
-pub unsafe fn sort_get_winlinks(criteria: &SortCriteria) -> Vec<*mut winlink> {
+pub unsafe fn sort_get_winlinks(criteria: &SortCriteria) -> Vec<Winlink> {
     unsafe {
-        let all: Vec<*mut winlink> = sessions_iter()
-            .flat_map(|s| (*s).windows.values().copied().collect::<Vec<_>>())
-            .collect();
+        let all: Vec<Winlink> = sessions_iter().flat_map(|s| (*s).windows()).collect();
         sort_winlinks(all.into_iter(), criteria)
     }
 }
@@ -195,9 +193,9 @@ pub unsafe fn sort_get_winlinks(criteria: &SortCriteria) -> Vec<*mut winlink> {
 ///
 /// # Safety
 /// `s` must be a valid session.
-pub unsafe fn sort_get_winlinks_session(s: *mut session, criteria: &SortCriteria) -> Vec<*mut winlink> {
+pub unsafe fn sort_get_winlinks_session(s: *mut session, criteria: &SortCriteria) -> Vec<Winlink> {
     unsafe {
-        let all: Vec<*mut winlink> = (*s).windows.values().copied().collect();
+        let all = (*s).windows();
         sort_winlinks(all.into_iter(), criteria)
     }
 }

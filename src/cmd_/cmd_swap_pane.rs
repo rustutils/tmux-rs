@@ -43,8 +43,8 @@ unsafe fn cmd_swap_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
         let dst_wp = (*target).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
         let mut src_w = winlink_window((*source).wl);
         let mut src_wp = (*source).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
-        let dst_idx = (*(*target).wl).idx;
-        let src_idx = (*(*source).wl).idx;
+        let dst_idx = winlink_of((*target).wl).idx;
+        let src_idx = winlink_of((*source).wl).idx;
 
         if window_push_zoom(dst_w, false, args_has(args, 'Z')) {
             server_redraw_window(dst_w);

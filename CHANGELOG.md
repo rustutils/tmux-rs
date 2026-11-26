@@ -13,6 +13,12 @@
   it. Only popups set it to `default-shell`.
 - `show-messages -J` lists the newest job first.
 - `run-shell -E` shows the command's standard error as well.
+- `#{window_linked}` and `#{window_linked_sessions}` are right for grouped
+  sessions: a window in a group counts as linked, and a group counts as
+  one session.
+- Killing a session's last window fires `session-closed` before
+  `window-unlinked`, as in 3.8.
+- `swap-window` keeps the marked pane marked.
 
 ### Fixes
 
@@ -28,6 +34,14 @@
   memory. As in tmux, its next key goes to the root table.
 - `bind-key` and `unbind-key` report an unknown key as `unknown key: X`,
   as tmux does.
+- `new-session -t` with a group name that is not a session no longer
+  crashes the server.
+- `#{window_stack_index}` is 0 for a window that is not on the last window
+  stack, instead of the size of the stack.
+- A window waits to be resized until it is the current window of an
+  attached session, as in tmux.
+- Clicking past the last item in a `choose-tree` preview selects nothing,
+  instead of the last item.
 
 ## 0.2.0 (2026-11-26)
 

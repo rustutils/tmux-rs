@@ -822,7 +822,7 @@ pub unsafe fn cmd_mouse_at(
 pub unsafe fn cmd_mouse_window(
     m: &mouse_event,
     sp: *mut *mut session,
-) -> Option<NonNull<winlink>> {
+) -> Option<Winlink> {
     unsafe {
         let s: *mut session;
 
@@ -838,13 +838,13 @@ pub unsafe fn cmd_mouse_window(
             return None;
         }
         let wl = if m.w == -1 {
-            NonNull::new((*s).curw)
+            (*s).curw()
         } else {
             let w = window_find_by_id(m.w as u32);
             if w.is_null() {
                 return None;
             }
-            winlink_find_by_window(&raw mut (*s).windows, w)
+            winlink_find_by_window((*s).sid(), WindowId((*w).id))
         };
         if !sp.is_null() {
             *sp = s;
@@ -856,23 +856,23 @@ pub unsafe fn cmd_mouse_window(
 pub unsafe fn cmd_mouse_pane(
     m: &mouse_event,
     sp: *mut *mut session,
-    wlp: *mut *mut winlink,
+    wlp: *mut Option<WinlinkId>,
 ) -> Option<NonNull<window_pane>> {
     unsafe {
         let wl = cmd_mouse_window(m, sp)?;
         let wp;
 
         if m.wp == -1 {
-            wp = NonNull::new(window_active_pane(winlink_window(wl.as_ptr())));
+            wp = NonNull::new(window_active_pane(winlink_window(wl)));
         } else {
             wp = Some(NonNull::new(window_pane_find_by_id(m.wp as u32))?);
-            if !window_has_pane(&*winlink_window(wl.as_ptr()), wp.unwrap().as_ptr()) {
+            if !window_has_pane(&*winlink_window(wl), wp.unwrap().as_ptr()) {
                 return None;
             }
         }
 
         if !wlp.is_null() {
-            *wlp = wl.as_ptr();
+            *wlp = Some(wl.id);
         }
         wp
     }

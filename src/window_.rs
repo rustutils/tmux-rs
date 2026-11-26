@@ -19,6 +19,7 @@ use crate::libc::{
 #[cfg(feature = "utempter")]
 use crate::utempter::utempter_remove_record;
 use crate::*;
+use crate::global::with_links;
 use crate::options_::{options_create, options_free, options_get_number___, options_get_string_};
 
 /// Default pixel cell sizes.
@@ -134,97 +135,99 @@ pub struct window_pane_input_data {
     file: *mut client_file,
 }
 
-pub unsafe fn winlink_find_by_window(
-    wwl: *mut winlinks,
-    w: *mut window,
-) -> Option<NonNull<winlink>> {
-    unsafe {
-        let target = if w.is_null() { None } else { Some(WindowId((*w).id)) };
-        for &wl in (*wwl).values() {
-            if (*wl).window == target {
-                return NonNull::new(wl);
-            }
-        }
-        None
+impl window {
+    /// The window's winlinks, in the order they were linked.
+    pub fn winlinks(&self) -> Vec<Winlink> {
+        let wid = WindowId(self.id);
+        with_links(|l| l.window_links(wid))
     }
 }
 
-pub unsafe fn winlink_find_by_index(wwl: *mut winlinks, idx: i32) -> *mut winlink {
-    unsafe {
-        if idx < 0 {
-            fatalx("bad index");
-        }
+/// Whether a window is linked more than once, in any sessions or groups
+/// (#{`window_linked`}).
+pub fn window_linked_anywhere(w: WindowId) -> bool {
+    with_links(|l| l.is_linked_anywhere(w))
+}
 
-        (*wwl).get(&idx).copied().unwrap_or(null_mut())
+/// The number of sessions a window is in, counting a group once
+/// (#{`window_linked_sessions`}).
+pub fn window_linked_sessions(w: WindowId) -> u32 {
+    with_links(|l| l.linked_sessions(w))
+}
+
+/// The winlink with this ID, which must exist (where C would follow its
+/// pointer).
+///
+/// # Panics
+/// If the ID is None or its winlink is gone.
+#[track_caller]
+pub fn winlink_of(id: Option<WinlinkId>) -> Winlink {
+    winlink_get(id.expect("no winlink")).expect("winlink is gone")
+}
+
+/// The winlink with this ID, if it still exists.
+pub fn winlink_get(id: WinlinkId) -> Option<Winlink> {
+    with_links(|l| l.get(id))
+}
+
+/// The first winlink of a window in a session, by index.
+pub fn winlink_find_by_window(s: SessionId, w: WindowId) -> Option<Winlink> {
+    with_links(|l| l.find_by_window(s, w))
+}
+
+/// The winlink at an index in a session.
+pub fn winlink_find_by_index(s: SessionId, idx: i32) -> Option<Winlink> {
+    if idx < 0 {
+        fatalx("bad index");
+    }
+    with_links(|l| l.find_by_index(s, idx))
+}
+
+/// The first winlink of the window with this ID in a session.
+pub fn winlink_find_by_window_id(s: SessionId, id: u32) -> Option<Winlink> {
+    winlink_find_by_window(s, WindowId(id))
+}
+
+/// The number of winlinks in a session.
+pub fn winlink_count(s: SessionId) -> u32 {
+    with_links(|l| l.count(s))
+}
+
+/// Something that names a winlink: a copy, or an ID of one that must
+/// exist (as C follows its pointer).
+pub trait WinlinkRef {
+    /// The winlink.
+    ///
+    /// # Panics
+    /// For an ID whose winlink is gone.
+    fn winlink(self) -> Winlink;
+}
+
+impl WinlinkRef for Winlink {
+    fn winlink(self) -> Winlink {
+        self
     }
 }
 
-pub unsafe fn winlink_find_by_window_id(wwl: *mut winlinks, id: u32) -> *mut winlink {
-    unsafe {
-        for &wl in (*wwl).values() {
-            if (*wl).window == Some(WindowId(id)) {
-                return wl;
-            }
-        }
-
-        null_mut()
+impl WinlinkRef for WinlinkId {
+    #[track_caller]
+    fn winlink(self) -> Winlink {
+        winlink_of(Some(self))
     }
 }
 
-unsafe fn winlink_next_index(wwl: *mut winlinks, idx: i32) -> i32 {
-    let mut i = idx;
-
-    loop {
-        if unsafe { winlink_find_by_index(wwl, i).is_null() } {
-            return i;
-        }
-
-        if i == i32::MAX {
-            i = 0;
-        } else {
-            i += 1;
-        }
-
-        if i == idx {
-            break;
-        }
-    }
-
-    -1
-}
-
-pub unsafe fn winlink_count(wwl: *mut winlinks) -> u32 {
-    unsafe { (*wwl).len() as u32 }
-}
-
-pub unsafe fn winlink_add(wwl: *mut winlinks, mut idx: i32) -> *mut winlink {
-    unsafe {
-        if idx < 0 {
-            idx = winlink_next_index(wwl, -idx - 1);
-            if idx == -1 {
-                return null_mut();
-            }
-        } else if !winlink_find_by_index(wwl, idx).is_null() {
-            return null_mut();
-        }
-
-        let wl: *mut winlink = xcalloc_::<winlink>(1).as_ptr();
-        (*wl).idx = idx;
-        (*wwl).insert(idx, wl);
-
-        wl
+impl WinlinkRef for Option<WinlinkId> {
+    #[track_caller]
+    fn winlink(self) -> Winlink {
+        winlink_of(self)
     }
 }
 
-/// Resolve `winlink.window` (an `Option<WindowId>`) to the underlying
-/// `*mut window`, or null if absent.
+/// The window of a winlink, or null if the window is gone.
 #[inline]
-pub unsafe fn winlink_window(wl: *mut winlink) -> *mut window {
-    unsafe {
-        (*wl).window
-            .and_then(|id| window_from_id(id))
-            .unwrap_or(null_mut())
-    }
+#[track_caller]
+pub unsafe fn winlink_window(wl: impl WinlinkRef) -> *mut window {
+    unsafe { window_from_id(wl.winlink().window).unwrap_or(null_mut()) }
 }
 
 /// Resolve a `window_pane`'s owner window through the registry.
@@ -431,104 +434,61 @@ pub unsafe fn pane_set_saved_layout_cell(wp: *mut window_pane, lc: *mut layout_c
     }
 }
 
-pub unsafe fn winlink_set_window(wl: *mut winlink, w: *mut window) {
+/// The index `winlink_add` would use for `idx` in a session (a negative one
+/// asks for the first free one from -idx - 1 on), None if it is taken.
+pub fn winlink_free_index(s: SessionId, idx: i32) -> Option<i32> {
+    with_links(|l| l.free_index(s, idx))
+}
+
+/// Links a window into a session (`winlink_add` and `winlink_set_window`),
+/// taking a window reference. None if the index is taken. The caller fires
+/// window-linked.
+pub unsafe fn winlink_add(s: SessionId, idx: i32, w: *mut window) -> Option<Winlink> {
     unsafe {
-        let prev = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-        if !prev.is_null() {
-            (*prev).winlinks.retain(|&p| p != wl);
-            window_remove_ref(prev, c!("winlink_set_window"));
-        }
-        (*w).winlinks.push(wl);
-        (*wl).window = Some(WindowId((*w).id));
+        let wid = WindowId((*w).id);
+        let wl = with_links(|l| l.add(s, idx, wid))?;
         window_add_ref(w, c!("winlink_set_window"));
+        Some(wl)
     }
 }
 
-pub unsafe fn winlink_remove(wwl: *mut winlinks, wl: *mut winlink) {
+/// Removes a winlink and drops its window reference (`winlink_remove`).
+/// The caller fires window-unlinked first if it should.
+pub unsafe fn winlink_remove(wl: WinlinkId) {
     unsafe {
-        let w = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-
+        let Some(wl) = with_links(|l| l.remove(wl)) else {
+            return;
+        };
+        let w = winlink_window(wl);
         if !w.is_null() {
-            (*w).winlinks.retain(|&p| p != wl);
             window_remove_ref(w, c!("winlink_remove"));
         }
-
-        (*wwl).remove(&(*wl).idx);
-        free(wl as _);
     }
 }
 
-pub unsafe fn winlink_next(wwl: *mut winlinks, wl: *mut winlink) -> *mut winlink {
-    unsafe {
-        (*wwl)
-            .range((std::ops::Bound::Excluded((*wl).idx), std::ops::Bound::Unbounded))
-            .next()
-            .map_or(null_mut(), |(_, &v)| v)
-    }
+/// n winlinks on, wrapping round.
+pub fn winlink_next_by_number(wl: WinlinkId, n: i32) -> Option<Winlink> {
+    with_links(|l| l.next_by_number(wl, n.max(0) as u32))
 }
 
-pub unsafe fn winlink_previous(wwl: *mut winlinks, wl: *mut winlink) -> *mut winlink {
-    unsafe {
-        (*wwl)
-            .range(..(*wl).idx)
-            .next_back()
-            .map_or(null_mut(), |(_, &v)| v)
-    }
+/// n winlinks back, wrapping round.
+pub fn winlink_previous_by_number(wl: WinlinkId, n: i32) -> Option<Winlink> {
+    with_links(|l| l.previous_by_number(wl, n.max(0) as u32))
 }
 
-pub unsafe fn winlink_next_by_number(
-    mut wl: *mut winlink,
-    s: *mut session,
-    n: i32,
-) -> *mut winlink {
-    unsafe {
-        for _ in 0..n {
-            wl = winlink_next(&raw mut (*s).windows, wl);
-            if wl.is_null() {
-                wl = (*(&raw mut (*s).windows)).values().next().copied().unwrap_or(null_mut());
-            }
-        }
-    }
-
-    wl
+/// Swaps the windows of two winlinks (swap-window).
+pub fn winlink_swap_windows(a: WinlinkId, b: WinlinkId) {
+    with_links(|l| l.swap_windows(a, b));
 }
 
-pub unsafe fn winlink_previous_by_number(
-    mut wl: *mut winlink,
-    s: *mut session,
-    n: i32,
-) -> *mut winlink {
-    unsafe {
-        for _ in 0..n {
-            wl = winlink_previous(&raw mut (*s).windows, wl);
-            if wl.is_null() {
-                wl = (*(&raw mut (*s).windows)).values().next_back().copied().unwrap_or(null_mut());
-            }
-        }
-    }
-
-    wl
+/// Sets flags on a winlink.
+pub fn winlink_add_flags(wl: WinlinkId, flags: winlink_flags) {
+    with_links(|l| l.add_flags(wl, flags));
 }
 
-pub unsafe fn winlink_stack_push(stack: *mut winlink_stack, wl: *mut winlink) {
-    if wl.is_null() {
-        return;
-    }
-
-    unsafe {
-        winlink_stack_remove(stack, wl);
-        (*stack).insert(0, wl);
-        (*wl).flags |= winlink_flags::WINLINK_VISITED;
-    }
-}
-
-pub unsafe fn winlink_stack_remove(stack: *mut winlink_stack, wl: *mut winlink) {
-    unsafe {
-        if !wl.is_null() && (*wl).flags.intersects(winlink_flags::WINLINK_VISITED) {
-            (*stack).retain(|&p| p != wl);
-            (*wl).flags &= !winlink_flags::WINLINK_VISITED;
-        }
-    }
+/// Clears flags on a winlink.
+pub fn winlink_remove_flags(wl: WinlinkId, flags: winlink_flags) {
+    with_links(|l| l.clear_flags(wl, flags));
 }
 
 pub unsafe fn window_find_by_id_str(s: &str) -> *mut window {
@@ -630,7 +590,6 @@ pub unsafe fn window_create(sx: u32, sy: u32, mut xpixel: u32, mut ypixel: u32) 
         (*w).options = options_create(GLOBAL_W_OPTIONS);
 
         (*w).references = 0;
-        std::ptr::write(&raw mut (*w).winlinks, Vec::new());
 
         (*w).id = NEXT_WINDOW_ID.fetch_add(1, atomic::Ordering::Relaxed);
         let id = WindowId((*w).id);
@@ -910,7 +869,7 @@ pub unsafe fn window_pane_update_focus(wp: *mut window_pane) {
                     if !client_get_session(c).is_null()
                         && (*client_get_session(c)).attached != 0
                         && (*c).flags.intersects(client_flag::FOCUSED)
-                        && winlink_window((*client_get_session(c)).curw) == window_pane_window(wp)
+                        && winlink_window((*client_get_session(c)).curw_id()) == window_pane_window(wp)
                     {
                         focused = true;
                         break;
@@ -1332,34 +1291,34 @@ pub unsafe fn window_destroy_panes(w: *mut window) {
 /// the activity flag is doubled so it survives format expansion.
 ///
 /// # Safety
-/// `wl` must be a valid winlink.
-pub unsafe fn window_printable_flags(wl: *mut winlink, escape: i32) -> String {
+/// The winlink's session and window must be valid or gone.
+pub unsafe fn window_printable_flags(wl: Winlink, escape: i32) -> String {
     unsafe {
-        let s = (*wl).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
+        let s = session_from_id(wl.session).unwrap_or(null_mut());
 
         let mut flags = String::new();
-        if (*wl).flags.intersects(winlink_flags::WINLINK_ACTIVITY) {
+        if wl.flags.intersects(winlink_flags::WINLINK_ACTIVITY) {
             flags.push('#');
             if escape != 0 {
                 flags.push('#');
             }
         }
-        if (*wl).flags.intersects(winlink_flags::WINLINK_BELL) {
+        if wl.flags.intersects(winlink_flags::WINLINK_BELL) {
             flags.push('!');
         }
-        if (*wl).flags.intersects(winlink_flags::WINLINK_SILENCE) {
+        if wl.flags.intersects(winlink_flags::WINLINK_SILENCE) {
             flags.push('~');
         }
-        if !s.is_null() && wl == (*s).curw {
+        if !s.is_null() && Some(wl.id) == (*s).curw_id() {
             flags.push('*');
         }
-        if !s.is_null() && wl == (*s).lastw.first().copied().unwrap_or(null_mut()) {
+        if !s.is_null() && Some(wl.id) == (*s).lastw().first().map(|l| l.id) {
             flags.push('-');
         }
-        if server_check_marked() && wl == MARKED_PANE.wl {
+        if server_check_marked() && Some(wl.id) == MARKED_PANE.wl {
             flags.push('M');
         }
-        let w_zoom = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
+        let w_zoom = winlink_window(wl);
         if !w_zoom.is_null() && (*w_zoom).flags.intersects(window_flag::ZOOMED) {
             flags.push('Z');
         }
@@ -1868,7 +1827,7 @@ pub unsafe fn window_pane_key(
     wp: *mut window_pane,
     c: *mut client,
     s: *mut session,
-    wl: *mut winlink,
+    wl: Option<WinlinkId>,
     mut key: key_code,
     m: *mut mouse_event,
 ) -> i32 {
@@ -2262,53 +2221,13 @@ pub unsafe fn window_pane_stack_remove(stack: *mut Vec<*mut window_pane>, wp: *m
     }
 }
 
-/// Clear alert flags for a winlink
-pub unsafe fn winlink_clear_flags(wl: *mut winlink) {
-    unsafe {
-        let w = (*wl).window.and_then(|id| window_from_id(id)).unwrap_or(null_mut());
-        if w.is_null() { return; }
-        (*w).flags &= !WINDOW_ALERTFLAGS;
-        for &loop_ in &(*w).winlinks {
-            if (*loop_).flags.intersects(WINLINK_ALERTFLAGS) {
-                (*loop_).flags &= !WINLINK_ALERTFLAGS;
-                server_status_session((*loop_).session.and_then(|id| session_from_id(id)).unwrap_or(null_mut()));
-            }
-        }
-    }
-}
-
-/// Shuffle window indexes up.
-pub unsafe fn winlink_shuffle_up(s: *mut session, mut wl: *mut winlink, before: bool) -> i32 {
-    // Nothing can be inserted after the highest possible index.
-    if wl.is_null() || unsafe { (*wl).idx } == i32::MAX {
+/// Shuffle window indexes up. Returns the free index, or -1.
+pub unsafe fn winlink_shuffle_up(s: *mut session, wl: Option<WinlinkId>, before: bool) -> i32 {
+    let Some(wl) = wl else {
         return -1;
-    }
-    unsafe {
-        let idx = if before { (*wl).idx } else { (*wl).idx + 1 };
-
-        // Find the next free index.
-        let mut last = idx;
-        for i in idx..i32::MAX {
-            last = i;
-            if winlink_find_by_index(&raw mut (*s).windows, last).is_null() {
-                break;
-            }
-        }
-        if last == i32::MAX {
-            return -1;
-        }
-
-        // Move everything from last - 1 to idx up a bit.
-        while last > idx {
-            wl = winlink_find_by_index(&raw mut (*s).windows, last - 1);
-            (*(&raw mut (*s).windows)).remove(&(*wl).idx);
-            (*wl).idx += 1;
-            (*(&raw mut (*s).windows)).insert((*wl).idx, wl);
-            last -= 1;
-        }
-
-        idx
-    }
+    };
+    let sid = unsafe { (*s).sid() };
+    with_links(|l| l.shuffle_up(sid, wl, before)).unwrap_or(-1)
 }
 
 unsafe fn window_pane_input_callback(

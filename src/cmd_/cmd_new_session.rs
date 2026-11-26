@@ -68,7 +68,7 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
         let oo;
         let mut tio: termios = zeroed();
         let tiop;
-        let mut sg: *mut session_group = null_mut();
+        let mut sg: Option<String> = None;
         let errstr: *const u8 = null();
         let group: *const u8;
         let mut tmp: *const u8;
@@ -102,7 +102,7 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             let mut newname = None;
             tmp = args_get_(args, 's');
             if !tmp.is_null() {
-                name = format_single(item, cstr_to_str(tmp), c, null_mut(), null_mut(), null_mut());
+                name = format_single(item, cstr_to_str(tmp), c, null_mut(), None, null_mut());
                 newname = session_check_name(name);
                 if newname.is_none() {
                     cmdq_error!(item, "invalid session: {}", _s(name));
@@ -142,12 +142,13 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             if !group.is_null() {
                 groupwith = (*target).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
                 sg = if groupwith.is_null() {
-                    session_group_find(cstr_to_str(group))
+                    let name = cstr_to_str(group);
+                    session_group_find(name).then(|| name.to_string())
                 } else {
                     session_group_contains(groupwith)
                 };
-                if !sg.is_null() {
-                    prefix = xstrdup__(&(*sg).name);
+                if let Some(sg) = &sg {
+                    prefix = xstrdup__(sg);
                 } else if !groupwith.is_null() {
                     prefix = xstrdup__(&(*groupwith).name);
                 } else {
@@ -178,7 +179,7 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             // Get the new session working directory.
             tmp = args_get_(args, 'c');
             cwd = if !tmp.is_null() {
-                format_single(item, cstr_to_str(tmp), c, null_mut(), null_mut(), null_mut())
+                format_single(item, cstr_to_str(tmp), c, null_mut(), None, null_mut())
             } else {
                 {
                     let p = server_client_get_cwd(c, null_mut());
@@ -330,17 +331,18 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
             // If a target session is given, this is to be part of a session group,
             // so add it to the group and synchronize.
             if !group.is_null() {
-                if sg.is_null() {
-                    if !groupwith.is_null() {
-                        sg = session_group_new(&(*groupwith).name);
-                        session_group_add(sg, groupwith);
-                    } else {
-                        sg = session_group_new(cstr_to_str(group));
+                let sg = match sg {
+                    Some(sg) => sg,
+                    None if !groupwith.is_null() => {
+                        let name = (*groupwith).name.to_string();
+                        session_group_add(&name, groupwith);
+                        name
                     }
-                }
-                session_group_add(sg, s);
+                    None => cstr_to_str(group).to_string(),
+                };
+                session_group_add(&sg, s);
                 session_group_synchronize_to(s);
-                session_select(s, (*(*(*(&raw mut (*s).windows)).values().next().unwrap())).idx);
+                session_select(s, (*s).windows()[0].idx);
             }
             events_fire_session("session-created", s);
 
@@ -369,7 +371,7 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
                 if template.is_null() {
                     template = NEW_SESSION_TEMPLATE;
                 }
-                cp = format_single(item, cstr_to_str(template), c, s, (*s).curw, null_mut());
+                cp = format_single(item, cstr_to_str(template), c, s, (*s).curw_id(), null_mut());
                 cmdq_print!(item, "{}", _s(cp));
                 free_(cp);
             }

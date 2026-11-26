@@ -117,7 +117,7 @@ unsafe fn cmd_display_message_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
             format_flags::empty()
         };
         let ft = format_create(cmdq_get_client(item), item, FORMAT_NONE, flags);
-        format_defaults(ft, c, NonNull::new(s), NonNull::new(wl), NonNull::new(wp));
+        format_defaults(ft, c, NonNull::new(s), wl, NonNull::new(wp));
 
         if args_has(args, 'a') {
             format_each(ft, cmd_display_message_each, item);
