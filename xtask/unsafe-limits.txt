@@ -103,7 +103,7 @@
 32 src/image_sixel.rs
 166 src/input.rs
 17 src/input_keys.rs
-35 src/job_.rs
+29 src/job_/mod.rs
 10 src/key_bindings/mod.rs
 23 src/key_string.rs
 78 src/layout.rs

@@ -48,7 +48,7 @@ pub struct popup_data {
     pub defaults: GridCell,
     pub palette: colour_palette,
 
-    pub job: *mut job,
+    pub job: Option<JobId>,
     pub ictx: *mut input_ctx,
     pub status: i32,
     pub cb: popup_close_cb,
@@ -354,8 +354,8 @@ unsafe fn popup_free(pd: *mut popup_data) {
     unsafe {
         server_client_unref((*pd).c);
 
-        if !(*pd).job.is_null() {
-            job_free((*pd).job);
+        if let Some(job) = (*pd).job {
+            job_free(job);
         }
         if !(*pd).ictx.is_null() {
             input_free((*pd).ictx);
@@ -401,13 +401,13 @@ pub unsafe fn popup_resize_cb(c: *mut client, data: *mut c_void) {
         // Avoid zero size screens
         if (*pd).border_lines == box_lines::BOX_LINES_NONE {
             screen_resize(&mut (*pd).s, (*pd).sx, (*pd).sy, 0);
-            if !(*pd).job.is_null() {
-                job_resize((*pd).job, (*pd).sx, (*pd).sy);
+            if let Some(job) = (*pd).job {
+                job_resize(job, (*pd).sx, (*pd).sy);
             }
         } else if (*pd).sx > 2 && (*pd).sy > 2 {
             screen_resize(&mut (*pd).s, (*pd).sx - 2, (*pd).sy - 2, 0);
-            if !(*pd).job.is_null() {
-                job_resize((*pd).job, (*pd).sx - 2, (*pd).sy - 2);
+            if let Some(job) = (*pd).job {
+                job_resize(job, (*pd).sx - 2, (*pd).sy - 2);
             }
         }
     }
@@ -432,14 +432,14 @@ pub unsafe fn popup_make_pane(pd: *mut popup_data, type_: layout_type) {
         layout_assign_pane(lc, new_wp, 0);
 
         // The popup command may already have exited (upstream 97fe3563).
-        if !(*pd).job.is_null() {
+        if let Some(job) = (*pd).job {
             (*new_wp).fd = job_transfer(
-                (*pd).job,
+                job,
                 &mut (*new_wp).pid,
                 (*new_wp).tty.as_mut_ptr(),
                 TTY_NAME_MAX,
             );
-            (*pd).job = null_mut();
+            (*pd).job = None;
         }
 
         screen_set_title(&raw mut (*pd).s, (*new_wp).base.title.as_ptr().cast());
@@ -477,8 +477,10 @@ pub unsafe fn popup_menu_done(_menu: *mut menu, _choice: u32, key: key_code, dat
 
         match key as u8 {
             b'p' => {
-                if let Some(pb) = paste_get_top() {
-                    job_write((*pd).job, pb.data().as_ptr().cast(), pb.data().len());
+                if let Some(pb) = paste_get_top()
+                    && let Some(job) = (*pd).job
+                {
+                    job_write(job, pb.data().as_ptr().cast(), pb.data().len());
                 }
             }
             b'F' => {
@@ -553,13 +555,13 @@ pub unsafe fn popup_handle_drag(c: *mut client, pd: *mut popup_data, m: *mut mou
 
             if (*pd).border_lines == box_lines::BOX_LINES_NONE {
                 screen_resize(&raw mut (*pd).s, (*pd).sx, (*pd).sy, 0);
-                if !(*pd).job.is_null() {
-                    job_resize((*pd).job, (*pd).sx, (*pd).sy);
+                if let Some(job) = (*pd).job {
+                    job_resize(job, (*pd).sx, (*pd).sy);
                 }
             } else {
                 screen_resize(&raw mut (*pd).s, (*pd).sx - 2, (*pd).sy - 2, 0);
-                if !(*pd).job.is_null() {
-                    job_resize((*pd).job, (*pd).sx - 2, (*pd).sy - 2);
+                if let Some(job) = (*pd).job {
+                    job_resize(job, (*pd).sx - 2, (*pd).sy - 2);
                 }
             }
             server_redraw_client(c);
@@ -649,12 +651,12 @@ pub unsafe fn popup_key_cb(c: *mut client, data: *mut c_void, event: *mut key_ev
                 if ((!(*pd)
                     .flags
                     .intersects(popup_flag::POPUP_CLOSEEXIT | popup_flag::POPUP_CLOSEEXITZERO))
-                    || (*pd).job.is_null())
+                    || (*pd).job.is_none())
                     && ((*event).key == b'\x1b' as u64 || (*event).key == (b'c' as u64 | KEYC_CTRL))
                 {
                     return 1;
                 }
-                if !(*pd).job.is_null() {
+                if let Some(job) = (*pd).job {
                     if KEYC_IS_MOUSE((*event).key) {
                         // Must be inside, checked already.
                         let (px, py) = if (*pd).border_lines == box_lines::BOX_LINES_NONE {
@@ -665,10 +667,10 @@ pub unsafe fn popup_key_cb(c: *mut client, data: *mut c_void, event: *mut key_ev
                         let Some(buf) = input_key_get_mouse(&raw mut (*pd).s, m, px, py) else {
                             return 0;
                         };
-                        job_write((*pd).job, buf.as_ptr().cast(), buf.len());
+                        job_write(job, buf.as_ptr().cast(), buf.len());
                         return 0;
                     }
-                    input_key(&raw mut (*pd).s, job_get_output((*pd).job), (*event).key);
+                    input_key(&raw mut (*pd).s, job_get_output(job), (*event).key);
                 }
                 return 0;
             }
@@ -713,7 +715,7 @@ pub unsafe fn popup_key_cb(c: *mut client, data: *mut c_void, event: *mut key_ev
     }
 }
 
-pub unsafe fn popup_job_update_cb(job: *mut job) {
+pub unsafe fn popup_job_update_cb(job: JobId) {
     unsafe {
         let pd = job_get_data(job) as *mut popup_data;
         let evb = job_get_input(job);
@@ -748,10 +750,10 @@ pub unsafe fn popup_job_update_cb(job: *mut job) {
     }
 }
 
-pub unsafe fn popup_job_complete_cb(job: *mut job) {
+pub unsafe fn popup_job_complete_cb(job: JobId) {
     unsafe {
         let pd = job_get_data(job) as *mut popup_data;
-        let status = job_get_status((*pd).job);
+        let status = job_get_status(job);
 
         if WIFEXITED(status) {
             (*pd).status = WEXITSTATUS(status);
@@ -760,7 +762,7 @@ pub unsafe fn popup_job_complete_cb(job: *mut job) {
         } else {
             (*pd).status = 0;
         }
-        (*pd).job = null_mut();
+        (*pd).job = None;
 
         if (*pd).flags.intersects(popup_flag::POPUP_CLOSEEXIT)
             || ((*pd).flags.intersects(popup_flag::POPUP_CLOSEEXITZERO) && (*pd).status == 0)
@@ -908,11 +910,11 @@ pub unsafe fn popup_display(
         );
         // job_run fails if fork, forkpty or socketpair do (upstream
         // 67e6f824 and 65e81157).
-        if (*pd).job.is_null() {
+        let Some(job) = (*pd).job else {
             popup_free(pd);
             return -1;
-        }
-        (*pd).ictx = input_init(null_mut(), job_get_output((*pd).job), &raw mut (*pd).palette);
+        };
+        (*pd).ictx = input_init(null_mut(), job_get_output(job), &raw mut (*pd).palette);
 
         server_client_set_overlay(
             c,

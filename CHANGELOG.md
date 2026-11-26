@@ -9,6 +9,9 @@
   in 3.8.
 - `bind-key` without a command only changes what it is given: `-N` sets
   the note and `-r` makes the key repeat, without clearing the other.
+- `run-shell`, `if-shell` and `#()` leave `SHELL` as the environment has
+  it. Only popups set it to `default-shell`.
+- `show-messages -J` lists the newest job first.
 
 ### Fixes
 

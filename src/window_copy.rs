@@ -5543,7 +5543,7 @@ pub unsafe fn window_copy_pipe_run(
                 -1,
             );
             // job_run fails if fork or socketpair do (upstream 2a5715fa).
-            if !job.is_null() {
+            if let Some(job) = job {
                 job_write(job, buf.cast(), *len);
             }
         }

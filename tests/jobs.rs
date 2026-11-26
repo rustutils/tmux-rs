@@ -29,7 +29,6 @@ fn out(tmux: &TmuxTestHarness, args: &[&str]) -> String {
 
 /// show-messages -J lists the running jobs, newest first.
 #[test]
-#[ignore = "jobs are listed oldest first, run 16 task 3"]
 fn running_jobs_are_listed() {
     let tmux = server();
     out(&tmux, &["run-shell", "-b", "sleep 30"]);
@@ -101,4 +100,13 @@ fn format_job_outlives_its_client() {
     }
     std::thread::sleep(Duration::from_millis(600));
     assert_eq!(out(&tmux, &["display", "-p", "ok"]), "ok");
+}
+
+/// run-shell leaves SHELL as the environment has it: only popups set it
+/// to default-shell.
+#[test]
+fn run_shell_keeps_shell_variable() {
+    let tmux = server();
+    out(&tmux, &["set-environment", "-g", "SHELL", "/not/a/shell"]);
+    assert_eq!(out(&tmux, &["run-shell", "echo $SHELL"]), "/not/a/shell");
 }

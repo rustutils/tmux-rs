@@ -114,7 +114,7 @@ unsafe fn cmd_if_shell_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval
             -1,
             -1,
         )
-        .is_null()
+        .is_none()
         {
             cmdq_error!(item, "failed to run command: {}", _s(shellcmd));
             free_(shellcmd);
@@ -131,7 +131,7 @@ unsafe fn cmd_if_shell_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retval
     }
 }
 
-unsafe fn cmd_if_shell_callback(job: *mut job) {
+unsafe fn cmd_if_shell_callback(job: JobId) {
     unsafe {
         let cdata = job_get_data(job) as *mut cmd_if_shell_data;
         let c = (*cdata).client.and_then(|id| client_from_id(id)).unwrap_or(null_mut());

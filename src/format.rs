@@ -50,7 +50,7 @@ pub struct format_job {
     pub out: *mut u8,
     pub updated: i32,
 
-    pub job: *mut job,
+    pub job: Option<JobId>,
     pub status: i32,
 }
 
@@ -249,7 +249,7 @@ pub unsafe fn format_copy_state(
 }
 
 /// Format job update callback.
-pub unsafe fn format_job_update(job: *mut job) {
+pub unsafe fn format_job_update(job: JobId) {
     unsafe {
         let fj = job_get_data(job) as *mut format_job;
         let evb: *mut evbuffer = job_get_input(job);
@@ -286,12 +286,12 @@ pub unsafe fn format_job_update(job: *mut job) {
 }
 
 /// Format job complete callback.
-pub unsafe fn format_job_complete(job: *mut job) {
+pub unsafe fn format_job_complete(job: JobId) {
     unsafe {
         let fj = job_get_data(job) as *mut format_job;
         let evb: *mut evbuffer = job_get_input(job);
 
-        (*fj).job = null_mut();
+        (*fj).job = None;
 
         let buf: *mut u8;
 
@@ -350,7 +350,7 @@ pub unsafe fn format_job_get(es: *mut format_expand_state, cmd: *mut u8) -> *mut
                 last: 0,
                 out: null_mut(),
                 updated: 0,
-                job: null_mut(),
+                job: None,
                 status: 0,
             })
         }) as *mut format_job;
@@ -371,10 +371,10 @@ pub unsafe fn format_job_get(es: *mut format_expand_state, cmd: *mut u8) -> *mut
         };
 
         let t = libc::time(null_mut());
-        if force && !(*fj).job.is_null() {
-            job_free((*fj).job);
+        if force && let Some(job) = (*fj).job {
+            job_free(job);
         }
-        if force || ((*fj).job.is_null() && (*fj).last != t) {
+        if force || ((*fj).job.is_none() && (*fj).last != t) {
             let cwd_path = server_client_get_cwd((*ft).client, null_mut());
             let cwd_c = std::ffi::CString::new(cwd_path.to_string_lossy().as_bytes()).unwrap_or_default();
             (*fj).job = job_run(
@@ -392,13 +392,13 @@ pub unsafe fn format_job_get(es: *mut format_expand_state, cmd: *mut u8) -> *mut
                 -1,
                 -1,
             );
-            if (*fj).job.is_null() {
+            if (*fj).job.is_none() {
                 free((*fj).out.cast());
                 (*fj).out = format_nul!("<'{}' didn't start>", _s((*fj).cmd),);
             }
             (*fj).last = t;
             (*fj).updated = 0;
-        } else if !(*fj).job.is_null() && (t - (*fj).last) > 1 && (*fj).out.is_null() {
+        } else if (*fj).job.is_some() && (t - (*fj).last) > 1 && (*fj).out.is_null() {
             (*fj).out = format_nul!("<'{}' not ready>", _s((*fj).cmd));
         }
         free(expanded.cast());
@@ -427,8 +427,8 @@ pub unsafe fn format_job_tidy(jobs: &mut format_job_tree, force: i32) {
             if let Some(fj) = jobs.remove(&key) {
                 log_debug!("{}: {}", "format_job_tidy", _s(fj.cmd));
 
-                if !fj.job.is_null() {
-                    job_free(fj.job);
+                if let Some(job) = fj.job {
+                    job_free(job);
                 }
 
                 free_(fj.expanded);

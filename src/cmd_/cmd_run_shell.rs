@@ -57,7 +57,7 @@ pub unsafe fn cmd_run_shell_args_parse(args: *mut args, _idx: u32) -> args_parse
     args_parse_type::ARGS_PARSE_STRING
 }
 
-pub unsafe fn cmd_run_shell_print(job: *mut job, msg: *const u8) {
+pub unsafe fn cmd_run_shell_print(job: JobId, msg: *const u8) {
     unsafe {
         let cdata: *mut cmd_run_shell_data = job_get_data(job) as *mut cmd_run_shell_data;
         let mut wp = null_mut();
@@ -212,7 +212,7 @@ unsafe fn cmd_run_shell_timer_fire(cdata: *mut cmd_run_shell_data) {
                 -1,
                 -1,
             )
-            .is_null()
+            .is_none()
             {
                 // Report the failure and let the queue go on, otherwise a
                 // waiting run-shell hangs forever (upstream ec58272b).
@@ -254,7 +254,7 @@ unsafe fn cmd_run_shell_timer_fire(cdata: *mut cmd_run_shell_data) {
     }
 }
 
-pub unsafe fn cmd_run_shell_callback(job: *mut job) {
+pub unsafe fn cmd_run_shell_callback(job: JobId) {
     unsafe {
         let cdata = job_get_data(job) as *mut cmd_run_shell_data;
         let evb = job_get_input(job);
