@@ -381,7 +381,7 @@ unsafe fn cmd_new_session_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_ret
                     template = NEW_SESSION_TEMPLATE;
                 }
                 cp = format_single(item, cstr_to_str(template), c, s, (*s).curw_id(), null_mut());
-                cmdq_print!(item, "{}", _s(cp));
+                cmdq_print_bytes(item, CStr::from_ptr(cp.cast()).to_bytes());
                 free_(cp);
             }
 

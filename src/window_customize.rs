@@ -249,7 +249,7 @@ unsafe fn window_customize_build_array(
 
             format_add!(ft, "option_name", "{}", name);
             let value = options_to_string(o, Some(&key), false);
-            format_add!(ft, "option_value", "{}", value);
+            format_add_bytes(ft, b"option_value", &value);
 
             let item = window_customize_add_item(data);
             (*item).scope = scope;
@@ -323,7 +323,7 @@ unsafe fn window_customize_build_option(
 
         if array == 0 {
             let value = options_to_string(o, None, false);
-            format_add!(ft, "option_value", "{}", value);
+            format_add_bytes(ft, b"option_value", &value);
         }
 
         if !filter.is_null() {
@@ -496,7 +496,7 @@ unsafe fn window_customize_build_keys(
         for bd in key_bindings_list(kt) {
             format_add!(ft, "key", "{}", key_string_lookup_key(bd.key, 0),);
             if let Some(note) = &bd.note {
-                format_add!(ft, "key_note", "{}", String::from_utf8_lossy(note));
+                format_add_bytes(ft, b"key_note", note);
             }
             if !filter.is_null() {
                 let expanded = format_expand(ft, filter);
@@ -912,7 +912,7 @@ unsafe fn window_customize_draw_option(
                 break 'out;
             }
 
-            value = xstrdup__(&options_to_string(o, key.as_ref(), false));
+            value = xstrdup_bytes(&options_to_string(o, key.as_ref(), false));
             if !oe.is_null() && key.is_none() {
                 default_value = xstrdup__(&options_default_to_string(&*oe));
                 if libc::strcmp(default_value, value) == 0 {
@@ -1058,7 +1058,7 @@ unsafe fn window_customize_draw_option(
             if !wo.is_null() && options_owner(o) != wo {
                 let parent = options_get_only(wo, cstr_to_str(name));
                 if !parent.is_null() {
-                    value = xstrdup__(&options_to_string(parent, None, false));
+                    value = xstrdup_bytes(&options_to_string(parent, None, false));
                     if !screen_write_text!(
                         ctx,
                         (*s).cx,
@@ -1079,7 +1079,7 @@ unsafe fn window_customize_draw_option(
             if !go.is_null() && options_owner(o) != go {
                 let parent = options_get_only(go, cstr_to_str(name));
                 if !parent.is_null() {
-                    value = xstrdup__(&options_to_string(parent, None, false));
+                    value = xstrdup_bytes(&options_to_string(parent, None, false));
                     if !screen_write_text!(
                         ctx,
                         (*s).cx,
@@ -1416,7 +1416,7 @@ pub unsafe fn window_customize_set_option(
             };
             free_(text);
 
-            let value = xstrdup__(&options_to_string(o, key.as_ref(), false));
+            let value = xstrdup_bytes(&options_to_string(o, key.as_ref(), false));
 
             let new_item = Box::new(window_customize_itemdata {
                 data,

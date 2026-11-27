@@ -311,9 +311,10 @@ pub unsafe fn options_is_string(o: *mut options_entry) -> bool {
 }
 
 /// The value as text: an array item with `key`, the whole array joined
-/// with spaces, or the value. `numeric` prints flags as numbers.
-pub unsafe fn options_to_string(o: *mut options_entry, key: Option<&ArrayKey>, numeric: bool) -> String {
-    unsafe { (*o).to_string(key, numeric) }
+/// with spaces, or the value. `numeric` prints flags as numbers. String
+/// values keep their bytes, so the result need not be UTF-8.
+pub unsafe fn options_to_string(o: *mut options_entry, key: Option<&ArrayKey>, numeric: bool) -> Vec<u8> {
+    unsafe { (*o).to_bytes(key, numeric) }
 }
 
 /// Splits `name[key]` into the name and key.

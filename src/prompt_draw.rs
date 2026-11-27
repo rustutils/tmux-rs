@@ -244,7 +244,7 @@ unsafe fn prompt_expand(pr: *const Prompt, fs: *mut cmd_find_state) -> Expanded 
         let message_format = (*pr).look().message_format.clone();
 
         let ft = prompt_state_format_tree(fs);
-        format_add!(ft, "prompt_input", "{}", String::from_utf8_lossy(&input));
+        format_add_bytes(ft, b"prompt_input", &input);
         format_add!(ft, "prompt_flags", "{flags}");
         format_add!(ft, "prompt_type", "{ty}");
         format_add!(ft, "command_prompt", "{}", if command_mode { "1" } else { "0" });
@@ -260,7 +260,7 @@ unsafe fn prompt_expand(pr: *const Prompt, fs: *mut cmd_find_state) -> Expanded 
         }
 
         let message = prompt_expand_bytes(ft, &message);
-        format_add!(ft, "message", "{}", String::from_utf8_lossy(&message));
+        format_add_bytes(ft, b"message", &message);
         let label = prompt_expand_bytes(ft, &message_format);
         format_free(ft);
 

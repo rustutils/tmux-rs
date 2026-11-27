@@ -944,7 +944,6 @@ fn attached_client_3_8() {
 /// Option values that are not UTF-8 (`x` and two bytes of a three byte
 /// character, a path ending in 0xff) keep their bytes in 3.8: `n` counts
 /// them, `w` gives them no width, and `=` and `p` work around them.
-#[ignore = "behaviour differs from 3.8: option values that are not UTF-8 lose their bytes, formats run"]
 #[test]
 fn values_not_utf8() {
     let tmux = server();
@@ -971,6 +970,39 @@ fn values_not_utf8() {
             ("#{n:#{s/x/y/:@trunc}}", "3"),
             ("#{m:x*,#{@trunc}}", "1"),
         ],
+    );
+}
+
+/// Option values that are not UTF-8 reach the client as bytes: show-options
+/// -v and display-message -p print them as they are, show-options without
+/// -v escapes them with `q/a`, and set -F keeps the bytes it expanded.
+#[test]
+fn values_not_utf8_printed() {
+    let tmux = server();
+    tmux.cmd()
+        .args([
+            OsStr::new("set"),
+            OsStr::new("-g"),
+            OsStr::new("@trunc"),
+            OsStr::from_bytes(b"x\xe6\x97"),
+        ])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set", "-gF", "@copy", "#{@trunc}y"])
+        .run()
+        .assert_success();
+    let stdout = |args: &[&str]| tmux.cmd().args(args).run().output.stdout;
+    assert_eq!(stdout(&["show", "-gv", "@trunc"]), b"x\xe6\x97\n");
+    assert_eq!(stdout(&["show", "-g", "@trunc"]), b"@trunc x\\346\\227\n");
+    assert_eq!(stdout(&["show", "-gv", "@copy"]), b"x\xe6\x97y\n");
+    assert_eq!(
+        stdout(&["show", "-gF", "#{option_value}", "@trunc"]),
+        b"x\xe6\x97\n"
+    );
+    assert_eq!(
+        stdout(&["display-message", "-t", "alpha:one.0", "-p", "#{@trunc}"]),
+        b"x\xe6\x97\n"
     );
 }
 

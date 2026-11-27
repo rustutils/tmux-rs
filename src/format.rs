@@ -14,6 +14,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::CStr;
+use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
 
 use crate::format_env::{format_bytes, format_engine_expand, format_to_c};
 
@@ -118,7 +119,7 @@ pub unsafe fn format_cb_host_short(_ft: &format_tree) -> format_table_type {
 
 /// Callback for pid.
 pub unsafe fn format_cb_pid(_ft: &format_tree) -> format_table_type {
-    unsafe { format!("{}", libc::getpid()).into() }
+    std::process::id().to_string().into()
 }
 
 /// Callback for `session_attached_list`.
@@ -130,28 +131,34 @@ pub unsafe fn format_cb_session_attached_list(ft: &format_tree) -> format_table_
             return format_table_type::None;
         }
 
-        let buffer = evbuffer_new();
-        if buffer.is_null() {
-            fatalx("out of memory");
-        }
+        format_list(
+            clients_iter()
+                .filter(|&loop_| client_get_session(loop_) == s)
+                .map(|loop_| client_name_bytes(loop_).to_vec()),
+        )
+    }
+}
 
-        for loop_ in clients_iter() {
-            if client_get_session(loop_) == s {
-                if EVBUFFER_LENGTH(buffer) > 0 {
-                    evbuffer_add(buffer, c!(",").cast(), 1);
-                }
-                evbuffer_add_printf!(buffer, "{}", _s((*loop_).name));
-            }
-        }
+/// The items joined with commas, or no value if there are none (C's
+/// callbacks return NULL for an empty buffer).
+fn format_list(items: impl Iterator<Item = Vec<u8>>) -> format_table_type {
+    let items: Vec<Vec<u8>> = items.collect();
+    if items.is_empty() {
+        return format_table_type::None;
+    }
+    items.join(&b',').into()
+}
 
-        let size = EVBUFFER_LENGTH(buffer);
-        let result = if size != 0 {
-            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into()
-        } else {
-            format_table_type::None
-        };
-        evbuffer_free(buffer);
-        result
+/// A client's name as bytes.
+///
+/// # Safety
+/// `c` must be a valid client.
+unsafe fn client_name_bytes<'a>(c: *const client) -> &'a [u8] {
+    unsafe {
+        if (*c).name.is_null() {
+            return b"";
+        }
+        CStr::from_ptr((*c).name.cast()).to_bytes()
     }
 }
 
@@ -250,28 +257,9 @@ pub unsafe fn format_cb_window_linked_sessions_list(ft: &format_tree) -> format_
         };
         let w = winlink_window(wl);
 
-        let buffer = evbuffer_new();
-        if buffer.is_null() {
-            fatalx("out of memory");
-        }
-
-        for wl in (*w).winlinks() {
-            if EVBUFFER_LENGTH(buffer) > 0 {
-                evbuffer_add(buffer, c!(",").cast(), 1);
-            }
-            let s = session_from_id(wl.session).unwrap_or(null_mut());
-            if !s.is_null() { evbuffer_add_printf!(buffer, "{}", (*s).name); }
-        }
-
-        let size = EVBUFFER_LENGTH(buffer);
-        let mut value = format_table_type::None;
-        if size != 0 {
-            value = format_table_type::String(
-                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into(),
-            );
-        }
-        evbuffer_free(buffer);
-        value
+        format_list((*w).winlinks().iter().map(|wl| {
+            session_from_id(wl.session).map_or_else(Vec::new, |s| (*s).name.as_bytes().to_vec())
+        }))
     }
 }
 
@@ -302,30 +290,10 @@ pub unsafe fn format_cb_window_active_sessions_list(ft: &format_tree) -> format_
         };
         let w = winlink_window(wl);
 
-        let buffer = evbuffer_new();
-        if buffer.is_null() {
-            fatalx("out of memory");
-        }
-
-        for wl in (*w).winlinks() {
-            let s = session_from_id(wl.session).unwrap_or(null_mut());
-            if !s.is_null() && (*s).curw_id() == Some(wl.id) {
-                if EVBUFFER_LENGTH(buffer) > 0 {
-                    evbuffer_add(buffer, c!(",").cast(), 1);
-                }
-                evbuffer_add_printf!(buffer, "{}", (*s).name);
-            }
-        }
-
-        let size = EVBUFFER_LENGTH(buffer);
-        let mut value = format_table_type::None;
-        if size != 0 {
-            value = format_table_type::String(
-                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into(),
-            );
-        }
-        evbuffer_free(buffer);
-        value
+        format_list((*w).winlinks().iter().filter_map(|wl| {
+            let s = session_from_id(wl.session)?;
+            ((*s).curw_id() == Some(wl.id)).then(|| (*s).name.as_bytes().to_vec())
+        }))
     }
 }
 
@@ -362,35 +330,13 @@ pub unsafe fn format_cb_window_active_clients_list(ft: &format_tree) -> format_t
         };
         let w = winlink_window(wl);
 
-        let buffer = evbuffer_new();
-        if buffer.is_null() {
-            fatalx("out of memory");
-        }
-
-        for loop_ in clients_iter() {
+        format_list(clients_iter().filter_map(|loop_| {
             let client_session = client_get_session(loop_);
-            if client_session.is_null() {
-                continue;
+            if client_session.is_null() || winlink_window((*client_session).curw_id()) != w {
+                return None;
             }
-
-            let curw_w = winlink_window((*client_session).curw_id());
-            if w == curw_w {
-                if EVBUFFER_LENGTH(buffer) > 0 {
-                    evbuffer_add(buffer, c!(",").cast(), 1);
-                }
-                evbuffer_add_printf!(buffer, "{}", _s((*loop_).name));
-            }
-        }
-
-        let size = EVBUFFER_LENGTH(buffer);
-        let mut value = format_table_type::None;
-        if size != 0 {
-            value = format_table_type::String(
-                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into(),
-            );
-        }
-        evbuffer_free(buffer);
-        value
+            Some(client_name_bytes(loop_).to_vec())
+        }))
     }
 }
 
@@ -477,7 +423,7 @@ pub unsafe fn format_cb_current_command(ft: &format_tree) -> format_table_type {
             if cmd.is_null() || *cmd == b'\0' {
                 free_(cmd);
                 let shell_c = std::ffi::CString::new(
-                    (*wp).shell.as_deref().unwrap().to_string_lossy().as_bytes(),
+                    (*wp).shell.as_deref().unwrap().as_os_str().as_bytes(),
                 )
                 .unwrap();
                 cmd = xstrdup(shell_c.as_ptr().cast()).as_ptr().cast();
@@ -498,7 +444,7 @@ pub unsafe fn format_cb_current_path(ft: &format_tree) -> format_table_type {
             return format_table_type::None;
         }
 
-        osdep_get_cwd((*wp).fd).map_or(format_table_type::None, |cwd| cwd.to_string_lossy().into_owned().into())
+        osdep_get_cwd((*wp).fd).map_or(format_table_type::None, |cwd| cwd.into_os_string().into_vec().into())
     }
 }
 
@@ -616,7 +562,7 @@ pub unsafe fn format_cb_pane_fg(ft: &format_tree) -> format_table_type {
 
         tty_default_colours(gc.as_mut_ptr(), wp);
 
-        colour_tostring((*gc.as_ptr()).fg).into()
+        colour_tostring((*gc.as_ptr()).fg).into_owned().into()
     }
 }
 
@@ -632,7 +578,7 @@ pub unsafe fn format_cb_pane_bg(ft: &format_tree) -> format_table_type {
 
         tty_default_colours(gc.as_mut_ptr(), wp);
 
-        colour_tostring((*gc.as_ptr()).bg).into()
+        colour_tostring((*gc.as_ptr()).bg).into_owned().into()
     }
 }
 
@@ -917,7 +863,9 @@ pub unsafe fn format_cb_mouse_status_range(ft: &format_tree) -> format_table_typ
             style_range_type::STYLE_RANGE_PANE => "pane".into(),
             style_range_type::STYLE_RANGE_WINDOW => "window".into(),
             style_range_type::STYLE_RANGE_SESSION => "session".into(),
-            style_range_type::STYLE_RANGE_USER => format!("{}", _s((*sr).string.as_ptr())).into(),
+            style_range_type::STYLE_RANGE_USER => {
+                CStr::from_ptr((*sr).string.as_ptr().cast()).to_bytes().to_vec().into()
+            }
         }
     }
 }
@@ -1024,7 +972,7 @@ pub unsafe fn format_cb_client_height(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_client_key_table(ft: &format_tree) -> format_table_type {
     unsafe {
         if !ft.c.is_null() {
-            return (*ft.c).keytable.name_lossy().into();
+            return (*ft.c).keytable.name.clone().into();
         }
         format_table_type::None
     }
@@ -1045,7 +993,7 @@ pub unsafe fn format_cb_client_last_session(ft: &format_tree) -> format_table_ty
 pub unsafe fn format_cb_client_name(ft: &format_tree) -> format_table_type {
     unsafe {
         if !ft.c.is_null() {
-            return format!("{}", _s((*ft.c).name)).into();
+            return client_name_bytes(ft.c).to_vec().into();
         }
         format_table_type::None
     }
@@ -1152,7 +1100,7 @@ pub unsafe fn format_cb_client_user(ft: &format_tree) -> format_table_type {
             if uid != -1_i32 as uid_t
                 && let Some(pw) = NonNull::new(libc::getpwuid(uid))
             {
-                return format!("{}", _s((*pw.as_ptr()).pw_name)).into();
+                return CStr::from_ptr((*pw.as_ptr()).pw_name.cast()).to_bytes().to_vec().into();
             }
         }
         format_table_type::None
@@ -1192,8 +1140,8 @@ pub unsafe fn format_cb_client_written(ft: &format_tree) -> format_table_type {
 /// Callback for `config_files`.
 pub unsafe fn format_cb_config_files(_ft: &format_tree) -> format_table_type {
     let files = CFG_FILES.lock().unwrap();
-    let names: Vec<String> = files.iter().map(|file| file.to_string_lossy().into_owned()).collect();
-    names.join(",").into()
+    let names: Vec<&[u8]> = files.iter().map(|file| file.to_bytes()).collect();
+    names.join(&b',').into()
 }
 
 /// Callback for `cursor_flag`.
@@ -1723,7 +1671,7 @@ pub unsafe fn format_cb_pane_path(ft: &format_tree) -> format_table_type {
         if ft.wp.is_some() {
             let wp = ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
             return match (*wp).base.path.as_ref() {
-                Some(p) => format!("{}", p.to_string_lossy()).into(),
+                Some(p) => p.to_bytes().to_vec().into(),
                 None => "".into(),
             };
         }
@@ -1792,7 +1740,8 @@ pub unsafe fn format_cb_pane_synchronized(ft: &format_tree) -> format_table_type
 pub unsafe fn format_cb_pane_title(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!("{}", _s((*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.title.as_ptr().cast::<u8>())).into();
+            let wp = ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
+            return (*wp).base.title.to_bytes().to_vec().into();
         }
         format_table_type::None
     }
@@ -1812,7 +1761,10 @@ pub unsafe fn format_cb_pane_top(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_tty(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!("{}", _s((*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).tty.as_ptr())).into();
+            let wp = ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
+            let tty = &(*wp).tty;
+            let end = tty.iter().position(|&b| b == 0).unwrap_or(tty.len());
+            return tty[..end].to_vec().into();
         }
         format_table_type::None
     }
@@ -2018,7 +1970,7 @@ pub unsafe fn format_cb_session_windows(ft: &format_tree) -> format_table_type {
 
 /// Callback for `socket_path`.
 pub unsafe fn format_cb_socket_path(_ft: &format_tree) -> format_table_type {
-    socket_path().to_string_lossy().into_owned().into()
+    socket_path().to_bytes().into()
 }
 
 /// Callback for version.
@@ -2469,39 +2421,55 @@ pub unsafe fn format_cb_uid(_ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_user(_ft: &format_tree) -> format_table_type {
     unsafe {
         if let Some(pw) = NonNull::new(getpwuid(getuid())) {
-            cstr_to_str((*pw.as_ptr()).pw_name.cast())
-                .to_string()
-                .into()
+            CStr::from_ptr((*pw.as_ptr()).pw_name.cast()).to_bytes().to_vec().into()
         } else {
             format_table_type::None
         }
     }
 }
 
-/// Format table type.
+/// What a format callback returns: nothing (the variable is not set),
+/// bytes (which need not be UTF-8, as option values and pane titles
+/// may not be) or a time.
 #[derive(Default)]
 pub enum format_table_type {
     #[default]
     None,
-    String(Cow<'static, str>),
+    Bytes(Cow<'static, [u8]>),
     Time(timeval),
 }
 
-impl From<Cow<'static, str>> for format_table_type {
-    fn from(value: Cow<'static, str>) -> Self {
-        Self::String(value)
+impl format_table_type {
+    /// The value as bytes, empty for None and a time.
+    pub fn into_bytes(self) -> Vec<u8> {
+        match self {
+            Self::Bytes(b) => b.into_owned(),
+            Self::None | Self::Time(_) => Vec::new(),
+        }
+    }
+}
+
+impl From<Vec<u8>> for format_table_type {
+    fn from(value: Vec<u8>) -> Self {
+        Self::Bytes(Cow::Owned(value))
+    }
+}
+
+impl From<&'static [u8]> for format_table_type {
+    fn from(value: &'static [u8]) -> Self {
+        Self::Bytes(Cow::Borrowed(value))
     }
 }
 
 impl From<String> for format_table_type {
     fn from(value: String) -> Self {
-        format_table_type::String(Cow::Owned(value))
+        Self::Bytes(Cow::Owned(value.into_bytes()))
     }
 }
 
 impl From<&'static str> for format_table_type {
     fn from(value: &'static str) -> Self {
-        format_table_type::String(Cow::Borrowed(value))
+        Self::Bytes(Cow::Borrowed(value.as_bytes()))
     }
 }
 
@@ -2775,9 +2743,14 @@ pub unsafe fn format_free(ft: *mut format_tree) {
     }
 }
 
-pub unsafe fn format_log_debug_cb(key: &str, value: &str, prefix: *mut u8) {
+pub unsafe fn format_log_debug_cb(key: &[u8], value: &[u8], prefix: *mut u8) {
     unsafe {
-        log_debug!("{}: {}={}", _s(prefix), key, value);
+        log_debug!(
+            "{}: {}={}",
+            _s(prefix),
+            String::from_utf8_lossy(key),
+            String::from_utf8_lossy(value)
+        );
     }
 }
 
@@ -2787,7 +2760,10 @@ pub unsafe fn format_log_debug(ft: *mut format_tree, prefix: *const u8) {
     }
 }
 
-pub unsafe fn format_each<T>(ft: *mut format_tree, cb: unsafe fn(&str, &str, *mut T), arg: *mut T) {
+/// Calls `cb` with the name and value of every variable the tree has:
+/// the callbacks of the table that give a value, then the `format_add`
+/// entries. Values are bytes, as the callbacks return them.
+pub unsafe fn format_each<T>(ft: *mut format_tree, cb: unsafe fn(&[u8], &[u8], *mut T), arg: *mut T) {
     unsafe {
         for fte in FORMAT_TABLE {
             let value = (fte.cb)(&*ft);
@@ -2795,25 +2771,21 @@ pub unsafe fn format_each<T>(ft: *mut format_tree, cb: unsafe fn(&str, &str, *mu
                 format_table_type::None => continue,
                 format_table_type::Time(tv) => {
                     let s = format!("{}", tv.tv_sec);
-                    cb(fte.key, &s, arg);
+                    cb(fte.key.as_bytes(), s.as_bytes(), arg);
                 }
-                format_table_type::String(string) => {
-                    cb(fte.key, &string, arg);
+                format_table_type::Bytes(bytes) => {
+                    cb(fte.key.as_bytes(), &bytes, arg);
                 }
             }
         }
 
         for (key, fe) in &(*ft).tree {
-            let key = String::from_utf8_lossy(key);
             match fe {
-                format_entry::Time(t) => cb(&key, &t.to_string(), arg),
-                format_entry::Value(v) => cb(&key, &String::from_utf8_lossy(v), arg),
+                format_entry::Time(t) => cb(key, t.to_string().as_bytes(), arg),
+                format_entry::Value(v) => cb(key, v, arg),
                 format_entry::Callback(fe_cb, cached) => {
-                    let v = cached.get_or_init(|| match fe_cb(&*ft) {
-                        format_table_type::String(cow) => cow.into_owned().into_bytes(),
-                        _ => Vec::new(),
-                    });
-                    cb(&key, &String::from_utf8_lossy(v), arg);
+                    let v = cached.get_or_init(|| fe_cb(&*ft).into_bytes());
+                    cb(key, v, arg);
                 }
             }
         }
@@ -2831,6 +2803,17 @@ pub(crate) use format_add;
 pub unsafe fn format_add_(ft: *mut format_tree, key: &str, args: std::fmt::Arguments) {
     unsafe {
         (*ft).tree.insert(key.as_bytes().to_vec(), format_entry::Value(args.to_string().into_bytes()));
+    }
+}
+
+/// `format_add` with a name and value that are bytes, which need not be
+/// UTF-8 (an option value, a pane title, a key table name).
+///
+/// # Safety
+/// `ft` must be a valid tree.
+pub unsafe fn format_add_bytes(ft: *mut format_tree, key: &[u8], value: &[u8]) {
+    unsafe {
+        (*ft).tree.insert(key.to_vec(), format_entry::Value(value.to_vec()));
     }
 }
 

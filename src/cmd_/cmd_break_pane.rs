@@ -155,7 +155,7 @@ pub unsafe fn cmd_break_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_
                 template = c!("#{session_name}:#{window_index}.#{pane_index}");
             }
             cp = format_single(item, cstr_to_str(template), tc, dst_s, Some(wl.id), wp);
-            cmdq_print!(item, "{}", _s(cp));
+            cmdq_print_bytes(item, CStr::from_ptr(cp.cast()).to_bytes());
             free_(cp);
         }
 

@@ -273,14 +273,14 @@ unsafe fn format_lookup(ft: &format_tree, key: &[u8], for_time: bool) -> Option<
                 o = options_parse_get(GLOBAL_S_OPTIONS, name, &mut idx, false);
             }
             if !o.is_null() {
-                return Some(Value::Bytes(options_to_string(o, idx.as_ref(), true).into_bytes()));
+                return Some(Value::Bytes(options_to_string(o, idx.as_ref(), true)));
             }
         }
 
         if let Some(fte) = table_get(key) {
             return match (fte.cb)(ft) {
                 format_table_type::Time(tv) => Some(Value::Time(tv.tv_sec)),
-                format_table_type::String(s) => Some(Value::Bytes(s.into_owned().into_bytes())),
+                format_table_type::Bytes(s) => Some(Value::Bytes(s.into_owned())),
                 format_table_type::None => None,
             };
         }
@@ -290,12 +290,7 @@ unsafe fn format_lookup(ft: &format_tree, key: &[u8], for_time: bool) -> Option<
                 format_entry::Time(t) => Value::Time(*t),
                 format_entry::Value(v) => Value::Bytes(v.clone()),
                 format_entry::Callback(cb, cached) => Value::Bytes(
-                    cached
-                        .get_or_init(|| match cb(ft) {
-                            format_table_type::String(s) => s.into_owned().into_bytes(),
-                            _ => Vec::new(),
-                        })
-                        .clone(),
+                    cached.get_or_init(|| cb(ft).into_bytes()).clone(),
                 ),
             });
         }
@@ -337,7 +332,7 @@ unsafe fn add_window_neighbour(nft: *mut format_tree, wl: Winlink, s: *mut sessi
             let name = options_name(o);
             if name.starts_with('@') {
                 let value = options_to_string(o, None, true);
-                format_add!(nft, &format!("{prefix}_{name}"), "{value}");
+                format_add_bytes(nft, format!("{prefix}_{name}").as_bytes(), &value);
             }
         }
     }
@@ -485,7 +480,7 @@ impl TreeEnv {
                 if keys.is_empty() {
                     let nft = self.scoped_child();
                     common(nft);
-                    format_add!(nft, "option_value", "{}", options_to_string(o, None, false));
+                    format_add_bytes(nft, b"option_value", &options_to_string(o, None, false));
                     format_add!(nft, "option_is_array", "{}", i32::from(is_array));
                     format_add!(nft, "option_array_key", "");
                     format_add!(nft, "option_array_index", "");
@@ -501,7 +496,7 @@ impl TreeEnv {
                 for (k, key) in keys.iter().enumerate() {
                     let nft = self.scoped_child();
                     common(nft);
-                    format_add!(nft, "option_value", "{}", options_to_string(o, Some(key), false));
+                    format_add_bytes(nft, b"option_value", &options_to_string(o, Some(key), false));
                     format_add!(nft, "option_is_array", "1");
                     format_add!(nft, "option_array_key", "{key}");
                     format_add!(nft, "option_array_index", "{key}");
@@ -905,16 +900,6 @@ unsafe fn format_cycle_start_timer(c: *mut client) {
                 }
             }),
         );
-    }
-}
-
-/// `format_add` with a byte value and name, which `format_add`! cannot take.
-///
-/// # Safety
-/// `ft` must be a valid tree.
-pub unsafe fn format_add_bytes(ft: *mut format_tree, key: &[u8], value: &[u8]) {
-    unsafe {
-        (*ft).tree.insert(key.to_vec(), format_entry::Value(value.to_vec()));
     }
 }
 

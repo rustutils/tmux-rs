@@ -109,6 +109,14 @@ pub fn xstrdup_(str: &CStr) -> NonNull<u8> {
     unsafe { xstrdup(str.as_ptr().cast()) }
 }
 
+/// Copies bytes into a new NUL terminated string. The bytes hold no NUL.
+pub fn xstrdup_bytes(bytes: &[u8]) -> *mut u8 {
+    debug_assert!(!bytes.contains(&0), "xstrdup_bytes: NUL in the bytes");
+    let mut out = bytes.to_vec();
+    out.push(0);
+    out.leak().as_mut_ptr()
+}
+
 pub fn xstrdup__(str: &str) -> *mut u8 {
     let mut out = str.to_string();
     out.push('\0');

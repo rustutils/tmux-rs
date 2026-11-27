@@ -844,6 +844,23 @@ pub unsafe fn cmdq_print_data(item: *mut cmdq_item, evb: *mut evbuffer) {
     }
 }
 
+/// Shows `data` to the item's client as it is, bytes that are not UTF-8
+/// included, as `cmdq_print` does in 3.8.
+///
+/// # Safety
+/// `item` must be a valid queue item.
+pub unsafe fn cmdq_print_bytes(item: *mut cmdq_item, data: &[u8]) {
+    unsafe {
+        let evb = evbuffer_new();
+        if evb.is_null() {
+            fatalx("out of memory");
+        }
+        evbuffer_add(evb, data.as_ptr().cast(), data.len());
+        cmdq_print_data(item, evb);
+        evbuffer_free(evb);
+    }
+}
+
 macro_rules! cmdq_print {
    ($item:expr, $fmt:literal $(, $args:expr)* $(,)?) => {
         crate::cmd_::cmd_queue::cmdq_print_($item, format_args!($fmt $(, $args)*))

@@ -86,7 +86,7 @@ unsafe fn cmd_list_clients_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
             }
             if flag {
                 let line = format_expand(ft, template);
-                cmdq_print!(item, "{}", _s(line));
+                cmdq_print_bytes(item, CStr::from_ptr(line.cast()).to_bytes());
                 free_(line);
             }
 

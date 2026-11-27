@@ -61,7 +61,7 @@
 2 src/cmd_/cmd_new_session.rs
 2 src/cmd_/cmd_new_window.rs
 8 src/cmd_/cmd_pipe_pane.rs
-81 src/cmd_/cmd_queue.rs
+83 src/cmd_/cmd_queue.rs
 12 src/cmd_/cmd_refresh_client.rs
 2 src/cmd_/cmd_rename_session.rs
 2 src/cmd_/cmd_rename_window.rs
@@ -85,7 +85,7 @@
 2 src/cmd_/cmd_switch_client.rs
 20 src/cmd_/cmd_wait_for.rs
 62 src/cmd_/mod.rs
-16 src/cmd_/run.rs
+14 src/cmd_/run.rs
 128 src/cmd_parse.rs
 4 src/colour.rs
 2 src/compat/getopt.rs
@@ -94,9 +94,9 @@
 8 src/environ/mod.rs
 36 src/events/mod.rs
 60 src/file.rs
-381 src/format.rs
+384 src/format.rs
 22 src/format_draw_.rs
-60 src/format_env.rs
+58 src/format_env.rs
 22 src/hook_monitor.rs
 12 src/hooks.rs
 14 src/hyperlinks_.rs

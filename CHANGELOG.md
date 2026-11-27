@@ -16,6 +16,10 @@
   formats are cached, which makes status lines cheaper to draw.
 - A client whose `COLORTERM` is `truecolor` or `24bit` gets the RGB
   terminal feature, one with `256` in it the 256 colour feature.
+- Option values, pane titles and other values that are not UTF-8 keep
+  their bytes in formats and in what commands print, as in tmux 3.8.
+  Before, they became U+FFFD or the whole line was replaced by an error
+  marker.
 
 ### Fixes
 

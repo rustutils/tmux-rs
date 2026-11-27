@@ -98,7 +98,7 @@ unsafe fn cmd_list_keys_format_add_key_binding(ft: *mut format_tree, tb: &TableB
             String::from_utf8_lossy(bd.note.as_deref().unwrap_or_default())
         );
         format_add!(ft, "key_prefix", "{prefix}");
-        format_add!(ft, "key_table", "{}", String::from_utf8_lossy(&tb.table));
+        format_add_bytes(ft, b"key_table", &tb.table);
         format_add!(ft, "key_string", "{}", key_string_lookup_key(bd.key, 0));
 
         let s = cmd_list_print(&*bd.cmds.as_ptr(), CMD_LIST_PRINT_ESCAPED | CMD_LIST_PRINT_NO_GROUPS);
@@ -203,9 +203,9 @@ unsafe fn cmd_list_keys_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retva
 
             let line = format_expand(ft, template);
             if single && !tc.is_null() && !(*tc).flags.intersects(client_flag::CONTROL) {
-                status_message_set!(tc, -1, 1, false, "{}", _s(line));
+                status_message_set!(tc, -1, 1, false, "{}", cstr_to_string_lossy(line));
             } else if *line != b'\0' {
-                cmdq_print!(item, "{}", _s(line));
+                cmdq_print_bytes(item, CStr::from_ptr(line.cast()).to_bytes());
             }
             free_(line);
 
@@ -263,7 +263,7 @@ unsafe fn cmd_list_keys_commands(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
 
             let line = format_expand(ft, template);
             if *line != b'\0' {
-                cmdq_print!(item, "{}", _s(line));
+                cmdq_print_bytes(item, CStr::from_ptr(line.cast()).to_bytes());
             }
             free_(line);
         }

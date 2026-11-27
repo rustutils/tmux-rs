@@ -105,22 +105,6 @@ unsafe fn cmd_ctx_parts(item: *mut cmdq_item) -> CmdCtxParts {
     }
 }
 
-/// Shows `data` to the item's client, as `cmdq_print_data`.
-///
-/// # Safety
-/// `item` must be a valid queue item.
-unsafe fn cmd_print_bytes(item: *mut cmdq_item, data: &[u8]) {
-    unsafe {
-        let evb = evbuffer_new();
-        if evb.is_null() {
-            fatalx("out of memory");
-        }
-        evbuffer_add(evb, data.as_ptr().cast(), data.len());
-        cmdq_print_data(item, evb);
-        evbuffer_free(evb);
-    }
-}
-
 /// Expands a format for the item's client and `subject`.
 ///
 /// # Safety
@@ -167,7 +151,7 @@ unsafe fn cmd_print_format(
             let template = CString::new(template).unwrap_or_default();
             let line = format_expand(ft, template.as_ptr().cast());
             let bytes = CStr::from_ptr(line.cast()).to_bytes();
-            cmd_print_bytes(item, bytes);
+            cmdq_print_bytes(item, bytes);
             free_(line);
         }
 
@@ -184,7 +168,7 @@ unsafe fn cmd_apply_effects(item: *mut cmdq_item, effects: Vec<CmdEffect>) {
         for effect in effects {
             match effect {
                 CmdEffect::Paste(event) => paste_notify([event]),
-                CmdEffect::Print(data) => cmd_print_bytes(item, &data),
+                CmdEffect::Print(data) => cmdq_print_bytes(item, &data),
                 CmdEffect::PrintFormat {
                     template,
                     filter,

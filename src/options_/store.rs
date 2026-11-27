@@ -612,13 +612,15 @@ impl<X: OptionsExt> OptionEntry<X> {
         Ok(())
     }
 
-    fn value_to_string(&self, value: &Value<X::Command>, numeric: bool) -> String {
+    /// One value as text. A string keeps its bytes, which need not be
+    /// UTF-8.
+    fn value_to_bytes(&self, value: &Value<X::Command>, numeric: bool) -> Vec<u8> {
         match value {
-            Value::Command(cmd) => cmd.as_ref().map(X::print_command).unwrap_or_default(),
-            Value::String(s) => lossy(s.as_bytes()),
+            Value::Command(cmd) => cmd.as_ref().map(X::print_command).unwrap_or_default().into_bytes(),
+            Value::String(s) => s.as_bytes().to_vec(),
             Value::Number(number) => {
                 let n = *number;
-                match self.table.map(|oe| (oe, oe.type_)) {
+                let text = match self.table.map(|oe| (oe, oe.type_)) {
                     Some((_, OptionType::Key)) => X::print_key(n),
                     Some((_, OptionType::Colour)) => X::print_colour(n),
                     Some((_, OptionType::Flag)) if !numeric => {
@@ -626,26 +628,28 @@ impl<X: OptionsExt> OptionEntry<X> {
                     }
                     Some((oe, OptionType::Choice)) => choice_name(oe, n),
                     _ => n.to_string(),
-                }
+                };
+                text.into_bytes()
             }
         }
     }
 
     /// The value as text, as show-options prints it. For an array, the
     /// item with `key`, or every item joined with spaces if there is no
-    /// key. `numeric` prints flags as 1 and 0.
-    pub fn to_string(&self, key: Option<&ArrayKey>, numeric: bool) -> String {
+    /// key. `numeric` prints flags as 1 and 0. String values keep their
+    /// bytes, as 3.8 does, so the result need not be UTF-8.
+    pub fn to_bytes(&self, key: Option<&ArrayKey>, numeric: bool) -> Vec<u8> {
         match (&self.value, key) {
             (EntryValue::Array(a), None) => a
                 .values()
-                .map(|v| self.value_to_string(v, numeric))
+                .map(|v| self.value_to_bytes(v, numeric))
                 .collect::<Vec<_>>()
-                .join(" "),
+                .join(&b' '),
             (EntryValue::Array(a), Some(key)) => a
                 .get(key)
-                .map(|v| self.value_to_string(v, numeric))
+                .map(|v| self.value_to_bytes(v, numeric))
                 .unwrap_or_default(),
-            (EntryValue::One(v), _) => self.value_to_string(v, numeric),
+            (EntryValue::One(v), _) => self.value_to_bytes(v, numeric),
         }
     }
 
@@ -1291,7 +1295,7 @@ mod tests {
         assert_eq!(oo.get_only("base-index").unwrap().number(), Some(0));
         assert_eq!(oo.get_only("status").unwrap().string().unwrap(), c"left");
         assert_eq!(keys(oo.get_only("list").unwrap()), ["0", "1"]);
-        assert_eq!(oo.get_only("list").unwrap().to_string(None, false), "one two");
+        assert_eq!(oo.get_only("list").unwrap().to_bytes(None, false), b"one two");
         assert_eq!(keys(oo.get_only("hook").unwrap()), Vec::<String>::new());
         assert_eq!(TABLE[1].default_to_string::<T>(), "on");
         assert_eq!(TABLE[6].default_to_string::<T>(), "K2");
@@ -1438,14 +1442,14 @@ mod tests {
         let mut oo = tree();
         oo.set_from_string(&[], Some(&TABLE[1]), "bell", Some(b"both"), false)
             .unwrap();
-        assert_eq!(oo.get_only("bell").unwrap().to_string(None, false), "both");
+        assert_eq!(oo.get_only("bell").unwrap().to_bytes(None, false), b"both");
         let err = oo
             .set_from_string(&[], Some(&TABLE[1]), "bell", Some(b"loud"), false)
             .unwrap_err();
         assert_eq!(err.to_string(), "unknown value: loud");
         oo.set_from_string(&[], Some(&TABLE[6]), "key", Some(b"K7"), false)
             .unwrap();
-        assert_eq!(oo.get_only("key").unwrap().to_string(None, false), "K7");
+        assert_eq!(oo.get_only("key").unwrap().to_bytes(None, false), b"K7");
         let err = oo
             .set_from_string(&[], Some(&TABLE[6]), "key", Some(b"Q"), false)
             .unwrap_err();
@@ -1494,15 +1498,29 @@ mod tests {
     }
 
     #[test]
+    fn values_keep_bytes_that_are_not_utf8() {
+        let mut oo = tree();
+        oo.set_from_string(&[], None, "@bad", Some(b"x\xe6\x97"), false)
+            .unwrap();
+        oo.set_from_string(&[], None, "@bad", Some(b"\xff"), true)
+            .unwrap();
+        let o = oo.get_only("@bad").unwrap();
+        assert_eq!(o.to_bytes(None, false), b"x\xe6\x97\xff");
+        let o = oo.get_only_mut("list").unwrap();
+        o.array_set(&key("x"), Some(b"\xff"), false).unwrap();
+        assert_eq!(o.to_bytes(Some(&key("x")), false), b"\xff");
+    }
+
+    #[test]
     fn array_set_append_and_remove() {
         let mut oo = tree();
         let o = oo.get_only_mut("list").unwrap();
         o.array_set(&key("x"), Some(b"b"), false).unwrap();
         o.array_set(&key("x"), Some(b"c"), true).unwrap();
-        assert_eq!(o.to_string(Some(&key("x")), false), "bc");
+        assert_eq!(o.to_bytes(Some(&key("x")), false), b"bc");
         o.array_set(&key("0"), None, false).unwrap();
         assert_eq!(keys(o), ["1", "x"]);
-        assert_eq!(o.to_string(Some(&key("9")), false), "");
+        assert_eq!(o.to_bytes(Some(&key("9")), false), b"");
     }
 
     #[test]
@@ -1533,12 +1551,12 @@ mod tests {
         o.array_clear();
         o.array_set(&key("1"), Some(b"a"), false).unwrap();
         o.array_assign(b"p, q,,r").unwrap();
-        assert_eq!(o.to_string(None, false), "p a q r");
+        assert_eq!(o.to_bytes(None, false), b"p a q r");
         assert_eq!(keys(o), ["0", "1", "2", "3"]);
         // An empty separator takes the whole value as one item.
         let o = oo.get_only_mut("hook").unwrap();
         o.array_assign(b"a, b").unwrap();
-        assert_eq!(o.to_string(None, false), "a, b");
+        assert_eq!(o.to_bytes(None, false), b"a, b");
     }
 
     #[test]
@@ -1559,8 +1577,8 @@ mod tests {
     fn flags_print_as_numbers_when_asked() {
         let oo = tree();
         let o = oo.get_only("flag").unwrap();
-        assert_eq!(o.to_string(None, false), "on");
-        assert_eq!(o.to_string(None, true), "1");
+        assert_eq!(o.to_bytes(None, false), b"on");
+        assert_eq!(o.to_bytes(None, true), b"1");
     }
 
     #[test]

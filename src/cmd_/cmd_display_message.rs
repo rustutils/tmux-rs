@@ -38,9 +38,10 @@ pub static CMD_DISPLAY_MESSAGE_ENTRY: cmd_entry = cmd_entry {
     source: cmd_entry_flag::zeroed(),
 };
 
-unsafe fn cmd_display_message_each(key: &str, value: &str, item: *mut cmdq_item) {
+/// Prints one variable for -a as `name=value`, keeping the bytes.
+unsafe fn cmd_display_message_each(key: &[u8], value: &[u8], item: *mut cmdq_item) {
     unsafe {
-        cmdq_print!(item, "{}={}", key, value);
+        cmdq_print_bytes(item, &[key, b"=", value].concat());
     }
 }
 
@@ -133,7 +134,7 @@ unsafe fn cmd_display_message_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd
         if cmdq_get_client(item).is_null() {
             cmdq_error!(item, "{}", _s(msg));
         } else if args_has(args, 'p') {
-            cmdq_print!(item, "{}", _s(msg));
+            cmdq_print_bytes(item, CStr::from_ptr(msg.cast()).to_bytes());
         } else if !tc.is_null() && (*tc).flags.intersects(client_flag::CONTROL) {
             let evb = evbuffer_new();
             if evb.is_null() {

@@ -138,7 +138,7 @@ unsafe fn cmd_new_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_retv
                 template = NEW_WINDOW_TEMPLATE;
             }
             let cp = format_single(item, cstr_to_str(template), tc, s, Some(new_wl.id), window_active_pane(winlink_window(new_wl)));
-            cmdq_print!(item, "{}", _s(cp));
+            cmdq_print_bytes(item, CStr::from_ptr(cp.cast()).to_bytes());
             free_(cp);
         }
 

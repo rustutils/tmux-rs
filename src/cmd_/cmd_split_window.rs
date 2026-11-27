@@ -170,7 +170,7 @@ unsafe fn cmd_split_window_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_re
                 template = SPLIT_WINDOW_TEMPLATE;
             }
             let cp = format_single(item, cstr_to_str(template), tc, s, wl, new_wp);
-            cmdq_print!(item, "{}", _s(cp));
+            cmdq_print_bytes(item, CStr::from_ptr(cp.cast()).to_bytes());
             free_(cp);
         }
 

@@ -186,7 +186,7 @@ unsafe fn cmd_show_options_print(
                     return;
                 }
                 has_value = false;
-                String::new()
+                Vec::new()
             }
             None => options_to_string(o, None, false),
         };
@@ -202,7 +202,7 @@ unsafe fn cmd_show_options_print(
 
         let ft = format_create_from_target(item);
         format_add!(ft, "option_name", "{}", options_name(o));
-        format_add!(ft, "option_value", "{}", value);
+        format_add_bytes(ft, b"option_value", &value);
         format_add!(ft, "option_value_only", "{}", args_has(args, 'v') as i32);
         format_add!(ft, "option_is_parent", "{}", parent as i32);
         format_add!(ft, "option_is_array", "{}", options_is_array(o) as i32);
@@ -234,7 +234,7 @@ unsafe fn cmd_show_options_print(
         let line = format_expand(ft, template);
         format_free(ft);
 
-        cmdq_print!(item, "{}", cstr_to_string_lossy(line));
+        cmdq_print_bytes(item, CStr::from_ptr(line.cast()).to_bytes());
         free_(line);
     }
 }
@@ -283,7 +283,7 @@ unsafe fn cmd_show_hooks_print_monitor(self_: *mut cmd, item: *mut cmdq_item, o:
         let line = format_expand(ft, template);
         format_free(ft);
 
-        cmdq_print!(item, "{}", cstr_to_string_lossy(line));
+        cmdq_print_bytes(item, CStr::from_ptr(line.cast()).to_bytes());
         free_(line);
     }
 }
