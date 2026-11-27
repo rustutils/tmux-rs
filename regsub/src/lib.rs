@@ -20,7 +20,7 @@
 //! The main entry point is [`regsub`], which compiles a pattern, finds all
 //! non-overlapping matches in the input text, and replaces each with the
 //! expanded replacement string. Anchored patterns (`^...`) only replace the
-//! first match.
+//! first match, and an empty pattern leaves the text alone, as in 3.8.
 
 use core::ffi::{CStr, c_int};
 use core::mem;
@@ -32,7 +32,8 @@ use libc::{regcomp, regex_t, regexec, regfree, regmatch_t};
 /// result as a `Vec<u8>`.
 ///
 /// Returns `None` if the pattern fails to compile. Returns an empty `Vec` if
-/// `text` is empty. Anchored patterns (`^...`) only replace the first match.
+/// `text` is empty, and `text` unchanged if `pattern` is empty. Anchored
+/// patterns (`^...`) only replace the first match, even an empty one.
 ///
 /// The output is not NUL-terminated. Callers that need a C string should
 /// append a terminator themselves.
@@ -40,6 +41,9 @@ pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
     let text_bytes = text.to_bytes();
     if text_bytes.is_empty() {
         return Some(Vec::new());
+    }
+    if pattern.to_bytes().is_empty() {
+        return Some(text_bytes.to_vec());
     }
 
     // SAFETY: we initialise `r` via `regcomp` before reading any field, and
@@ -88,6 +92,13 @@ pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
         // Append any text not part of this match (from the end of the last match).
         buf.extend_from_slice(&text_bytes[last..start + match_start]);
 
+        // For anchored patterns, replace the first match only.
+        if anchored {
+            expand(&mut buf, with_bytes, &text_bytes[start..], &m);
+            buf.extend_from_slice(&text_bytes[start + match_end..end]);
+            break;
+        }
+
         // If the last match was empty and this one isn't (it is either later or
         // has matched text), expand this match. If it is empty, move on one
         // character and try again from there.
@@ -101,12 +112,6 @@ pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
             start += match_end + 1;
             empty = true;
         }
-
-        // Stop now if anchored to start.
-        if anchored {
-            buf.extend_from_slice(&text_bytes[start..end]);
-            break;
-        }
     }
 
     // SAFETY: `r` was successfully initialised by `regcomp` above.
@@ -117,19 +122,20 @@ pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
 
 /// Expands backreferences (`\0`–`\9`) in the replacement string `with`,
 /// substituting matched groups from `m` (offsets relative to `text`), and
-/// appends the result to `buf`. A literal backslash at the end of `with`
-/// is dropped (matches libc sed behaviour). `\X` where `X` is not a digit
-/// or is a non-matching group number expands to `X`.
+/// appends the result to `buf`. A backslash at the end of `with` is kept,
+/// as in C. `\X` where `X` is not a digit or is a non-matching group number
+/// expands to `X`.
 fn expand(buf: &mut Vec<u8>, with: &[u8], text: &[u8], m: &[regmatch_t; 10]) {
     let mut i = 0;
     while i < with.len() {
         let c = with[i];
         if c == b'\\' {
-            i += 1;
-            if i >= with.len() {
-                // Trailing backslash, so drop it.
+            if i + 1 >= with.len() {
+                // A trailing backslash is copied as it is.
+                buf.push(c);
                 break;
             }
+            i += 1;
             let d = with[i];
             if d.is_ascii_digit() {
                 let idx = (d - b'0') as usize;
@@ -230,6 +236,21 @@ mod tests {
     #[test]
     fn anchored_replaces_first_only() {
         assert_eq!(sub("^foo", "bar", "foofoo"), Some("barfoo".into()));
+    }
+
+    #[test]
+    fn anchored_empty_match_keeps_text() {
+        assert_eq!(sub("^", ">", "hello"), Some(">hello".into()));
+    }
+
+    #[test]
+    fn empty_pattern_leaves_text() {
+        assert_eq!(sub("", "x", "hello"), Some("hello".into()));
+    }
+
+    #[test]
+    fn trailing_backslash_is_kept() {
+        assert_eq!(sub("x", "a\\", "x"), Some("a\\".into()));
     }
 
     #[test]

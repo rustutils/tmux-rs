@@ -15,6 +15,15 @@
   either way are now ignored, as in tmux 3.8.
 - The `b` format modifier (basename) made the server crash on an empty value,
   on `/` and on a path ending in `..`. It now gives what POSIX basename gives.
+- A negative width in the `p` format modifier wrote past the end of its
+  buffer and padded by the whole width. It now pads up to the width.
+- `#{s/^/x/:...}` dropped the first character of the value, and an empty
+  pattern in `s` inserted the replacement between every character. Both now
+  behave as in tmux 3.8, as does a backslash at the end of the replacement.
+- `pane_at_top` and `pane_at_bottom` print 1 or 0 instead of true or false,
+  `config_files` no longer ends with a comma, `history_bytes` and
+  `history_all_bytes` give the sizes tmux 3.8 gives, and `#{C:...}` gives 0
+  instead of the pane height when nothing matches.
 
 ## 0.3.0 (2026-11-26)
 

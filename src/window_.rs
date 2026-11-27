@@ -1903,9 +1903,9 @@ pub unsafe fn window_pane_search(
             }
         }
 
+        // C's loop leaves i at screen_size_y when nothing matched.
         let mut i = 0;
-        for j in 0..screen_size_y(s) {
-            i = j;
+        while i < screen_size_y(s) {
 
             // Strip trailing whitespace from the row's text, then NUL-terminate
             // via CString for the C match functions. view_string_cells returns
@@ -1930,6 +1930,7 @@ pub unsafe fn window_pane_search(
             if found {
                 break;
             }
+            i += 1;
         }
 
         if regex == 0 {

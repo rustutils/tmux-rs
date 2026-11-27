@@ -13,18 +13,16 @@ group	variable missing in tmux-rs	3.8 variables not ported
 group	operator ||	3.8 n-ary || not ported (one argument, none, more than two)
 group	operator &&	3.8 n-ary && not ported
 group	modifier R	3.8 R modifier not ported
-group	modifier C	C finds a line in an empty pane (tmux-rs 5, 3.8 0)
+group	modifier C	C combined with modifiers tmux-rs lacks (R, !)
 group	variable window_layout	3.8 layout strings are JSON
 group	variable window_visible_layout	3.8 layout strings are JSON
-group	variable pane_at_top	tmux-rs prints true or false, 3.8 prints 1 or 0
-group	variable pane_at_bottom	tmux-rs prints true or false, 3.8 prints 1 or 0
 group	modifier O	3.8 O option loop not ported
 group	modifier V	3.8 V environment loop not ported
-group	modifier p	p with a negative width pads too much, and 3.8 limits the width to 10000
-group	modifier =	mostly p after =, see modifier p
+group	modifier p	p combined with modifiers tmux-rs lacks (R, A, !, !!, c/f)
+group	modifier =	= combined with modifiers tmux-rs lacks (!, !!, c/f, I)
 group	modifier e	integer overflow, division by zero and precision over 100 differ
 group	modifier c	3.8 c/f and c/b not ported
-group	modifier s	s with an empty match at ^ eats the first character
+group	modifier s	s combined with modifiers tmux-rs lacks (!!, c/b, R)
 group	modifier I	3.8 I client modifiers not ported
 group	modifier A	3.8 A modifier not ported
 group	modifier n	n combined with modifiers tmux-rs lacks (c/f, A, I)
@@ -32,17 +30,15 @@ group	modifier d	d combined with !! (not ported)
 group	modifier q	3.8 q escapes braces
 group	modifier w	w combined with I (not ported)
 group	modifier W	3.8 next_ and prev_ user options in W loops not ported
-group	operator >	> combined with C, see modifier C
+group	operator >	> combined with !! (not ported)
 group	variable pane-border-format	Track 3: floating panes (option default, see tests/parity_known.rs)
 group	variable status-format	Track 3: switch-mode and status lines (option default)
 group	variable status-format[0]	Track 3: switch-mode and status lines (option default)
 group	variable status-format[1]	Track 3: switch-mode and status lines (option default)
-group	variable config_files	tmux-rs ends the list with a comma
-group	variable history_bytes	history byte count differs (tmux-rs 320, 3.8 200)
-group	modifier E	E combined with C, see modifier C
+group	modifier E	E combined with !! and R (not ported)
 group	modifier b	b combined with ! (not ported)
 group	modifier T	T combined with I (not ported)
 group	modifier l	l combined with !! (not ported)
 group	modifier N	N combined with ! (not ported)
-group	operator <	< combined with C, see modifier C
+group	operator <	< combined with ! (not ported)
 group	modifier m	m combined with ! (not ported)

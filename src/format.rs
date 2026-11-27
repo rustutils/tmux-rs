@@ -881,7 +881,15 @@ pub unsafe fn format_cb_current_path(ft: &format_tree) -> format_table_type {
     }
 }
 
-/// Callback for `history_bytes`.
+/// Size of C's packed `struct grid_cell_entry`. `history_bytes` reports C's
+/// sizes on LP64 so it prints what 3.8 prints, not this port's layout.
+const C_GRID_CELL_ENTRY_SIZE: usize = 5;
+/// Size of C's packed `struct grid_extd_entry`.
+const C_GRID_EXTD_ENTRY_SIZE: usize = 23;
+/// Size of C's `struct grid_line` on LP64.
+const C_GRID_LINE_SIZE: usize = 40;
+
+/// Callback for `history_bytes`, the memory C would use for the grid.
 pub unsafe fn format_cb_history_bytes(ft: &format_tree) -> format_table_type {
     unsafe {
         let wp = ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
@@ -895,10 +903,10 @@ pub unsafe fn format_cb_history_bytes(ft: &format_tree) -> format_table_type {
 
         for i in 0..((*gd).hsize + (*gd).sy) {
             let gl = (*gd).get_line(i);
-            size += gl.celldata.len() * std::mem::size_of::<GridCell>();
-            size += gl.extddata.len() * std::mem::size_of::<GridCell>();
+            size += gl.celldata.len() * C_GRID_CELL_ENTRY_SIZE;
+            size += gl.extddata.len() * C_GRID_EXTD_ENTRY_SIZE;
         }
-        size += ((*gd).hsize + (*gd).sy) as usize * std::mem::size_of::<GridLine>();
+        size += ((*gd).hsize + (*gd).sy) as usize * C_GRID_LINE_SIZE;
 
         format!("{size}").into()
     }
@@ -927,11 +935,11 @@ pub unsafe fn format_cb_history_all_bytes(ft: &format_tree) -> format_table_type
         format!(
             "{},{},{},{},{},{}",
             lines,
-            lines as usize * std::mem::size_of::<GridLine>(),
+            lines as usize * C_GRID_LINE_SIZE,
             cells,
-            cells as usize * std::mem::size_of::<GridCell>(),
+            cells as usize * C_GRID_CELL_ENTRY_SIZE,
             extended_cells,
-            extended_cells as usize * std::mem::size_of::<GridCell>(),
+            extended_cells as usize * C_GRID_EXTD_ENTRY_SIZE,
         )
         .into()
     }
@@ -1116,7 +1124,7 @@ pub unsafe fn format_cb_pane_at_top(ft: &format_tree) -> format_table_type {
             (*wp).yoff == 0
         };
 
-        format!("{flag}").into()
+        if flag { "1" } else { "0" }.into()
     }
 }
 
@@ -1136,7 +1144,7 @@ pub unsafe fn format_cb_pane_at_bottom(ft: &format_tree) -> format_table_type {
             (*wp).yoff + (*wp).sy == (*w).sy
         };
 
-        format!("{flag}").into()
+        if flag { "1" } else { "0" }.into()
     }
 }
 
@@ -1562,14 +1570,9 @@ pub unsafe fn format_cb_client_written(ft: &format_tree) -> format_table_type {
 
 /// Callback for `config_files`.
 pub unsafe fn format_cb_config_files(_ft: &format_tree) -> format_table_type {
-    let mut s = String::new();
-
-    for file in CFG_FILES.lock().unwrap().iter() {
-        s.push_str(file.to_str().expect("cfg_files invalid utf8"));
-        s.push(',');
-    }
-
-    s.into()
+    let files = CFG_FILES.lock().unwrap();
+    let names: Vec<String> = files.iter().map(|file| file.to_string_lossy().into_owned()).collect();
+    names.join(",").into()
 }
 
 /// Callback for `cursor_flag`.

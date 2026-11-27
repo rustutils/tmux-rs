@@ -301,7 +301,7 @@ pub unsafe fn utf8_rpadcstr(s: *const u8, width: u32) -> *mut u8 {
         let slen = strlen(s);
         let out: *mut u8 = xmalloc(slen + 1 + (width - n) as usize).as_ptr().cast();
         let mut i = 0;
-        while i < width {
+        while i < width - n {
             *out.add(i as usize) = b' ';
             i += 1;
         }

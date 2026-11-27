@@ -424,13 +424,17 @@ fn trim_and_pad() {
             ("#{p5;=2:@plain}|", "he   |"),
             ("#{=2;p5:@plain}|", "he   |"),
             ("#{p5;n:@num}", "5"),
+            ("#{p-10:@num}|", "        42|"),
+            ("#{p-8:@wide}|", "  日本語|"),
         ],
     );
 }
 
 /// `s/pattern/with/flags`: extended regular expressions, back references,
-/// `i` for ignoring case, any wrapper character, several in a row, and
-/// patterns that do not compile leaving the value alone.
+/// `i` for ignoring case, any wrapper character, several in a row,
+/// patterns that do not compile and the empty pattern leaving the value
+/// alone, an anchored empty match and a backslash at the end of the
+/// replacement.
 #[test]
 fn substitution() {
     let tmux = server();
@@ -454,6 +458,11 @@ fn substitution() {
             ("#{s/#:/X/:@path}", "/usr/local/bin/tmux"),
             ("#{s/ /_/:@plain}", "hello_world"),
             ("#{s/\\//|/:@path}", "/usr/local/bin/tmux"),
+            ("#{s//x/:@plain}", "hello world"),
+            ("#{s/^/>/:@plain}", ">hello world"),
+            ("#{s/^h*/X/:@plain}", "Xello world"),
+            ("#{s/x*/-/:@plain}", "h-e-l-l-o- -w-o-r-l-d-"),
+            ("#{s/o/x\\/:@plain}", "hellx\\ wx\\rld"),
         ],
     );
 }
@@ -718,6 +727,31 @@ fn arithmetic() {
             ("#{?#{e|>|:#{@num},40},big,small}", "big"),
             ("#{?#{e|>|:@num,40},big,small}", "small"),
             ("#{e|+|:#{e|*|:2,3},1}", "7"),
+        ],
+    );
+}
+
+/// Pane variables as 3.8 prints them: the `pane_at` flags as 1 or 0, the
+/// history sizes in C's struct sizes, `config_files` without a trailing
+/// comma, and `C` finding nothing in a pane that shows nothing.
+#[test]
+fn pane_variables() {
+    let tmux = server();
+    check(
+        &tmux,
+        &[
+            ("#{pane_at_top}", "1"),
+            ("#{pane_at_bottom}", "0"),
+            ("#{pane_at_left}", "1"),
+            ("#{pane_at_right}", "1"),
+            ("#{P:#{pane_at_top}#{pane_at_bottom} }", "10 01 "),
+            ("#{history_bytes}", "480"),
+            ("#{history_all_bytes}", "12,480,0,0,0,0"),
+            // Every command of the harness passes -f/dev/null.
+            ("[#{config_files}]", "[/dev/null,/dev/null]"),
+            ("#{C:zzz}", "0"),
+            ("#{C/r:z+}", "0"),
+            ("#{C:}", "1"),
         ],
     );
 }
@@ -1121,21 +1155,6 @@ fn not_operators() {
     );
 }
 
-/// An empty pattern in `s` does not compile with 3.8's regcomp, so the
-/// value is left alone. tmux-rs matches it everywhere.
-#[ignore = "behaviour differs from 3.8: s with an empty pattern, formats run"]
-#[test]
-fn substitution_empty_pattern() {
-    let tmux = server();
-    check(
-        &tmux,
-        &[
-            // tmux-rs: "hxexlxlxox xwxoxrxlxdx"
-            ("#{s//x/:@plain}", "hello world"),
-        ],
-    );
-}
-
 /// Since 3.8, `q` also escapes `{`, `}`, newline and tab.
 #[ignore = "3.8 shell quoting of braces, tab and newline: not ported, formats run"]
 #[test]
@@ -1171,23 +1190,6 @@ fn colour_escapes() {
             ("#{c/b:#123456}", "\u{1b}[48;2;18;52;86m"),
             // tmux-rs: ""
             ("#{c/f:colour200}", "\u{1b}[38;5;200m"),
-        ],
-    );
-}
-
-/// A negative `p` pads on the left up to the width. tmux-rs adds the whole
-/// width as spaces.
-#[ignore = "behaviour differs from 3.8: p with a negative width pads by the whole width, formats run"]
-#[test]
-fn pad_right_aligned() {
-    let tmux = server();
-    check(
-        &tmux,
-        &[
-            // tmux-rs: "          42|"
-            ("#{p-10:@num}|", "        42|"),
-            // tmux-rs: "        日本語|"
-            ("#{p-8:@wide}|", "  日本語|"),
         ],
     );
 }
