@@ -866,6 +866,7 @@ pub unsafe fn format_cb_mouse_status_range(ft: &format_tree) -> format_table_typ
             style_range_type::STYLE_RANGE_USER => {
                 CStr::from_ptr((*sr).string.as_ptr().cast()).to_bytes().to_vec().into()
             }
+            style_range_type::STYLE_RANGE_CONTROL => "control".into(),
         }
     }
 }
@@ -3266,34 +3267,6 @@ pub unsafe fn format_pretty_time(t: time_t, seconds: i32) -> *mut u8 {
     }
 }
 
-/// Skip until end.
-pub unsafe fn format_skip(mut s: *const u8, end: *const u8) -> *const u8 {
-    unsafe {
-        let mut brackets = 0;
-
-        while *s != b'\0' {
-            if *s == b'#' && *s.add(1) == b'{' {
-                brackets += 1;
-            }
-            if *s == b'#' && *s.add(1) != b'\0' && !strchr(c!(",#{}:"), *s.add(1) as i32).is_null()
-            {
-                s = s.add(2);
-                continue;
-            }
-            if *s == b'}' {
-                brackets -= 1;
-            }
-            if !strchr(end, *s as i32).is_null() && brackets == 0 {
-                break;
-            }
-            s = s.add(1);
-        }
-        if *s == b'\0' {
-            return null_mut();
-        }
-        s
-    }
-}
 
 /// Is this true?
 pub unsafe fn format_true(s: *const u8) -> bool {

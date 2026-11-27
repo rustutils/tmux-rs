@@ -84,6 +84,7 @@ fn style_from_c(sy: &style) -> Style {
             style_range_type::STYLE_RANGE_WINDOW => RangeType::Window,
             style_range_type::STYLE_RANGE_SESSION => RangeType::Session,
             style_range_type::STYLE_RANGE_USER => RangeType::User,
+            style_range_type::STYLE_RANGE_CONTROL => RangeType::Control,
         },
         range_argument: sy.range_argument,
         range_string: sy.range_string,
@@ -109,10 +110,7 @@ fn range_type_to_c(kind: RangeType) -> style_range_type {
         RangeType::Window => style_range_type::STYLE_RANGE_WINDOW,
         RangeType::Session => style_range_type::STYLE_RANGE_SESSION,
         RangeType::User => style_range_type::STYLE_RANGE_USER,
-        RangeType::Control => {
-            debug_assert!(false, "control range without a parser for it");
-            style_range_type::STYLE_RANGE_NONE
-        }
+        RangeType::Control => style_range_type::STYLE_RANGE_CONTROL,
     }
 }
 
@@ -244,13 +242,6 @@ pub unsafe fn format_draw(
         screen_write_cursormove(octx, ocx as i32, ocy as i32, 0);
     }
 }
-
-// format_skip in src/format.rs lost its last caller with the layout
-// moving to tmux-format. That file belongs to another part of run 20, so
-// it is referenced here until it is removed there.
-const _: () = {
-    let _ = format_skip;
-};
 
 /// The display width of an expanded format, without its styles
 /// (`format_width`, from the format crate).

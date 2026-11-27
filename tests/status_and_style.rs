@@ -413,3 +413,29 @@ fn window_style_follows_user_option() {
         "pane was not redrawn with the new style"
     );
 }
+
+/// 3.8's `range=control|N` takes N from 0 to 9 and needs it.
+#[test]
+fn style_control_range() {
+    let tmux = setup();
+    assert_eq!(
+        set_and_get_global(&tmux, "status-left-style", "range=control|3"),
+        "range=control|3"
+    );
+    assert_eq!(
+        set_and_get_global(&tmux, "status-left-style", "list=on,range=control|9"),
+        "list=on,range=control|9"
+    );
+    for bad in ["range=control|10", "range=control"] {
+        let out = tmux
+            .cmd()
+            .args(["set", "-g", "status-left-style", bad])
+            .run();
+        assert!(!out.success(), "{bad} was accepted");
+        assert!(
+            out.stderr_str().contains(&format!("invalid style: {bad}")),
+            "{}",
+            out.stderr_str()
+        );
+    }
+}

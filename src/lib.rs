@@ -798,6 +798,8 @@ enum style_range_type {
     STYLE_RANGE_WINDOW,
     STYLE_RANGE_SESSION,
     STYLE_RANGE_USER,
+    /// `range=control|N` (3.8), N from 0 to 9 in the argument.
+    STYLE_RANGE_CONTROL,
 }
 
 #[derive(Copy, Clone)]

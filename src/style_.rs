@@ -219,6 +219,16 @@ pub unsafe fn style_parse(sy: *mut style, base: *const GridCell, mut in_: *const
                         (*sy).range_type = style_range_type::STYLE_RANGE_SESSION;
                         (*sy).range_argument = n;
                         style_set_range_string(sy, c!(""));
+                    } else if strcaseeq_(tmp.add(6), "control") {
+                        if found.is_null() {
+                            break 'error;
+                        }
+                        let Ok(n) = strtonum(found, 0, 9) else {
+                            break 'error;
+                        };
+                        (*sy).range_type = style_range_type::STYLE_RANGE_CONTROL;
+                        (*sy).range_argument = n;
+                        style_set_range_string(sy, c!(""));
                     } else if strcaseeq_(tmp.add(6), "user") {
                         if found.is_null() {
                             break 'error;
@@ -363,7 +373,12 @@ pub fn style_tostring(sy: &style) -> String {
                 let len = sy.range_string.iter().position(|&b| b == 0).unwrap_or(sy.range_string.len());
                 format!("user|{}", String::from_utf8_lossy(&sy.range_string[..len]))
             }
-            style_range_type::STYLE_RANGE_NONE => String::new(),
+            // 3.8 has no case for control and prints what its buffer
+            // last held: the list value, or nothing.
+            style_range_type::STYLE_RANGE_CONTROL if sy.list != style_list::STYLE_LIST_OFF => {
+                style_list_name(sy.list).to_string()
+            }
+            style_range_type::STYLE_RANGE_CONTROL | style_range_type::STYLE_RANGE_NONE => String::new(),
         };
         parts.push(format!("range={range}"));
     }

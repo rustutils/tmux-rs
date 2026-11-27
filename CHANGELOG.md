@@ -32,6 +32,9 @@
 - The `set-default` style replaces the default colours and attributes for
   the rest of a status line, and `link=` and `nolink` make text a hyperlink
   (sent to the terminal in builds with the `hyperlinks` feature).
+- Styles accept 3.8's `range=control|N` (N from 0 to 9). Clicks on such a
+  range do nothing yet, 3.8's `Control0` to `Control9` mouse keys are not
+  ported.
 
 ### Fixes
 

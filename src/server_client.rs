@@ -898,6 +898,14 @@ pub unsafe fn server_client_check_mouse(c: *mut client, event: *mut key_event) -
                             where_ = where_::Status;
                         }
                         style_range_type::STYLE_RANGE_USER => where_ = where_::Status,
+                        // 3.8 gives these their own mouse locations, Control0
+                        // to Control9, whose keys tmux-rs does not have yet
+                        // (Track 3, with 3.8's mouse locations). A click on
+                        // one is no key.
+                        style_range_type::STYLE_RANGE_CONTROL => {
+                            log_debug!("mouse range: control {}", (*sr).argument);
+                            return KEYC_UNKNOWN;
+                        }
                     }
                 }
             }
