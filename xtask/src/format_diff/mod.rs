@@ -471,6 +471,15 @@ impl Run {
                         diff.group = group::refine(group::classify(&var), &rs.stdout, &c.stdout);
                     }
                 }
+                // A conditional on a variable that differs by itself goes
+                // with the variable too.
+                for name in group::condition_subjects(smallest) {
+                    let var = format!("#{{{name}}}");
+                    if let Verdict::Differ { rs, c } = self.check(&var) {
+                        diff.group = group::refine(group::classify(&var), &rs.stdout, &c.stdout);
+                        break;
+                    }
+                }
                 found.push(diff);
                 false
             }

@@ -110,6 +110,49 @@ pub fn plain_subject(format: &str) -> Option<&str> {
     }
 }
 
+/// Returns the conditions of a conditional like `#{?name,a,b}` that are
+/// plain names. 3.8 looks a condition up as a name, so a conditional on
+/// a variable tmux-rs lacks differs only because of that variable. The
+/// checker compares `#{name}` on its own and groups the difference with
+/// the variable.
+pub fn condition_subjects(format: &str) -> Vec<&str> {
+    let Some(inner) = format.strip_prefix("#{?").and_then(|s| s.strip_suffix('}')) else {
+        return Vec::new();
+    };
+    let b = inner.as_bytes();
+    let mut args = Vec::new();
+    let mut depth = 0;
+    let mut start = 0;
+    let mut i = 0;
+    while i < b.len() {
+        match (b[i], b.get(i + 1)) {
+            (b'#', Some(b'{')) => {
+                depth += 1;
+                i += 1;
+            }
+            (b'#', Some(b'#' | b',' | b'}')) => i += 1,
+            (b'}', _) if depth > 0 => depth -= 1,
+            (b',', _) if depth == 0 => {
+                args.push(&inner[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    args.push(&inner[start..]);
+    let plain = |c: char| c.is_ascii_alphanumeric() || "_@-[]".contains(c);
+    // Conditions are every other argument, except a last one on its own
+    // (the else).
+    let conditions = args.len() / 2 + usize::from(args.len() == 1);
+    args.iter()
+        .step_by(2)
+        .take(conditions)
+        .copied()
+        .filter(|a| !a.is_empty() && a.chars().all(plain))
+        .collect()
+}
+
 /// Returns the first modifier as 3.8 parses it, or None when the text
 /// does not start with one followed somewhere by a colon.
 fn first_modifier(b: &[u8]) -> Option<String> {
@@ -207,6 +250,15 @@ pub fn subterms(format: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conditions() {
+        assert_eq!(condition_subjects("#{?pane_flags,a,b}"), ["pane_flags"]);
+        assert_eq!(condition_subjects("#{?x,1,#{y},2,z}"), ["x"]);
+        assert_eq!(condition_subjects("#{?x,1,y,2,z}"), ["x", "y"]);
+        assert_eq!(condition_subjects("#{?x,1,y,2}"), ["x", "y"]);
+        assert!(condition_subjects("#{=5:x}").is_empty());
+    }
 
     #[test]
     fn classify_constructs() {

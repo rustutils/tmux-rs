@@ -4,9 +4,6 @@
 # are the names the report prints. Remove entries as they get fixed, the
 # report lists entries that matched nothing. Crashes are never listed
 # here: they are fixed.
-group	conditional with else-if	conditions on pane_flags, a 3.8 variable not ported
-group	conditional without else	conditions on pane_flags, a 3.8 variable not ported
-group	conditional	conditions on pane_flags, a 3.8 variable not ported
 group	variable missing in tmux-rs	3.8 variables not ported
 group	variable window_layout	3.8 layout strings are JSON
 group	variable window_visible_layout	3.8 layout strings are JSON
