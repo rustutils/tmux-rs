@@ -66,7 +66,7 @@ pub static STYLE_DEFAULT: style = style {
 pub fn fuzz_style_parse(input: &[u8]) -> i32 {
     unsafe {
         let mut sy = *(&raw const STYLE_DEFAULT);
-        style_parse(&raw mut sy, &raw const grid_::GRID_DEFAULT_CELL, input.as_ptr())
+        style_parse(&raw mut sy, &raw const GRID_DEFAULT_CELL, input.as_ptr())
     }
 }
 
