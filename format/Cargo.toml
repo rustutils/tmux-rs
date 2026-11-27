@@ -1,0 +1,17 @@
+[package]
+name         = "tmux-format"
+version.workspace    = true
+edition      = "2024"
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+homepage.workspace   = true
+description  = "The format engine of tmux-rs: parsing and expanding #{} formats as tmux 3.8 does."
+
+[dependencies]
+tmux-utf8     = { path = "../utf8" }
+tmux-compat   = { path = "../compat" }
+
+[dev-dependencies]
+tmux-regsub = { path = "../regsub" }
+regex       = { version = "1" }

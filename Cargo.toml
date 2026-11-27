@@ -25,7 +25,7 @@ repository = "https://gitlab.com/rustutils/tmux-rs"
 homepage   = "https://rustutils.com/projects/tmux-rs/"
 
 [workspace]
-members = ["compat", "event", "grid", "log", "protocol", "regsub", "types", "utf8", "xtask"]
+members = ["compat", "event", "format", "grid", "log", "protocol", "regsub", "types", "utf8", "xtask"]
 
 # Note: most of these features are not supported yet
 # they just exist to make matching upstream's

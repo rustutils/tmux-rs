@@ -413,6 +413,21 @@ pub fn utf8_default_width(wc: wchar_t) -> Option<i32> {
         .map(|i| UTF8_DEFAULT_WIDTHS[i].1)
 }
 
+/// The width tmux gives a character without asking the C library: 3.8's
+/// own table first, then unicode-width, C1 controls 0 and other control
+/// characters 1, as utf8_width does. Safe and independent of the locale,
+/// for code that measures text without mbtowc (the format engine).
+pub fn char_width(c: char) -> u32 {
+    if let Some(w) = utf8_default_width(c as wchar_t) {
+        return w as u32;
+    }
+    match unicode_width::UnicodeWidthChar::width(c) {
+        Some(w) => w as u32,
+        None if (0x80..=0x9f).contains(&(c as u32)) => 0,
+        None => 1,
+    }
+}
+
 /// Binary search for `find` in a sorted `wchar_t` table. Used by
 /// [`utf8_width`] to consult the force-wide override list.
 pub fn utf8_in_table(find: wchar_t, table: &[wchar_t]) -> bool {

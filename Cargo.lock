@@ -890,6 +890,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tmux-format"
+version = "0.3.0"
+dependencies = [
+ "regex",
+ "tmux-compat",
+ "tmux-regsub",
+ "tmux-utf8",
+]
+
+[[package]]
 name = "tmux-grid"
 version = "0.3.0"
 dependencies = [
