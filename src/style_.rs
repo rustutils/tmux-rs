@@ -21,7 +21,9 @@
 //! - Alignment (`align=left|centre|right|absolute-centre`)
 //! - List mode (`list=on|focus|left-marker|right-marker`)
 //! - Range type (`range=left|right|pane|window|session|user`)
-//! - Default push and pop (`push-default`, `pop-default`)
+//! - Default push, pop and set (`push-default`, `pop-default`, `set-default`)
+//! - Hyperlink (`link=URI`, `nolink`), kept as a number in the style links
+//!   store (global.rs)
 //! - Ignore flag (`ignore`, `noignore`)
 //!
 //! Style strings delimited by commas, spaces or newlines are parsed by [`style_parse`]
@@ -57,6 +59,8 @@ pub static STYLE_DEFAULT: style = style {
     range_string: [0; 16], // ""
 
     default_type: style_default_type::STYLE_DEFAULT_BASE,
+
+    link: 0,
 };
 
 /// Fuzz-friendly wrapper: parses a NUL-terminated byte slice as a style string.
@@ -123,6 +127,7 @@ pub unsafe fn style_parse(sy: *mut style, base: *const GridCell, mut in_: *const
                     (*sy).gc.us = (*base).us;
                     (*sy).gc.attr = (*base).attr;
                     (*sy).gc.flags = (*base).flags;
+                    (*sy).link = 0;
                 } else if strcaseeq_(tmp, "ignore") {
                     (*sy).ignore = 1;
                 } else if strcaseeq_(tmp, "noignore") {
@@ -131,6 +136,8 @@ pub unsafe fn style_parse(sy: *mut style, base: *const GridCell, mut in_: *const
                     (*sy).default_type = style_default_type::STYLE_DEFAULT_PUSH;
                 } else if strcaseeq_(tmp, "pop-default") {
                     (*sy).default_type = style_default_type::STYLE_DEFAULT_POP;
+                } else if strcaseeq_(tmp, "set-default") {
+                    (*sy).default_type = style_default_type::STYLE_DEFAULT_SET;
                 } else if strcaseeq_(tmp, "nolist") {
                     (*sy).list = style_list::STYLE_LIST_OFF;
                 } else if strncasecmp(tmp, c!("list="), 5) == 0 {
@@ -276,11 +283,22 @@ pub unsafe fn style_parse(sy: *mut style, base: *const GridCell, mut in_: *const
                 } else if strcaseeq_(tmp, "none") {
                     (*sy).gc.attr = GridAttr::empty();
                 } else if end > 2 && strncasecmp(tmp, c!("no"), 2) == 0 {
-                    let Some(s) = cstr_to_str_(tmp.add(2)) else { break 'error };
-                    let Ok(value) = attributes_fromstring(s) else {
-                        break 'error;
+                    if streq_(tmp.add(2), "link") {
+                        (*sy).link = 0;
+                    } else {
+                        let Some(s) = cstr_to_str_(tmp.add(2)) else { break 'error };
+                        let Ok(value) = attributes_fromstring(s) else {
+                            break 'error;
+                        };
+                        (*sy).gc.attr &= !value;
+                    }
+                } else if strncasecmp(tmp, c!("link="), 5) == 0 {
+                    let uri = std::slice::from_raw_parts(tmp.add(5), end - 5);
+                    (*sy).link = if uri.is_empty() {
+                        0
+                    } else {
+                        crate::global::with_style_links(|links| links.put(uri))
                     };
-                    (*sy).gc.attr &= !value;
                 } else {
                     let Some(s) = cstr_to_str_(tmp) else { break 'error };
                     let Ok(value) = attributes_fromstring(s) else {
@@ -304,6 +322,26 @@ pub unsafe fn style_parse(sy: *mut style, base: *const GridCell, mut in_: *const
     }
 }
 
+/// The name of a list state in a style string, empty when off.
+fn style_list_name(list: style_list) -> &'static str {
+    match list {
+        style_list::STYLE_LIST_ON => "on",
+        style_list::STYLE_LIST_FOCUS => "focus",
+        style_list::STYLE_LIST_LEFT_MARKER => "left-marker",
+        style_list::STYLE_LIST_RIGHT_MARKER => "right-marker",
+        style_list::STYLE_LIST_OFF => "",
+    }
+}
+
+/// The URI a style links to (`link=`), None without one
+/// (`style_link`).
+pub fn style_link(sy: &style) -> Option<Vec<u8>> {
+    if sy.link == 0 {
+        return None;
+    }
+    crate::global::with_style_links(|links| links.get(sy.link).map(<[u8]>::to_vec))
+}
+
 /// Format a [`style`] as a comma separated string, the form [`style_parse`]
 /// reads. Returns `"default"` if no style properties are set.
 pub fn style_tostring(sy: &style) -> String {
@@ -311,14 +349,7 @@ pub fn style_tostring(sy: &style) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     if sy.list != style_list::STYLE_LIST_OFF {
-        let list = match sy.list {
-            style_list::STYLE_LIST_ON => "on",
-            style_list::STYLE_LIST_FOCUS => "focus",
-            style_list::STYLE_LIST_LEFT_MARKER => "left-marker",
-            style_list::STYLE_LIST_RIGHT_MARKER => "right-marker",
-            _ => "",
-        };
-        parts.push(format!("list={list}"));
+        parts.push(format!("list={}", style_list_name(sy.list)));
     }
     if sy.range_type != style_range_type::STYLE_RANGE_NONE {
         let arg = sy.range_argument;
@@ -332,7 +363,7 @@ pub fn style_tostring(sy: &style) -> String {
                 let len = sy.range_string.iter().position(|&b| b == 0).unwrap_or(sy.range_string.len());
                 format!("user|{}", String::from_utf8_lossy(&sy.range_string[..len]))
             }
-            _ => String::new(),
+            style_range_type::STYLE_RANGE_NONE => String::new(),
         };
         parts.push(format!("range={range}"));
     }
@@ -350,7 +381,8 @@ pub fn style_tostring(sy: &style) -> String {
         let default = match sy.default_type {
             style_default_type::STYLE_DEFAULT_PUSH => "push-default",
             style_default_type::STYLE_DEFAULT_POP => "pop-default",
-            _ => "",
+            style_default_type::STYLE_DEFAULT_SET => "set-default",
+            style_default_type::STYLE_DEFAULT_BASE => "",
         };
         parts.push(default.to_string());
     }
@@ -368,6 +400,9 @@ pub fn style_tostring(sy: &style) -> String {
     }
     if !gc.attr.is_empty() {
         parts.push(attributes_tostring(gc.attr).into_owned());
+    }
+    if let Some(uri) = style_link(sy) {
+        parts.push(format!("link={}", String::from_utf8_lossy(&uri)));
     }
 
     if parts.is_empty() {
@@ -448,7 +483,9 @@ mod tests {
 
     /// Parse a style string starting from `STYLE_DEFAULT` with `GRID_DEFAULT_CELL` as base.
     /// Returns the parsed style on success, or None on error.
-    unsafe fn parse(input: &str) -> Option<style> {
+    fn parse(input: &str) -> Option<style> {
+        // SAFETY: the style is a local copy, the base a static cell and
+        // the input a C string that lives through the call.
         unsafe {
             let mut sy: style = *(&raw const STYLE_DEFAULT);
             let c = CString::new(input).unwrap();
@@ -468,29 +505,23 @@ mod tests {
 
     #[test]
     fn parse_empty_string() {
-        unsafe {
-            // Empty string is valid, with no changes to style.
-            let sy = parse("").unwrap();
-            // STYLE_DEFAULT has us=0 (black), so it's not fully "default".
-            assert_eq!(sy.gc.fg, 8);
-            assert_eq!(sy.gc.bg, 8);
-        }
+        // Empty string is valid, with no changes to style.
+        let sy = parse("").unwrap();
+        // STYLE_DEFAULT has us=0 (black), so it's not fully "default".
+        assert_eq!(sy.gc.fg, 8);
+        assert_eq!(sy.gc.bg, 8);
     }
 
     #[test]
     fn parse_default_keyword() {
-        unsafe {
-            let sy = parse("default").unwrap();
-            assert_eq!(sy.gc.fg, 8);
-            assert_eq!(sy.gc.bg, 8);
-        }
+        let sy = parse("default").unwrap();
+        assert_eq!(sy.gc.fg, 8);
+        assert_eq!(sy.gc.bg, 8);
     }
 
     #[test]
     fn parse_invalid_returns_none() {
-        unsafe {
-            assert!(parse("completely-invalid-gibberish").is_none());
-        }
+        assert!(parse("completely-invalid-gibberish").is_none());
     }
 
     // ---------------------------------------------------------------
@@ -499,55 +530,43 @@ mod tests {
 
     #[test]
     fn parse_fg_color() {
-        unsafe {
-            let sy = parse("fg=red").unwrap();
-            assert_eq!(sy.gc.fg, 1); // red = colour index 1
-            // STYLE_DEFAULT has us=0, so us=black follows, as in C.
-            assert_eq!(tostring(&sy), "fg=red,us=black");
-        }
+        let sy = parse("fg=red").unwrap();
+        assert_eq!(sy.gc.fg, 1); // red = colour index 1
+        // STYLE_DEFAULT has us=0, so us=black follows, as in C.
+        assert_eq!(tostring(&sy), "fg=red,us=black");
     }
 
     #[test]
     fn parse_bg_color() {
-        unsafe {
-            let sy = parse("bg=blue").unwrap();
-            assert_eq!(sy.gc.bg, 4); // blue = colour index 4
-            assert!(tostring(&sy).contains("bg=blue"));
-        }
+        let sy = parse("bg=blue").unwrap();
+        assert_eq!(sy.gc.bg, 4); // blue = colour index 4
+        assert!(tostring(&sy).contains("bg=blue"));
     }
 
     #[test]
     fn parse_fg_and_bg() {
-        unsafe {
-            let sy = parse("fg=red,bg=blue").unwrap();
-            assert_eq!(sy.gc.fg, 1);
-            assert_eq!(sy.gc.bg, 4);
-        }
+        let sy = parse("fg=red,bg=blue").unwrap();
+        assert_eq!(sy.gc.fg, 1);
+        assert_eq!(sy.gc.bg, 4);
     }
 
     #[test]
     fn parse_us_color() {
-        unsafe {
-            let sy = parse("us=green").unwrap();
-            assert_eq!(sy.gc.us, 2); // green = 2
-            assert!(tostring(&sy).contains("us=green"));
-        }
+        let sy = parse("us=green").unwrap();
+        assert_eq!(sy.gc.us, 2); // green = 2
+        assert!(tostring(&sy).contains("us=green"));
     }
 
     #[test]
     fn parse_fill_color() {
-        unsafe {
-            let sy = parse("fill=yellow").unwrap();
-            assert_eq!(sy.fill, 3); // yellow = 3
-            assert!(tostring(&sy).contains("fill=yellow"));
-        }
+        let sy = parse("fill=yellow").unwrap();
+        assert_eq!(sy.fill, 3); // yellow = 3
+        assert!(tostring(&sy).contains("fill=yellow"));
     }
 
     #[test]
     fn parse_invalid_color_is_error() {
-        unsafe {
-            assert!(parse("fg=notacolor").is_none());
-        }
+        assert!(parse("fg=notacolor").is_none());
     }
 
     // ---------------------------------------------------------------
@@ -556,19 +575,15 @@ mod tests {
 
     #[test]
     fn parse_bold() {
-        unsafe {
-            let sy = parse("bold").unwrap();
-            assert!(sy.gc.attr.intersects(GridAttr::GRID_ATTR_BRIGHT));
-        }
+        let sy = parse("bold").unwrap();
+        assert!(sy.gc.attr.intersects(GridAttr::GRID_ATTR_BRIGHT));
     }
 
     #[test]
     fn parse_multiple_attrs() {
-        unsafe {
-            let sy = parse("bold,italics").unwrap();
-            assert!(sy.gc.attr.intersects(GridAttr::GRID_ATTR_BRIGHT));
-            assert!(sy.gc.attr.intersects(GridAttr::GRID_ATTR_ITALICS));
-        }
+        let sy = parse("bold,italics").unwrap();
+        assert!(sy.gc.attr.intersects(GridAttr::GRID_ATTR_BRIGHT));
+        assert!(sy.gc.attr.intersects(GridAttr::GRID_ATTR_ITALICS));
     }
 
     #[test]
@@ -606,34 +621,26 @@ mod tests {
 
     #[test]
     fn parse_align_left() {
-        unsafe {
-            let sy = parse("align=left").unwrap();
-            assert_eq!(sy.align, style_align::STYLE_ALIGN_LEFT);
-        }
+        let sy = parse("align=left").unwrap();
+        assert_eq!(sy.align, style_align::STYLE_ALIGN_LEFT);
     }
 
     #[test]
     fn parse_align_centre() {
-        unsafe {
-            let sy = parse("align=centre").unwrap();
-            assert_eq!(sy.align, style_align::STYLE_ALIGN_CENTRE);
-        }
+        let sy = parse("align=centre").unwrap();
+        assert_eq!(sy.align, style_align::STYLE_ALIGN_CENTRE);
     }
 
     #[test]
     fn parse_align_right() {
-        unsafe {
-            let sy = parse("align=right").unwrap();
-            assert_eq!(sy.align, style_align::STYLE_ALIGN_RIGHT);
-        }
+        let sy = parse("align=right").unwrap();
+        assert_eq!(sy.align, style_align::STYLE_ALIGN_RIGHT);
     }
 
     #[test]
     fn parse_align_absolute_centre() {
-        unsafe {
-            let sy = parse("align=absolute-centre").unwrap();
-            assert_eq!(sy.align, style_align::STYLE_ALIGN_ABSOLUTE_CENTRE);
-        }
+        let sy = parse("align=absolute-centre").unwrap();
+        assert_eq!(sy.align, style_align::STYLE_ALIGN_ABSOLUTE_CENTRE);
     }
 
     #[test]
@@ -650,9 +657,7 @@ mod tests {
 
     #[test]
     fn parse_invalid_align_is_error() {
-        unsafe {
-            assert!(parse("align=invalid").is_none());
-        }
+        assert!(parse("align=invalid").is_none());
     }
 
     // ---------------------------------------------------------------
@@ -661,18 +666,14 @@ mod tests {
 
     #[test]
     fn parse_list_on() {
-        unsafe {
-            let sy = parse("list=on").unwrap();
-            assert_eq!(sy.list, style_list::STYLE_LIST_ON);
-        }
+        let sy = parse("list=on").unwrap();
+        assert_eq!(sy.list, style_list::STYLE_LIST_ON);
     }
 
     #[test]
     fn parse_list_focus() {
-        unsafe {
-            let sy = parse("list=focus").unwrap();
-            assert_eq!(sy.list, style_list::STYLE_LIST_FOCUS);
-        }
+        let sy = parse("list=focus").unwrap();
+        assert_eq!(sy.list, style_list::STYLE_LIST_FOCUS);
     }
 
     #[test]
@@ -693,36 +694,28 @@ mod tests {
 
     #[test]
     fn parse_range_left() {
-        unsafe {
-            let sy = parse("range=left").unwrap();
-            assert_eq!(sy.range_type, style_range_type::STYLE_RANGE_LEFT);
-        }
+        let sy = parse("range=left").unwrap();
+        assert_eq!(sy.range_type, style_range_type::STYLE_RANGE_LEFT);
     }
 
     #[test]
     fn parse_range_right() {
-        unsafe {
-            let sy = parse("range=right").unwrap();
-            assert_eq!(sy.range_type, style_range_type::STYLE_RANGE_RIGHT);
-        }
+        let sy = parse("range=right").unwrap();
+        assert_eq!(sy.range_type, style_range_type::STYLE_RANGE_RIGHT);
     }
 
     #[test]
     fn parse_range_window() {
-        unsafe {
-            let sy = parse("range=window|42").unwrap();
-            assert_eq!(sy.range_type, style_range_type::STYLE_RANGE_WINDOW);
-            assert_eq!(sy.range_argument, 42);
-        }
+        let sy = parse("range=window|42").unwrap();
+        assert_eq!(sy.range_type, style_range_type::STYLE_RANGE_WINDOW);
+        assert_eq!(sy.range_argument, 42);
     }
 
     #[test]
     fn parse_range_pane() {
-        unsafe {
-            let sy = parse("range=pane|%7").unwrap();
-            assert_eq!(sy.range_type, style_range_type::STYLE_RANGE_PANE);
-            assert_eq!(sy.range_argument, 7);
-        }
+        let sy = parse("range=pane|%7").unwrap();
+        assert_eq!(sy.range_type, style_range_type::STYLE_RANGE_PANE);
+        assert_eq!(sy.range_argument, 7);
     }
 
     #[test]
@@ -743,18 +736,14 @@ mod tests {
 
     #[test]
     fn parse_push_default() {
-        unsafe {
-            let sy = parse("push-default").unwrap();
-            assert_eq!(sy.default_type, style_default_type::STYLE_DEFAULT_PUSH);
-        }
+        let sy = parse("push-default").unwrap();
+        assert_eq!(sy.default_type, style_default_type::STYLE_DEFAULT_PUSH);
     }
 
     #[test]
     fn parse_pop_default() {
-        unsafe {
-            let sy = parse("pop-default").unwrap();
-            assert_eq!(sy.default_type, style_default_type::STYLE_DEFAULT_POP);
-        }
+        let sy = parse("pop-default").unwrap();
+        assert_eq!(sy.default_type, style_default_type::STYLE_DEFAULT_POP);
     }
 
     // ---------------------------------------------------------------
@@ -763,10 +752,8 @@ mod tests {
 
     #[test]
     fn parse_ignore() {
-        unsafe {
-            let sy = parse("ignore").unwrap();
-            assert_eq!(sy.ignore, 1);
-        }
+        let sy = parse("ignore").unwrap();
+        assert_eq!(sy.ignore, 1);
     }
 
     #[test]
@@ -787,22 +774,18 @@ mod tests {
 
     #[test]
     fn parse_complex_style() {
-        unsafe {
-            let sy = parse("fg=red,bg=blue,bold,align=centre").unwrap();
-            assert_eq!(sy.gc.fg, 1);
-            assert_eq!(sy.gc.bg, 4);
-            assert!(sy.gc.attr.intersects(GridAttr::GRID_ATTR_BRIGHT));
-            assert_eq!(sy.align, style_align::STYLE_ALIGN_CENTRE);
-        }
+        let sy = parse("fg=red,bg=blue,bold,align=centre").unwrap();
+        assert_eq!(sy.gc.fg, 1);
+        assert_eq!(sy.gc.bg, 4);
+        assert!(sy.gc.attr.intersects(GridAttr::GRID_ATTR_BRIGHT));
+        assert_eq!(sy.align, style_align::STYLE_ALIGN_CENTRE);
     }
 
     #[test]
     fn parse_space_delimited() {
-        unsafe {
-            let sy = parse("fg=red bg=blue").unwrap();
-            assert_eq!(sy.gc.fg, 1);
-            assert_eq!(sy.gc.bg, 4);
-        }
+        let sy = parse("fg=red bg=blue").unwrap();
+        assert_eq!(sy.gc.fg, 1);
+        assert_eq!(sy.gc.bg, 4);
     }
 
     // ---------------------------------------------------------------
@@ -820,29 +803,23 @@ mod tests {
 
     #[test]
     fn tostring_round_trip_colors() {
-        unsafe {
-            let sy = parse("fg=red").unwrap();
-            let s = tostring(&sy);
-            assert!(s.contains("fg=red"), "got: {s}");
-        }
+        let sy = parse("fg=red").unwrap();
+        let s = tostring(&sy);
+        assert!(s.contains("fg=red"), "got: {s}");
     }
 
     #[test]
     fn tostring_round_trip_align() {
-        unsafe {
-            let sy = parse("align=centre").unwrap();
-            let s = tostring(&sy);
-            assert!(s.contains("align=centre"), "got: {s}");
-        }
+        let sy = parse("align=centre").unwrap();
+        let s = tostring(&sy);
+        assert!(s.contains("align=centre"), "got: {s}");
     }
 
     #[test]
     fn tostring_round_trip_list() {
-        unsafe {
-            let sy = parse("list=on").unwrap();
-            let s = tostring(&sy);
-            assert!(s.contains("list=on"), "got: {s}");
-        }
+        let sy = parse("list=on").unwrap();
+        let s = tostring(&sy);
+        assert!(s.contains("list=on"), "got: {s}");
     }
 
     // ---------------------------------------------------------------
@@ -901,12 +878,38 @@ mod tests {
 
     #[test]
     fn tostring_lists_every_property() {
-        unsafe {
-            let sy = parse("fg=red,bg=blue,bold,align=right,list=on,fill=green").unwrap();
-            assert_eq!(
-                tostring(&sy),
-                "list=on,align=right,fill=green,fg=red,bg=blue,us=black,bright"
-            );
-        }
+        let sy = parse("fg=red,bg=blue,bold,align=right,list=on,fill=green").unwrap();
+        assert_eq!(
+            tostring(&sy),
+            "list=on,align=right,fill=green,fg=red,bg=blue,us=black,bright"
+        );
+    }
+
+    #[test]
+    fn set_default_is_a_default_type() {
+        let sy = parse("set-default").unwrap();
+        assert_eq!(sy.default_type, style_default_type::STYLE_DEFAULT_SET);
+        assert_eq!(tostring(&sy), "set-default,us=black");
+        let sy = parse("SET-DEFAULT,push-default").unwrap();
+        assert_eq!(sy.default_type, style_default_type::STYLE_DEFAULT_PUSH);
+    }
+
+    /// link= keeps the URI as a number, the same for the same URI,
+    /// nolink (lower case only, as 3.8 compares it exactly) and default
+    /// drop it, and an empty link= means none.
+    #[test]
+    fn links() {
+        let a = parse("link=https://a.example/x").unwrap();
+        assert_ne!(a.link, 0);
+        assert_eq!(style_link(&a).as_deref(), Some(&b"https://a.example/x"[..]));
+        assert_eq!(tostring(&a), "us=black,link=https://a.example/x");
+        assert_eq!(parse("LINK=https://a.example/x").unwrap().link, a.link);
+        assert_ne!(parse("link=https://b.example").unwrap().link, a.link);
+
+        assert_eq!(parse("link=https://a.example/x nolink").unwrap().link, 0);
+        assert!(parse("NOLINK").is_none());
+        assert_eq!(parse("link=https://a.example/x,default").unwrap().link, 0);
+        assert_eq!(parse("link=https://a.example/x link=").unwrap().link, 0);
+        assert_eq!(style_link(&parse("link=").unwrap()), None);
     }
 }

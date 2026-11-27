@@ -113,6 +113,7 @@ cfg_pub_mods! {
     mod spawn;
     mod status;
     mod style_;
+    mod style_links;
     mod tmux;
     mod tmux_protocol;
     mod tty_;
@@ -817,6 +818,8 @@ enum style_default_type {
     STYLE_DEFAULT_BASE,
     STYLE_DEFAULT_PUSH,
     STYLE_DEFAULT_POP,
+    /// `set-default`: replaces the default colours and attributes (3.8).
+    STYLE_DEFAULT_SET,
 }
 
 /// Style option.
@@ -835,6 +838,10 @@ pub struct style {
     range_string: [u8; 16],
 
     default_type: style_default_type,
+
+    /// The hyperlink of `link=`, a number in the style links store
+    /// (global.rs), 0 for none.
+    link: u32,
 }
 
 #[cfg(feature = "sixel")]

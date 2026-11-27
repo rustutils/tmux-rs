@@ -241,6 +241,30 @@ fn style_hex_color() {
     assert!(val.contains("#ff0000"), "expected #ff0000 in '{val}'");
 }
 
+/// 3.8's set-default, link= and nolink are styles that set-option
+/// accepts. nolink is compared exactly, so NOLINK is not one.
+#[test]
+fn style_set_default_and_links() {
+    let tmux = setup();
+
+    for value in [
+        "set-default",
+        "SET-DEFAULT,fg=red",
+        "link=https://example.com/a",
+        "Link=https://example.com/b",
+        "fg=red,link=https://x nolink",
+        "link=",
+    ] {
+        assert_eq!(set_and_get_global(&tmux, "status-style", value), value);
+    }
+    let out = tmux
+        .cmd()
+        .args(["set-option", "-g", "status-style", "NOLINK"])
+        .run();
+    assert!(!out.success());
+    assert_eq!(out.stderr_str().trim(), "invalid style: NOLINK");
+}
+
 #[test]
 fn window_style_and_active_style() {
     let tmux = setup();

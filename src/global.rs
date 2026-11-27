@@ -51,6 +51,7 @@ use crate::message_log::MessageLog;
 use crate::paste::PasteStore;
 use crate::prompt_history::PromptHistory;
 use crate::server_acl::ServerAcl;
+use crate::style_links::StyleLinks;
 
 thread_local! {
     /// All paste buffers of this server.
@@ -80,6 +81,16 @@ thread_local! {
     /// RefCell: the engine takes `&self` and may be reached again while it
     /// expands (a callback that expands a format).
     static FORMAT_ENGINE: tmux_format::Engine = tmux_format::Engine::new();
+    /// The hyperlinks of styles (link=), by number.
+    static STYLE_LINKS: RefCell<StyleLinks> = RefCell::new(StyleLinks::new());
+}
+
+/// Run `f` with the hyperlinks of styles.
+///
+/// # Panics
+/// If `f` reaches the style links again (see the module rules).
+pub fn with_style_links<R>(f: impl FnOnce(&mut StyleLinks) -> R) -> R {
+    STYLE_LINKS.with_borrow_mut(f)
 }
 
 /// Run `f` with the `#()` jobs of format trees without a client.
