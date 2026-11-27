@@ -115,15 +115,30 @@ fn check(tmux: &TmuxTestHarness, cases: &[(&str, &str)]) {
     );
 }
 
-/// 3.8's limits: the precision of `e` is between -100 and 100 (a negative
-/// one is printf's default of 6), outside that the result is empty.
+/// 3.8's limits. The precision of `e` is between -100 and 100 (a negative
+/// one is printf's default of 6), outside that the result is empty. The
+/// widths of `=` and `p` are between -10000 and 10000, outside that they
+/// are ignored.
 #[test]
 fn limits() {
     let tmux = server();
     let hundred = format!("3.{}", "0".repeat(100));
+    let padded = format!("42{}", " ".repeat(9998));
     check(
         &tmux,
         &[
+            ("#{=10000:@plain}", "hello world"),
+            ("#{=-10000:@plain}", "hello world"),
+            ("#{=10001:@plain}", "hello world"),
+            ("#{=-10001:@plain}", "hello world"),
+            ("#{=-2147483648:@plain}", "hello world"),
+            ("#{=-2147483647:@plain}", "hello world"),
+            ("#{=/-2147483648/...:@plain}", "hello world"),
+            ("#{p10000:@num}", &padded),
+            ("#{p10001:@num}|", "42|"),
+            ("#{p-10001:@num}|", "42|"),
+            ("#{p2000000000:@num}|", "42|"),
+            ("#{p-2147483648:@num}|", "42|"),
             ("#{e|+|f|-3:1234,0}", "1234.000000"),
             ("#{e|+|f|100:1,2}", &hundred),
             ("#{e|+|f|101:1,2}", ""),

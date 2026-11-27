@@ -10,6 +10,9 @@
 - A negative or very large precision in the `e` format modifier, as in
   `#{e|+|f|-3:1,2}`, made the server crash. The precision is now limited to
   100 either way as in tmux 3.8, and a negative one prints six digits.
+- A very large or very negative width in the `=` and `p` format modifiers
+  made the server crash or hang building a huge string. Widths beyond 10000
+  either way are now ignored, as in tmux 3.8.
 
 ## 0.3.0 (2026-11-26)
 

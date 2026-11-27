@@ -41,6 +41,10 @@ pub const FORMAT_WINDOW: u32 = 0x40000000u32;
 /// The largest precision the `e` modifier takes, either sign (3.8).
 const FORMAT_MAX_PRECISION: i32 = 100;
 
+/// The largest width the `=` and `p` modifiers take, either sign (3.8).
+/// A width outside it is ignored.
+const FORMAT_MAX_WIDTH: i32 = 10000;
+
 pub type format_cb = unsafe fn(_: &format_tree) -> format_table_type;
 
 // Entry in format job tree.
@@ -4590,8 +4594,12 @@ pub unsafe fn format_replace(
                             b'=' => {
                                 if (*fm).argc < 1 {
                                 } else {
-                                    limit = strtonum(*(*fm).argv, i32::MIN, i32::MAX)
-                                        .unwrap_or_default();
+                                    limit = strtonum(
+                                        *(*fm).argv,
+                                        -FORMAT_MAX_WIDTH,
+                                        FORMAT_MAX_WIDTH,
+                                    )
+                                    .unwrap_or_default();
                                     if (*fm).argc >= 2 && !(*(*fm).argv.add(1)).is_null() {
                                         marker = *(*fm).argv.add(1);
                                     }
@@ -4601,8 +4609,12 @@ pub unsafe fn format_replace(
                                 if (*fm).argc < 1 {
                                     break;
                                 } else {
-                                    width = strtonum(*(*fm).argv, i32::MIN, i32::MAX)
-                                        .unwrap_or_default();
+                                    width = strtonum(
+                                        *(*fm).argv,
+                                        -FORMAT_MAX_WIDTH,
+                                        FORMAT_MAX_WIDTH,
+                                    )
+                                    .unwrap_or_default();
                                 }
                             }
                             b'w' => modifiers |= format_modifiers::FORMAT_WIDTH,
@@ -4953,6 +4965,7 @@ pub unsafe fn format_replace(
             }
 
             // Truncate the value if needed.
+            debug_assert!(limit.abs() <= FORMAT_MAX_WIDTH && width.abs() <= FORMAT_MAX_WIDTH);
             if limit > 0 {
                 new = format_trim_left(value, limit as u32);
                 value = if !marker.is_null() && strcmp(new, value) != 0 {
