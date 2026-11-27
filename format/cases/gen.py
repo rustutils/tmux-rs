@@ -4,7 +4,9 @@
 # match the fake environment in src/tests.rs. Panes run sleep, never a
 # shell, and no keys are sent.
 #
-# Run from anywhere: python3 -I format-spike/cases/gen.py
+# Run from anywhere: python3 -I format/cases/gen.py
+# With --probe it prints what 3.8 gives for each line of stdin instead,
+# with --verbose what display -v prints for it (the log and the result).
 
 import os
 import subprocess
@@ -13,7 +15,14 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 TMUX = "/usr/bin/tmux"
 SOCK = "/tmp/fs-%d" % os.getpid()
-ENV = dict(os.environ, TZ="UTC")
+# A small fixed environment, so the session environment only holds what
+# update-environment removes and what is set below.
+ENV = {
+    "TZ": "UTC",
+    "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+    "HOME": os.environ.get("HOME", "/"),
+    "LANG": "C.UTF-8",
+}
 
 OPTIONS = [
     ("@a", "hello"),
@@ -33,6 +42,16 @@ OPTIONS = [
     ("@pct", "100%%"),
     ("@rec", "#{E:@rec}"),
     ("@hash", "a#b"),
+    ("@quote", "a|b&c;d<e>f(g)h{i}j$k`l\\m\"n'o*p?q[r#s t=u%v\tw"),
+    ("@dpath", "//a"),
+    ("@slash", "a/b//"),
+    ("@neg", "-5"),
+    ("@float", "2.5"),
+    ("@hex", "0x10"),
+    ("@red", "red"),
+    ("@big", "99999999999999999999"),
+    ("@commas", "a,b,c"),
+    ("@frames", "x,y"),
     ("status-right", "R"),
 ]
 
@@ -58,23 +77,58 @@ def rust_bytes(b):
     return 'b"' + "".join(out) + '"'
 
 
-def main():
+def setup():
     tmux("new", "-d", "-s", "main", "-n", "first", "-x", "80", "-y", "24", "sleep", "1000")
+    tmux("neww", "-d", "-n", "second", "sleep", "1000")
+    tmux("neww", "-n", "third", "sleep", "1000")
+    tmux("selectw", "-t", ":1")
+    tmux("selectw", "-t", ":2")
+    tmux("splitw", "-d", "-t", "main:2", "sleep", "1000")
+    tmux("new", "-d", "-s", "other", "-n", "o1", "-x", "80", "-y", "24", "sleep", "1000")
+    for name, value in OPTIONS:
+        tmux("set", "-g", name, value)
+    tmux("set", "-t", "main", "@sopt", "sv")
+    tmux("set", "-w", "-t", "main:2", "@wopt", "wv")
+    tmux("set", "-p", "-t", "main:2.0", "@popt", "pv")
+    tmux("setenv", "-t", "main", "FOO", "bar")
+    tmux("setenv", "-t", "main", "-h", "HID", "secret")
+
+
+def expand(fmt):
+    out = tmux("display", "-p", "-t", "main:", fmt)
+    if out.endswith(b"\n"):
+        out = out[:-1]
+    return out
+
+
+def main():
+    probe = sys.argv[1:] == ["--probe"]
+    verbose = sys.argv[1:] == ["--verbose"]
+    setup()
     try:
-        tmux("neww", "-d", "-n", "second", "sleep", "1000")
-        tmux("neww", "-n", "third", "sleep", "1000")
-        tmux("selectw", "-t", ":1")
-        tmux("selectw", "-t", ":2")
-        for name, value in OPTIONS:
-            tmux("set", "-g", name, value)
+        if verbose:
+            for line in sys.stdin.buffer:
+                fmt = line.rstrip(b"\n")
+                sys.stdout.buffer.write(tmux("display", "-v", "-p", "-t", "main:", fmt))
+            return
+        if probe:
+            for line in sys.stdin.buffer:
+                fmt = line.rstrip(b"\n")
+                print(repr(fmt)[2:-1], "=>", repr(expand(fmt))[2:-1])
+            return
         with open(os.path.join(HERE, "formats.txt"), "rb") as f:
             formats = [l.rstrip(b"\n") for l in f if l.strip()]
         lines = []
         for fmt in formats:
-            out = tmux("display", "-p", "-t", "main:", fmt.decode())
-            if out.endswith(b"\n"):
-                out = out[:-1]
-            lines.append("    (%s, %s)," % (rust_bytes(fmt), rust_bytes(out)))
+            lines.append("    (%s, %s)," % (rust_bytes(fmt), rust_bytes(expand(fmt))))
+        # What display -v prints for each line of verbose.txt, the log
+        # and the result, with a line of dashes after each.
+        with open(os.path.join(HERE, "verbose.txt"), "rb") as f:
+            verbose = [l.rstrip(b"\n") for l in f if l.strip()]
+        with open(os.path.join(HERE, "verbose38.txt"), "wb") as f:
+            for fmt in verbose:
+                f.write(tmux("display", "-v", "-p", "-t", "main:", fmt))
+                f.write(b"----\n")
     finally:
         tmux("kill-server", check=False)
         if os.path.exists(SOCK):

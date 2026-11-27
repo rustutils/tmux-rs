@@ -1,0 +1,393 @@
+# expanding format: #{?#{@t},a#,b,c} #[fg=red]#S#,
+# found #{}: ?#{@t},a#,b,c
+# condition is: #{@t}
+#  expanding format: #{@t}
+#  found #{}: @t
+#  format '@t' found: 1700000000
+#  replaced '@t' with '1700000000'
+#  result is: 1700000000
+# condition '#{@t}' is true
+#  expanding format: a#,b
+#  found #,
+#  result is: a,b
+# replaced '?#{@t},a#,b,c' with 'a,b'
+# found #*1[
+# found #S: session_name
+# format 'session_name' found: main
+# replaced 'session_name' with 'main'
+# found #,
+# result is: a,b #[fg=red]main,
+a,b #[fg=red]main,
+----
+# expanding format: #{=/2/x:#{l:a}}#{W:#{window_index},<#{window_index}>}
+# found #{}: =/2/x:#{l:a}
+#  expanding format: 2
+#  result is: 2
+#  expanding format: x
+#  result is: x
+# modifier 0 is =
+# modifier 0 argument 0: 2
+# modifier 0 argument 1: x
+# expanding inner format '#{l:a}'
+#  expanding format: #{l:a}
+#  found #{}: l:a
+#  modifier 0 is l
+#  literal string is 'a'
+#  replaced 'l:a' with 'a'
+#  result is: a
+# applied length limit 2: a
+# replaced '=/2/x:#{l:a}' with 'a'
+# found #{}: W:#{window_index},<#{window_index}>
+# modifier 0 is W
+# window loop: 0 @0
+#  expanding format: #{window_index}
+#  found #{}: window_index
+#  format 'window_index' found: 0
+#  replaced 'window_index' with '0'
+#  result is: 0
+# window loop: 1 @1
+#  expanding format: #{window_index}
+#  found #{}: window_index
+#  format 'window_index' found: 1
+#  replaced 'window_index' with '1'
+#  result is: 1
+# window loop: 2 @2
+#  expanding format: <#{window_index}>
+#  found #{}: window_index
+#  format 'window_index' found: 2
+#  replaced 'window_index' with '2'
+#  result is: <2>
+# replaced 'W:#{window_index},<#{window_index}>' with '01<2>'
+# result is: a01<2>
+a01<2>
+----
+# expanding format: #{e|+|f|1:1,2}#{e|x|:1,2}#{e|+||abc:1,2}#{e|+|:a,1}#{e|+|:1}
+# found #{}: e|+|f|1:1,2
+#  expanding format: +
+#  result is: +
+#  expanding format: f
+#  result is: f
+#  expanding format: 1
+#  result is: 1
+# modifier 0 is e
+# modifier 0 argument 0: +
+# modifier 0 argument 1: f
+# modifier 0 argument 2: 1
+#  expanding format: 1
+#  result is: 1
+#  expanding format: 2
+#  result is: 2
+# expression left side is: 1.0
+# expression right side is: 2.0
+# expression result is 3.0
+# replaced 'e|+|f|1:1,2' with '3.0'
+# found #{}: e|x|:1,2
+#  expanding format: x
+#  result is: x
+# modifier 0 is e
+# modifier 0 argument 0: x
+# expression has no valid operator: 'x'
+# replaced 'e|x|:1,2' with ''
+# found #{}: e|+||abc:1,2
+#  expanding format: +
+#  result is: +
+#  expanding format: abc
+#  result is: abc
+# modifier 0 is e
+# modifier 0 argument 0: +
+# modifier 0 argument 1: 
+# modifier 0 argument 2: abc
+# expression precision invalid: abc
+# replaced 'e|+||abc:1,2' with ''
+# found #{}: e|+|:a,1
+#  expanding format: +
+#  result is: +
+# modifier 0 is e
+# modifier 0 argument 0: +
+#  expanding format: a
+#  result is: a
+#  expanding format: 1
+#  result is: 1
+# expression left side is invalid: a
+# replaced 'e|+|:a,1' with ''
+# found #{}: e|+|:1
+#  expanding format: +
+#  result is: +
+# modifier 0 is e
+# modifier 0 argument 0: +
+# expression syntax error
+# replaced 'e|+|:1' with ''
+# result is: 3.0
+3.0
+----
+# expanding format: #{?@zero,a,@nosuch,b}#{?@zero,a}#{?@one,b}#{&&:1,0}#{||:0,1}#{R:a}#{R:a,3}#{!:1}
+# found #{}: ?@zero,a,@nosuch,b
+# condition is: @zero
+# condition '@zero' found: 0
+# condition '@zero' is false
+# condition is: @nosuch
+#  expanding format: @nosuch
+#  result is: @nosuch
+# condition '@nosuch' not found; assuming false
+# condition '@nosuch' is false
+# no condition matched in '@zero,a,@nosuch,b'; using empty string
+# replaced '?@zero,a,@nosuch,b' with ''
+# found #{}: ?@zero,a
+# condition is: @zero
+# condition '@zero' found: 0
+# condition '@zero' is false
+# no condition matched in '@zero,a'; using empty string
+# replaced '?@zero,a' with ''
+# found #{}: ?@one,b
+# condition is: @one
+# condition '@one' found: 1
+# condition '@one' is true
+#  expanding format: b
+#  result is: b
+# replaced '?@one,b' with 'b'
+# found #{}: &&:1,0
+# modifier 0 is &&
+#  expanding format: 1
+#  result is: 1
+# operator && has operand: 1
+#  expanding format: 0
+#  result is: 0
+# operator && has operand: 0
+# replaced '&&:1,0' with '0'
+# found #{}: ||:0,1
+# modifier 0 is ||
+#  expanding format: 0
+#  result is: 0
+# operator || has operand: 0
+#  expanding format: 1
+#  result is: 1
+# operator || has operand: 1
+# replaced '||:0,1' with '1'
+# found #{}: R:a
+# modifier 0 is R
+# repeat syntax error: a
+# failed R:a
+# result is: b01
+b01
+----
+# expanding format: #{S;q:#{session_name}}#{N:first}#{N/s:x}#{s/l/L/;p6;n;w:@a}#{C/r:x}#{<:a,b}
+# found #{}: S;q:#{session_name}
+# modifier 0 is S
+# modifier 1 is q
+# session loop: $0
+#  expanding format: #{session_name}
+#  found #{}: session_name
+#  format 'session_name' found: main
+#  replaced 'session_name' with 'main'
+#  result is: main
+# session loop: $1
+#  expanding format: #{session_name}
+#  found #{}: session_name
+#  format 'session_name' found: other
+#  replaced 'session_name' with 'other'
+#  result is: other
+# replaced 'S;q:#{session_name}' with 'mainother'
+# found #{}: N:first
+# modifier 0 is N
+#  expanding format: first
+#  result is: first
+# replaced 'N:first' with '1'
+# found #{}: N/s:x
+#  expanding format: s
+#  result is: s
+# modifier 0 is N
+# modifier 0 argument 0: s
+#  expanding format: x
+#  result is: x
+# replaced 'N/s:x' with '0'
+# found #{}: s/l/L/;p6;n;w:@a
+#  expanding format: l
+#  result is: l
+#  expanding format: L
+#  result is: L
+#  expanding format: 6
+#  result is: 6
+# modifier 0 is s
+# modifier 0 argument 0: l
+# modifier 0 argument 1: L
+# modifier 1 is p
+# modifier 1 argument 0: 6
+# modifier 2 is n
+# modifier 3 is w
+# format '@a' found: hello
+#  expanding format: l
+#  result is: l
+#  expanding format: L
+#  result is: L
+# substitute 'l' to 'L': heLLo
+# applied padding width 6: heLLo 
+# replacing with length: 6
+# replacing with width: 1
+# replaced 's/l/L/;p6;n;w:@a' with '1'
+# found #{}: C/r:x
+#  expanding format: r
+#  result is: r
+# modifier 0 is C
+# modifier 0 argument 0: r
+#  expanding format: x
+#  result is: x
+# search 'x' pane %2
+# replaced 'C/r:x' with '0'
+# found #{}: <:a,b
+# modifier 0 is <
+#  expanding format: a
+#  result is: a
+#  expanding format: b
+#  result is: b
+# compare < left is: a
+# compare < right is: b
+# replaced '<:a,b' with '1'
+# result is: mainother10101
+mainother10101
+----
+# expanding format: #{O/s:#{option_name}}#{P:#{pane_index}}#{l:#}}#{a:65}#{c:red}#{=-1/</:@a}
+# found #{}: O/s:#{option_name}
+#  expanding format: s
+#  result is: s
+# modifier 0 is O
+# modifier 0 argument 0: s
+# option loop: @sopt
+#  expanding format: #{option_name}
+#  found #{}: option_name
+#  format 'option_name' found: @sopt
+#  replaced 'option_name' with '@sopt'
+#  result is: @sopt
+# option loop: default-size
+#  expanding format: #{option_name}
+#  found #{}: option_name
+#  format 'option_name' found: default-size
+#  replaced 'option_name' with 'default-size'
+#  result is: default-size
+# replaced 'O/s:#{option_name}' with '@soptdefault-size'
+# found #{}: P:#{pane_index}
+# modifier 0 is P
+# pane loop: %2
+#  expanding format: #{pane_index}
+#  found #{}: pane_index
+#  format 'pane_index' found: 0
+#  replaced 'pane_index' with '0'
+#  result is: 0
+# pane loop: %3
+#  expanding format: #{pane_index}
+#  found #{}: pane_index
+#  format 'pane_index' found: 1
+#  replaced 'pane_index' with '1'
+#  result is: 1
+# replaced 'P:#{pane_index}' with '01'
+# found #{}: l:#}
+# modifier 0 is l
+# literal string is '#}'
+# replaced 'l:#}' with '}'
+# found #{}: a:65
+# modifier 0 is a
+#  expanding format: 65
+#  result is: 65
+# replaced 'a:65' with 'A'
+# found #{}: c:red
+# modifier 0 is c
+#  expanding format: red
+#  result is: red
+# replaced 'c:red' with '800000'
+# found #{}: =-1/</:@a
+#  expanding format: -1/</
+#  result is: -1/</
+# modifier 0 is =
+# modifier 0 argument 0: -1/</
+# format '@a' found: hello
+# replaced '=-1/</:@a' with 'hello'
+# result is: @soptdefault-size01}A800000hello
+@soptdefault-size01}A800000hello
+----
+# expanding format: %%#{T:@pct}#(echo)#{@nosuch}#{b:@path}#{nosuch}
+# after time expanded: %#{T:@pct}#(echo)#{@nosuch}#{b:@path}#{nosuch}
+# found #{}: T:@pct
+# modifier 0 is T
+# format '@pct' found: 100%%
+#  expanding format: 100%%
+#  after time expanded: 100%
+#  result is: 100%
+# replaced 'T:@pct' with '100%'
+# found #(): echo
+#  expanding format: echo
+#  result is: echo
+# #() result: 
+# found #{}: @nosuch
+# format '@nosuch' not found
+# replaced '@nosuch' with ''
+# found #{}: b:@path
+# modifier 0 is b
+# format '@path' found: libfoo.so.1
+# replaced 'b:@path' with 'libfoo.so.1'
+# found #{}: nosuch
+# format 'nosuch' not found
+# replaced 'nosuch' with ''
+# result is: %100%libfoo.so.1
+%100%libfoo.so.1
+----
+# expanding format: #{?}#{?@one}#{?@zero,a,b}#{V/x:a}#{W/r:#{loop_index}}#{E:@fmt}
+# found #{}: ?
+# no condition matched in ''; using last arg
+# replaced '?' with ''
+# found #{}: ?@one
+# no condition matched in '@one'; using last arg
+#  expanding format: @one
+#  result is: @one
+# replaced '?@one' with '@one'
+# found #{}: ?@zero,a,b
+# condition is: @zero
+# condition '@zero' found: 0
+# condition '@zero' is false
+# no condition matched in '@zero,a,b'; using last arg
+#  expanding format: b
+#  result is: b
+# replaced '?@zero,a,b' with 'b'
+# found #{}: V/x:a
+#  expanding format: x
+#  result is: x
+# modifier 0 is V
+# modifier 0 argument 0: x
+# replaced 'V/x:a' with ''
+# found #{}: W/r:#{loop_index}
+#  expanding format: r
+#  result is: r
+# modifier 0 is W
+# modifier 0 argument 0: r
+# window loop: 2 @2
+#  expanding format: #{loop_index}
+#  found #{}: loop_index
+#  format 'loop_index' found: 0
+#  replaced 'loop_index' with '0'
+#  result is: 0
+# window loop: 1 @1
+#  expanding format: #{loop_index}
+#  found #{}: loop_index
+#  format 'loop_index' found: 1
+#  replaced 'loop_index' with '1'
+#  result is: 1
+# window loop: 0 @0
+#  expanding format: #{loop_index}
+#  found #{}: loop_index
+#  format 'loop_index' found: 2
+#  replaced 'loop_index' with '2'
+#  result is: 2
+# replaced 'W/r:#{loop_index}' with '012'
+# found #{}: E:@fmt
+# modifier 0 is E
+# format '@fmt' found: #{@a}-#{@num}
+#  expanding format: #{@a}-#{@num}
+#  found #{}: @a
+#  format '@a' found: hello
+#  replaced '@a' with 'hello'
+#  found #{}: @num
+#  format '@num' found: 42
+#  replaced '@num' with '42'
+#  result is: hello-42
+# replaced 'E:@fmt' with 'hello-42'
+# result is: @oneb012hello-42
+@oneb012hello-42
+----

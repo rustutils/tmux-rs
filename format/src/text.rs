@@ -785,6 +785,88 @@ mod tests {
         assert_eq!(dirname(b"/usr/lib"), b"/usr");
         assert_eq!(dirname(b"/usr"), b"/");
         assert_eq!(dirname(b"usr"), b".");
+        // glibc keeps exactly two leading slashes.
+        assert_eq!(dirname(b"//a"), b"//");
+        assert_eq!(dirname(b"//"), b"//");
+        assert_eq!(dirname(b"///"), b"/");
+        assert_eq!(dirname(b"///a"), b"/");
+        assert_eq!(dirname(b"a//"), b".");
+        assert_eq!(dirname(b"a/b//"), b"a");
+        assert_eq!(dirname(b"a//b"), b"a");
+        assert_eq!(dirname(b""), b".");
+        assert_eq!(basename(b""), b".");
+        assert_eq!(basename(b"//"), b"/");
+        assert_eq!(basename(b"a/b//"), b"b");
+    }
+
+    #[test]
+    fn strtod_as_glibc() {
+        let ok = |s: &str| strtod(s.as_bytes());
+        assert_eq!(ok(""), Some(0.0));
+        assert_eq!(ok(" 5"), Some(5.0));
+        assert_eq!(ok("\t-5"), Some(-5.0));
+        assert_eq!(ok("5 "), None);
+        assert_eq!(ok(" "), None);
+        assert_eq!(ok("+"), None);
+        assert_eq!(ok("."), None);
+        assert_eq!(ok(".5"), Some(0.5));
+        assert_eq!(ok("5."), Some(5.0));
+        assert_eq!(ok("1e3"), Some(1000.0));
+        assert_eq!(ok("1e"), None);
+        assert_eq!(ok("1e+"), None);
+        assert_eq!(ok("0x10"), Some(16.0));
+        assert_eq!(ok("-0x10"), Some(-16.0));
+        assert_eq!(ok("0x"), None);
+        assert_eq!(ok("0x.8"), Some(0.5));
+        assert_eq!(ok("0x1.8p1"), Some(3.0));
+        assert_eq!(ok("0X1P-2"), Some(0.25));
+        assert_eq!(ok("0x1p"), None);
+        assert_eq!(ok("0x1p1024"), Some(f64::INFINITY));
+        assert_eq!(ok("0x1p-1074"), Some(f64::from_bits(1)));
+        assert_eq!(
+            ok("0x123456789abcdef01"),
+            Some(0x1_2345_6789_abcd_ef01u128 as f64)
+        );
+        assert_eq!(ok("INF"), Some(f64::INFINITY));
+        assert_eq!(ok("-infinity"), Some(f64::NEG_INFINITY));
+        assert_eq!(ok("infin"), None);
+        assert!(ok("nan").is_some_and(|v| v.is_nan() && v.is_sign_positive()));
+        assert!(ok("-nan").is_some_and(|v| v.is_nan() && v.is_sign_negative()));
+        assert!(ok("NaN(abc_1)").is_some_and(f64::is_nan));
+        assert!(ok("nan()").is_some_and(f64::is_nan));
+        assert_eq!(ok("nan(-)"), None);
+        assert_eq!(ok("1e400"), Some(f64::INFINITY));
+        assert_eq!(ok("1e-400"), Some(0.0));
+    }
+
+    #[test]
+    fn strtonum_errors() {
+        assert_eq!(strtonum_err(b"5", 0, 10), Ok(5));
+        assert_eq!(strtonum_err(b"x", 0, 10), Err("invalid"));
+        assert_eq!(strtonum_err(b"", 0, 10), Err("invalid"));
+        assert_eq!(strtonum_err(b"-1", 0, 10), Err("too small"));
+        assert_eq!(strtonum_err(b"11", 0, 10), Err("too large"));
+        assert_eq!(
+            strtonum_err(b"99999999999999999999", 0, 10),
+            Err("too large")
+        );
+        assert_eq!(
+            strtonum_err(b"-99999999999999999999", 0, 10),
+            Err("too small")
+        );
+    }
+
+    #[test]
+    fn nan_rules() {
+        let n = |v: f64| (v.is_nan(), v.is_sign_negative());
+        assert_eq!(n(x86_nan(0.0, 0.0, f64::NAN)), (true, true));
+        assert_eq!(n(x86_nan(f64::NAN, -f64::NAN, f64::NAN)), (true, false));
+        assert_eq!(n(x86_nan(1.0, -f64::NAN, f64::NAN)), (true, true));
+        assert_eq!(n(fmod(-f64::NAN, f64::NAN)), (true, false));
+        assert_eq!(n(fmod(-f64::NAN, -f64::NAN)), (true, true));
+        assert_eq!(n(fmod(1.0, 0.0)), (true, true));
+        assert_eq!(fmod(-5.0, 3.0), -2.0);
+        assert_eq!(to_long_long(-0.5).to_bits(), 0f64.to_bits());
     }
 
     #[test]

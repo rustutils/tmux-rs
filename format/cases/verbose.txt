@@ -1,0 +1,8 @@
+#{?#{@t},a#,b,c} #[fg=red]#S#,
+#{=/2/x:#{l:a}}#{W:#{window_index},<#{window_index}>}
+#{e|+|f|1:1,2}#{e|x|:1,2}#{e|+||abc:1,2}#{e|+|:a,1}#{e|+|:1}
+#{?@zero,a,@nosuch,b}#{?@zero,a}#{?@one,b}#{&&:1,0}#{||:0,1}#{R:a}#{R:a,3}#{!:1}
+#{S;q:#{session_name}}#{N:first}#{N/s:x}#{s/l/L/;p6;n;w:@a}#{C/r:x}#{<:a,b}
+#{O/s:#{option_name}}#{P:#{pane_index}}#{l:#}}#{a:65}#{c:red}#{=-1/</:@a}
+%%#{T:@pct}#(echo)#{@nosuch}#{b:@path}#{nosuch}
+#{?}#{?@one}#{?@zero,a,b}#{V/x:a}#{W/r:#{loop_index}}#{E:@fmt}
