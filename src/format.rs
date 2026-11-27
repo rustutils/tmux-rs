@@ -2428,6 +2428,376 @@ pub unsafe fn format_cb_user(_ft: &format_tree) -> format_table_type {
     }
 }
 
+/// The pane of a tree, if it has one that still exists.
+///
+/// # Safety
+/// The pane registry must hold valid panes.
+unsafe fn format_pane<'a>(ft: &format_tree) -> Option<&'a window_pane> {
+    unsafe { ft.wp.and_then(|id| pane_from_id(id)).map(|wp| &*wp) }
+}
+
+/// The screen a pane shows now (a mode's screen while one is active), as
+/// C's `wp->screen`, which the cursor and mode variables read.
+///
+/// # Safety
+/// The pane registry must hold valid panes.
+unsafe fn format_pane_screen<'a>(ft: &format_tree) -> Option<&'a screen> {
+    unsafe { format_pane(ft).and_then(|wp| wp.screen.as_ref()) }
+}
+
+/// "1" or "0" for a mode of the screen a pane shows.
+///
+/// # Safety
+/// The pane registry must hold valid panes.
+unsafe fn format_screen_mode(ft: &format_tree, mode: mode_flag) -> format_table_type {
+    unsafe {
+        match format_pane_screen(ft) {
+            Some(s) => if s.mode.intersects(mode) { "1" } else { "0" }.into(),
+            None => format_table_type::None,
+        }
+    }
+}
+
+/// Callback for `bracket_paste_flag`.
+pub unsafe fn format_cb_bracket_paste_flag(ft: &format_tree) -> format_table_type {
+    unsafe { format_screen_mode(ft, mode_flag::MODE_BRACKETPASTE) }
+}
+
+/// Callback for `cursor_blinking`.
+pub unsafe fn format_cb_cursor_blinking(ft: &format_tree) -> format_table_type {
+    unsafe { format_screen_mode(ft, mode_flag::MODE_CURSOR_BLINKING) }
+}
+
+/// Callback for `cursor_very_visible`.
+pub unsafe fn format_cb_cursor_very_visible(ft: &format_tree) -> format_table_type {
+    unsafe { format_screen_mode(ft, mode_flag::MODE_CURSOR_VERY_VISIBLE) }
+}
+
+/// Callback for `cursor_colour`: the colour the application set, or the
+/// default from the cursor-colour option.
+pub unsafe fn format_cb_cursor_colour(ft: &format_tree) -> format_table_type {
+    unsafe {
+        let Some(s) = format_pane_screen(ft) else {
+            return format_table_type::None;
+        };
+        let colour = if s.ccolour != -1 { s.ccolour } else { s.default_ccolour };
+        colour_tostring(colour).into_owned().into()
+    }
+}
+
+/// Callback for `cursor_shape`.
+pub unsafe fn format_cb_cursor_shape(ft: &format_tree) -> format_table_type {
+    unsafe {
+        let Some(s) = format_pane_screen(ft) else {
+            return format_table_type::None;
+        };
+        match s.cstyle {
+            screen_cursor_style::SCREEN_CURSOR_BLOCK => "block",
+            screen_cursor_style::SCREEN_CURSOR_UNDERLINE => "underline",
+            screen_cursor_style::SCREEN_CURSOR_BAR => "bar",
+            screen_cursor_style::SCREEN_CURSOR_DEFAULT => "default",
+        }
+        .into()
+    }
+}
+
+/// Callback for `buffer_full`: the whole buffer, as bytes.
+pub fn format_cb_buffer_full(ft: &format_tree) -> format_table_type {
+    ft.pb.as_ref().map_or(format_table_type::None, |pb| pb.data().to_vec().into())
+}
+
+/// Callback for `client_colours`: how many colours the client's terminal
+/// has, 16777216 for RGB, 256, or 16, 8 or 2 from its colors capability.
+pub unsafe fn format_cb_client_colours(ft: &format_tree) -> format_table_type {
+    unsafe {
+        if ft.c.is_null() || !(*ft.c).tty.flags.intersects(tty_flags::TTY_STARTED) {
+            return format_table_type::None;
+        }
+        let term = (*ft.c).tty.term;
+        let colours = if (*term).flags.intersects(term_flags::TERM_RGBCOLOURS) {
+            16777216
+        } else if (*term).flags.intersects(term_flags::TERM_256COLOURS) {
+            256
+        } else {
+            match tty_term_number(term, tty_code_code::TTYC_COLORS) {
+                ..8 => 2,
+                8..16 => 8,
+                _ => 16,
+            }
+        };
+        format!("{colours}").into()
+    }
+}
+
+/// Callback for `history_added`: lines moved into the history.
+pub unsafe fn format_cb_history_added(ft: &format_tree) -> format_table_type {
+    unsafe {
+        format_pane(ft).map_or(format_table_type::None, |wp| {
+            wp.base.grid.scroll_added.to_string().into()
+        })
+    }
+}
+
+/// Callback for `history_collected`: lines dropped from the history at
+/// its limit.
+pub unsafe fn format_cb_history_collected(ft: &format_tree) -> format_table_type {
+    unsafe {
+        format_pane(ft).map_or(format_table_type::None, |wp| {
+            wp.base.grid.scroll_collected.to_string().into()
+        })
+    }
+}
+
+/// Callback for `history_generation`: changes when the history is
+/// cleared or reflowed.
+pub unsafe fn format_cb_history_generation(ft: &format_tree) -> format_table_type {
+    unsafe {
+        format_pane(ft).map_or(format_table_type::None, |wp| {
+            wp.base.grid.scroll_generation.to_string().into()
+        })
+    }
+}
+
+/// Callback for `pane_output_generation`: changes when the pane's
+/// program writes.
+pub unsafe fn format_cb_pane_output_generation(ft: &format_tree) -> format_table_type {
+    unsafe {
+        format_pane(ft).map_or(format_table_type::None, |wp| {
+            wp.output_generation.to_string().into()
+        })
+    }
+}
+
+/// Callback for `pane_last_output_time`: when the pane's program last
+/// wrote, not set before it has.
+pub unsafe fn format_cb_pane_last_output_time(ft: &format_tree) -> format_table_type {
+    unsafe {
+        match format_pane(ft) {
+            Some(wp) if wp.last_output_time != 0 => format_table_type::Time(timeval {
+                tv_sec: wp.last_output_time,
+                tv_usec: 0,
+            }),
+            _ => format_table_type::None,
+        }
+    }
+}
+
+/// Callback for `pane_flags`: `*` for the active pane, `-` for the last
+/// one, `Z` when zoomed, as `window_pane_printable_flags`. 3.8's F, A and O
+/// are for floating and modal panes, which tmux-rs does not have yet.
+pub unsafe fn format_cb_pane_flags(ft: &format_tree) -> format_table_type {
+    unsafe {
+        let Some(wp) = ft.wp.and_then(|id| pane_from_id(id)) else {
+            return format_table_type::None;
+        };
+        let w = window_pane_window(wp);
+        let mut flags = String::new();
+        if wp == window_active_pane(w) {
+            flags.push('*');
+        }
+        if (*w).last_panes.first() == Some(&wp) {
+            flags.push('-');
+        }
+        if (*wp).flags.intersects(window_pane_flags::PANE_ZOOMED) {
+            flags.push('Z');
+        }
+        flags.into()
+    }
+}
+
+/// Callback for `pane_pipe_pid`: the pipe-pane process, while there is one.
+pub unsafe fn format_cb_pane_pipe_pid(ft: &format_tree) -> format_table_type {
+    unsafe {
+        match format_pane(ft) {
+            Some(wp) if wp.pipe_fd != -1 => wp.pipe_pid.to_string().into(),
+            _ => format_table_type::None,
+        }
+    }
+}
+
+/// The private modes `pane_private_modes` reports, with their DECSET
+/// numbers. 3.8 also has 2026 (synchronized output) and 2031 (theme
+/// updates), modes tmux-rs does not have yet.
+const FORMAT_PRIVATE_MODES: &[(mode_flag, u32)] = &[
+    (mode_flag::MODE_KCURSOR, 1),
+    (mode_flag::MODE_ORIGIN, 6),
+    (mode_flag::MODE_WRAP, 7),
+    (mode_flag::MODE_CURSOR_BLINKING, 12),
+    (mode_flag::MODE_CURSOR, 25),
+    (mode_flag::MODE_MOUSE_STANDARD, 1000),
+    (mode_flag::MODE_MOUSE_BUTTON, 1002),
+    (mode_flag::MODE_MOUSE_ALL, 1003),
+    (mode_flag::MODE_FOCUSON, 1004),
+    (mode_flag::MODE_MOUSE_UTF8, 1005),
+    (mode_flag::MODE_MOUSE_SGR, 1006),
+    (mode_flag::MODE_BRACKETPASTE, 2004),
+];
+
+/// The DECSET numbers of the private modes set in `mode`, joined with
+/// commas. Cursor blinking counts only when the application set it, not
+/// when it comes from the cursor-style option.
+fn format_private_modes(mode: mode_flag) -> String {
+    FORMAT_PRIVATE_MODES
+        .iter()
+        .filter(|(flag, _)| mode.contains(*flag))
+        .filter(|(flag, _)| {
+            *flag != mode_flag::MODE_CURSOR_BLINKING || mode.contains(mode_flag::MODE_CURSOR_BLINKING_SET)
+        })
+        .map(|(_, n)| n.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Callback for `pane_private_modes`: the private modes of the pane's own
+/// screen.
+pub unsafe fn format_cb_pane_private_modes(ft: &format_tree) -> format_table_type {
+    unsafe { format_pane(ft).map_or(format_table_type::None, |wp| format_private_modes(wp.base.mode).into()) }
+}
+
+/// Quotes `s` for the shell in single quotes, a single quote as `'\''`.
+fn format_quote_shell_single(s: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len() + 2);
+    out.push(b'\'');
+    for &b in s {
+        if b == b'\'' {
+            out.extend_from_slice(b"'\\''");
+        } else {
+            out.push(b);
+        }
+    }
+    out.push(b'\'');
+    out
+}
+
+/// Callback for `pane_start_command_list`: the pane's command, each
+/// argument quoted for the shell.
+pub unsafe fn format_cb_start_command_list(ft: &format_tree) -> format_table_type {
+    unsafe {
+        let Some(wp) = format_pane(ft) else {
+            return format_table_type::None;
+        };
+        let argc = usize::try_from(wp.argc).unwrap_or(0);
+        let args: Vec<Vec<u8>> = (0..argc)
+            .map(|i| format_quote_shell_single(CStr::from_ptr((*wp.argv.add(i)).cast()).to_bytes()))
+            .collect();
+        args.join(&b' ').into()
+    }
+}
+
+/// Callback for `pane_x`.
+pub unsafe fn format_cb_pane_x(ft: &format_tree) -> format_table_type {
+    unsafe { format_pane(ft).map_or(format_table_type::None, |wp| wp.xoff.to_string().into()) }
+}
+
+/// Callback for `pane_y`.
+pub unsafe fn format_cb_pane_y(ft: &format_tree) -> format_table_type {
+    unsafe { format_pane(ft).map_or(format_table_type::None, |wp| wp.yoff.to_string().into()) }
+}
+
+/// Callback for `pane_zoomed_flag`.
+pub unsafe fn format_cb_pane_zoomed_flag(ft: &format_tree) -> format_table_type {
+    unsafe {
+        format_pane(ft).map_or(format_table_type::None, |wp| {
+            if wp.flags.intersects(window_pane_flags::PANE_ZOOMED) { "1" } else { "0" }.into()
+        })
+    }
+}
+
+/// Callback for `session_active`: whether the session is the client's.
+pub unsafe fn format_cb_session_active(ft: &format_tree) -> format_table_type {
+    unsafe {
+        let Some(s) = ft.s else {
+            return format_table_type::None;
+        };
+        if ft.c.is_null() {
+            return format_table_type::None;
+        }
+        let client_session = client_get_session(ft.c);
+        if !client_session.is_null() && (*client_session).sid() == s { "1" } else { "0" }.into()
+    }
+}
+
+/// "1" if a window of the session has `flag`, "0" if none has.
+fn format_session_winlink_flag(ft: &format_tree, flag: winlink_flags) -> format_table_type {
+    if ft.s.is_none() {
+        return format_table_type::None;
+    }
+    let any = session_windows(ft.s).iter().any(|wl| wl.flags.intersects(flag));
+    if any { "1" } else { "0" }.into()
+}
+
+/// Callback for `session_activity_flag`.
+pub fn format_cb_session_activity_flag(ft: &format_tree) -> format_table_type {
+    format_session_winlink_flag(ft, winlink_flags::WINLINK_ACTIVITY)
+}
+
+/// Callback for `session_bell_flag`.
+pub fn format_cb_session_bell_flag(ft: &format_tree) -> format_table_type {
+    format_session_winlink_flag(ft, winlink_flags::WINLINK_BELL)
+}
+
+/// Callback for `session_silence_flag`.
+pub fn format_cb_session_silence_flag(ft: &format_tree) -> format_table_type {
+    format_session_winlink_flag(ft, winlink_flags::WINLINK_SILENCE)
+}
+
+/// Callback for `session_alert`: `#`, `!` and `~` for the kinds of alert
+/// in any window of the session, each once, in the order the windows
+/// first show them.
+pub fn format_cb_session_alert(ft: &format_tree) -> format_table_type {
+    if ft.s.is_none() {
+        return format_table_type::None;
+    }
+    let mut alerts = String::new();
+    let mut alerted = winlink_flags::empty();
+    for wl in session_windows(ft.s) {
+        for (flag, c) in [
+            (winlink_flags::WINLINK_ACTIVITY, '#'),
+            (winlink_flags::WINLINK_BELL, '!'),
+            (winlink_flags::WINLINK_SILENCE, '~'),
+        ] {
+            if wl.flags.intersects(flag) && !alerted.intersects(flag) {
+                alerts.push(c);
+                alerted |= flag;
+            }
+        }
+    }
+    alerts.into()
+}
+
+/// Callback for `sixel_support`.
+pub fn format_cb_sixel_support(_ft: &format_tree) -> format_table_type {
+    if cfg!(feature = "sixel") { "1" } else { "0" }.into()
+}
+
+/// The manual size of a window from `size`, empty unless window-size is
+/// manual.
+///
+/// # Safety
+/// The window registry must hold valid windows.
+unsafe fn format_window_manual(ft: &format_tree, size: impl FnOnce(&window) -> u32) -> format_table_type {
+    unsafe {
+        let Some(w) = ft.w.and_then(|id| window_from_id(id)) else {
+            return format_table_type::None;
+        };
+        let manual: i64 = options_get_number___(&*(*w).options, "window-size");
+        if manual != window_size_option::WINDOW_SIZE_MANUAL as i64 {
+            return "".into();
+        }
+        size(&*w).to_string().into()
+    }
+}
+
+/// Callback for `window_manual_width`.
+pub unsafe fn format_cb_window_manual_width(ft: &format_tree) -> format_table_type {
+    unsafe { format_window_manual(ft, |w| w.manual_sx) }
+}
+
+/// Callback for `window_manual_height`.
+pub unsafe fn format_cb_window_manual_height(ft: &format_tree) -> format_table_type {
+    unsafe { format_window_manual(ft, |w| w.manual_sy) }
+}
+
 /// What a format callback returns: nothing (the variable is not set),
 /// bytes (which need not be UTF-8, as option values and pane titles
 /// may not be) or a time.
@@ -2493,7 +2863,9 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("alternate_on", format_cb_alternate_on),
     format_table_entry::new("alternate_saved_x", format_cb_alternate_saved_x),
     format_table_entry::new("alternate_saved_y", format_cb_alternate_saved_y),
+    format_table_entry::new("bracket_paste_flag", format_cb_bracket_paste_flag),
     format_table_entry::new("buffer_created", format_cb_buffer_created),
+    format_table_entry::new("buffer_full", format_cb_buffer_full),
     format_table_entry::new("buffer_mode_format", format_cb_buffer_mode_format),
     format_table_entry::new("buffer_name", format_cb_buffer_name),
     format_table_entry::new("buffer_sample", format_cb_buffer_sample),
@@ -2501,6 +2873,7 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("client_activity", format_cb_client_activity),
     format_table_entry::new("client_cell_height", format_cb_client_cell_height),
     format_table_entry::new("client_cell_width", format_cb_client_cell_width),
+    format_table_entry::new("client_colours", format_cb_client_colours),
     format_table_entry::new("client_control_mode", format_cb_client_control_mode),
     format_table_entry::new("client_created", format_cb_client_created),
     format_table_entry::new("client_discarded", format_cb_client_discarded),
@@ -2524,12 +2897,19 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("client_width", format_cb_client_width),
     format_table_entry::new("client_written", format_cb_client_written),
     format_table_entry::new("config_files", format_cb_config_files),
+    format_table_entry::new("cursor_blinking", format_cb_cursor_blinking),
     format_table_entry::new("cursor_character", format_cb_cursor_character),
+    format_table_entry::new("cursor_colour", format_cb_cursor_colour),
     format_table_entry::new("cursor_flag", format_cb_cursor_flag),
+    format_table_entry::new("cursor_shape", format_cb_cursor_shape),
+    format_table_entry::new("cursor_very_visible", format_cb_cursor_very_visible),
     format_table_entry::new("cursor_x", format_cb_cursor_x),
     format_table_entry::new("cursor_y", format_cb_cursor_y),
+    format_table_entry::new("history_added", format_cb_history_added),
     format_table_entry::new("history_all_bytes", format_cb_history_all_bytes),
     format_table_entry::new("history_bytes", format_cb_history_bytes),
+    format_table_entry::new("history_collected", format_cb_history_collected),
+    format_table_entry::new("history_generation", format_cb_history_generation),
     format_table_entry::new("history_limit", format_cb_history_limit),
     format_table_entry::new("history_size", format_cb_history_size),
     format_table_entry::new("host", format_cb_host),
@@ -2568,6 +2948,7 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("pane_dead_status", format_cb_pane_dead_status),
     format_table_entry::new("pane_dead_time", format_cb_pane_dead_time),
     format_table_entry::new("pane_fg", format_cb_pane_fg),
+    format_table_entry::new("pane_flags", format_cb_pane_flags),
     format_table_entry::new("pane_format", format_cb_pane_format),
     format_table_entry::new("pane_height", format_cb_pane_height),
     format_table_entry::new("pane_id", format_cb_pane_id),
@@ -2576,16 +2957,21 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("pane_input_off", format_cb_pane_input_off),
     format_table_entry::new("pane_key_mode", format_cb_pane_key_mode),
     format_table_entry::new("pane_last", format_cb_pane_last),
+    format_table_entry::new("pane_last_output_time", format_cb_pane_last_output_time),
     format_table_entry::new("pane_left", format_cb_pane_left),
     format_table_entry::new("pane_marked", format_cb_pane_marked),
     format_table_entry::new("pane_marked_set", format_cb_pane_marked_set),
     format_table_entry::new("pane_mode", format_cb_pane_mode),
+    format_table_entry::new("pane_output_generation", format_cb_pane_output_generation),
     format_table_entry::new("pane_path", format_cb_pane_path),
     format_table_entry::new("pane_pid", format_cb_pane_pid),
     format_table_entry::new("pane_pipe", format_cb_pane_pipe),
+    format_table_entry::new("pane_pipe_pid", format_cb_pane_pipe_pid),
+    format_table_entry::new("pane_private_modes", format_cb_pane_private_modes),
     format_table_entry::new("pane_right", format_cb_pane_right),
     format_table_entry::new("pane_search_string", format_cb_pane_search_string),
     format_table_entry::new("pane_start_command", format_cb_start_command),
+    format_table_entry::new("pane_start_command_list", format_cb_start_command_list),
     format_table_entry::new("pane_start_path", format_cb_start_path),
     format_table_entry::new("pane_synchronized", format_cb_pane_synchronized),
     format_table_entry::new("pane_tabs", format_cb_pane_tabs),
@@ -2594,27 +2980,28 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("pane_tty", format_cb_pane_tty),
     format_table_entry::new("pane_unseen_changes", format_cb_pane_unseen_changes),
     format_table_entry::new("pane_width", format_cb_pane_width),
+    format_table_entry::new("pane_x", format_cb_pane_x),
+    format_table_entry::new("pane_y", format_cb_pane_y),
+    format_table_entry::new("pane_zoomed_flag", format_cb_pane_zoomed_flag),
     format_table_entry::new("pid", format_cb_pid),
     format_table_entry::new("scroll_region_lower", format_cb_scroll_region_lower),
     format_table_entry::new("scroll_region_upper", format_cb_scroll_region_upper),
     format_table_entry::new("server_sessions", format_cb_server_sessions),
+    format_table_entry::new("session_active", format_cb_session_active),
     format_table_entry::new("session_activity", format_cb_session_activity),
+    format_table_entry::new("session_activity_flag", format_cb_session_activity_flag),
+    format_table_entry::new("session_alert", format_cb_session_alert),
     format_table_entry::new("session_alerts", format_cb_session_alerts),
     format_table_entry::new("session_attached", format_cb_session_attached),
     format_table_entry::new("session_attached_list", format_cb_session_attached_list),
+    format_table_entry::new("session_bell_flag", format_cb_session_bell_flag),
     format_table_entry::new("session_created", format_cb_session_created),
     format_table_entry::new("session_format", format_cb_session_format),
     format_table_entry::new("session_group", format_cb_session_group),
     format_table_entry::new("session_group_attached", format_cb_session_group_attached),
-    format_table_entry::new(
-        "session_group_attached_list",
-        format_cb_session_group_attached_list,
-    ),
+    format_table_entry::new("session_group_attached_list", format_cb_session_group_attached_list),
     format_table_entry::new("session_group_list", format_cb_session_group_list),
-    format_table_entry::new(
-        "session_group_many_attached",
-        format_cb_session_group_many_attached,
-    ),
+    format_table_entry::new("session_group_many_attached", format_cb_session_group_many_attached),
     format_table_entry::new("session_group_size", format_cb_session_group_size),
     format_table_entry::new("session_grouped", format_cb_session_grouped),
     format_table_entry::new("session_id", format_cb_session_id),
@@ -2623,8 +3010,10 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("session_marked", format_cb_session_marked),
     format_table_entry::new("session_name", format_cb_session_name),
     format_table_entry::new("session_path", format_cb_session_path),
+    format_table_entry::new("session_silence_flag", format_cb_session_silence_flag),
     format_table_entry::new("session_stack", format_cb_session_stack),
     format_table_entry::new("session_windows", format_cb_session_windows),
+    format_table_entry::new("sixel_support", format_cb_sixel_support),
     format_table_entry::new("socket_path", format_cb_socket_path),
     format_table_entry::new("start_time", format_cb_start_time),
     format_table_entry::new("tree_mode_format", format_cb_tree_mode_format),
@@ -2633,15 +3022,9 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("version", format_cb_version),
     format_table_entry::new("window_active", format_cb_window_active),
     format_table_entry::new("window_active_clients", format_cb_window_active_clients),
-    format_table_entry::new(
-        "window_active_clients_list",
-        format_cb_window_active_clients_list,
-    ),
+    format_table_entry::new("window_active_clients_list", format_cb_window_active_clients_list),
     format_table_entry::new("window_active_sessions", format_cb_window_active_sessions),
-    format_table_entry::new(
-        "window_active_sessions_list",
-        format_cb_window_active_sessions_list,
-    ),
+    format_table_entry::new("window_active_sessions_list", format_cb_window_active_sessions_list),
     format_table_entry::new("window_activity", format_cb_window_activity),
     format_table_entry::new("window_activity_flag", format_cb_window_activity_flag),
     format_table_entry::new("window_bell_flag", format_cb_window_bell_flag),
@@ -2658,10 +3041,9 @@ pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("window_layout", format_cb_window_layout),
     format_table_entry::new("window_linked", format_cb_window_linked),
     format_table_entry::new("window_linked_sessions", format_cb_window_linked_sessions),
-    format_table_entry::new(
-        "window_linked_sessions_list",
-        format_cb_window_linked_sessions_list,
-    ),
+    format_table_entry::new("window_linked_sessions_list", format_cb_window_linked_sessions_list),
+    format_table_entry::new("window_manual_height", format_cb_window_manual_height),
+    format_table_entry::new("window_manual_width", format_cb_window_manual_width),
     format_table_entry::new("window_marked_flag", format_cb_window_marked_flag),
     format_table_entry::new("window_name", format_cb_window_name),
     format_table_entry::new("window_offset_x", format_cb_window_offset_x),

@@ -109,7 +109,8 @@ pub unsafe fn cmd_pipe_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
         // Fork the child.
         sigfillset(&raw mut set);
         sigprocmask(SIG_BLOCK, &raw const set, &raw mut oldset);
-        match libc::fork() {
+        let pid = libc::fork();
+        match pid {
             -1 => {
                 sigprocmask(SIG_SETMASK, &raw const oldset, null_mut());
                 cmdq_error!(item, "fork error: {}", strerror(errno!()));
@@ -170,6 +171,7 @@ pub unsafe fn cmd_pipe_pane_exec(self_: *mut cmd, item: *mut cmdq_item) -> cmd_r
                 close(pipe_fd[1]);
 
                 (*wp).pipe_fd = pipe_fd[0];
+                (*wp).pipe_pid = pid;
                 memcpy__(wpo, &raw mut (*wp).offset);
 
                 setblocking((*wp).pipe_fd, 0);

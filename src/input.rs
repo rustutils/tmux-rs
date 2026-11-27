@@ -1115,6 +1115,9 @@ pub unsafe fn input_parse_pane(wp: *mut window_pane) {
     unsafe {
         let mut new_size: usize = 0;
         let new_data = window_pane_get_new_data(wp, &raw mut (*wp).offset, &raw mut new_size);
+        if new_size != 0 {
+            (*wp).last_output_time = libc::time(null_mut());
+        }
         input_parse_buffer(wp, new_data.cast(), new_size);
         window_pane_update_used_data(wp, &raw mut (*wp).offset, new_size);
     }
@@ -1129,6 +1132,7 @@ pub unsafe fn input_parse_buffer(wp: *mut window_pane, buf: *mut u8, len: usize)
         let ictx = &mut *(*wp).ictx;
         let sctx: *mut screen_write_ctx = &raw mut ictx.ctx;
 
+        (*wp).output_generation = (*wp).output_generation.wrapping_add(1);
         window_update_activity(NonNull::new(window_pane_window(wp)).unwrap());
         if !(*wp).flags.intersects(window_pane_flags::PANE_ACTIVITY) {
             (*wp).flags |= window_pane_flags::PANE_ACTIVITY;

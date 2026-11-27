@@ -15,7 +15,7 @@ const DOUBLE: &[&[u8]] = &[b"||", b"&&", b"!!", b"!=", b"==", b"<=", b">="];
 /// Single character modifiers that may take arguments in 3.8.
 const WITH_ARGS: &[u8] = b"ImCLNPSOVst=pReqWcA";
 
-/// The end of a modifier, as format_is_end in format.c.
+/// The end of a modifier, as `format_is_end` in format.c.
 fn is_end(c: Option<&u8>) -> bool {
     matches!(c, Some(b';') | Some(b':'))
 }
@@ -185,17 +185,18 @@ fn name_of(m: &[u8]) -> String {
     }
 }
 
-/// The group for variables that 3.8 has and tmux-rs does not.
-pub const MISSING_VARIABLE: &str = "variable missing in tmux-rs";
+/// What [`refine`] adds to the group of a variable that 3.8 has and
+/// tmux-rs does not.
+pub const MISSING_VARIABLE: &str = " missing in tmux-rs";
 
-/// Puts a variable that tmux-rs expands to nothing where 3.8 has a value
-/// into one group, [`MISSING_VARIABLE`], so they are not a group each.
-/// Other groups are returned as they are. `rs` and `c` are what the two
-/// sides printed.
+/// Marks a variable that tmux-rs expands to nothing where 3.8 has a value
+/// as missing (`variable pane_z missing in tmux-rs`), so the known list
+/// names each variable that is not ported and why. Other groups are
+/// returned as they are. `rs` and `c` are what the two sides printed.
 pub fn refine(group: String, rs: &[u8], c: &[u8]) -> String {
     let empty = |b: &[u8]| b.is_empty() || b == b"\n";
     if group.starts_with("variable ") && empty(rs) && !empty(c) {
-        MISSING_VARIABLE.to_string()
+        group + MISSING_VARIABLE
     } else {
         group
     }
@@ -298,9 +299,12 @@ mod tests {
     }
 
     #[test]
-    fn missing_variables_together() {
+    fn missing_variables_by_name() {
         let g = |s: &str| s.to_string();
-        assert_eq!(refine(g("variable x"), b"\n", b"0\n"), MISSING_VARIABLE);
+        assert_eq!(
+            refine(g("variable x"), b"\n", b"0\n"),
+            "variable x missing in tmux-rs"
+        );
         assert_eq!(refine(g("variable x"), b"1\n", b"0\n"), "variable x");
         assert_eq!(refine(g("variable x"), b"1\n", b"\n"), "variable x");
         assert_eq!(refine(g("modifier R"), b"\n", b"aaa\n"), "modifier R");

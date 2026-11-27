@@ -4,7 +4,15 @@
 # are the names the report prints. Remove entries as they get fixed, the
 # report lists entries that matched nothing. Crashes are never listed
 # here: they are fixed.
-group	variable missing in tmux-rs	3.8 variables not ported
+group	variable pane_floating_flag missing in tmux-rs	Track 3: floating panes
+group	variable pane_modal_flag missing in tmux-rs	Track 3: modal panes
+group	variable pane_z missing in tmux-rs	Track 3: floating panes (z-index)
+group	variable pane_unzoomed_width missing in tmux-rs	Track 3: scrollbars and floating panes
+group	variable pane_unzoomed_height missing in tmux-rs	Track 3: scrollbars and floating panes
+group	variable pane_pb_state missing in tmux-rs	Track 3: the progress bar
+group	variable pane_pb_progress missing in tmux-rs	Track 3: the progress bar
+group	variable pane_command_running missing in tmux-rs	Track 3: OSC 133 command times
+group	variable synchronized_output_flag missing in tmux-rs	Track 3: synchronized output
 group	variable window_layout	3.8 layout strings are JSON
 group	variable window_visible_layout	3.8 layout strings are JSON
 group	modifier O	O/v lists the server options, 3.8 has options tmux-rs does not have yet (Track 3, see tests/parity_known.rs)

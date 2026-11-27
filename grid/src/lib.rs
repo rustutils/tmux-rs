@@ -109,6 +109,17 @@ pub struct Grid {
     pub hsize: u32,
     pub hlimit: u32,
 
+    /// Lines moved into the history so far (`history_added`). Wraps as
+    /// C's `u_int` does.
+    pub scroll_added: u32,
+    /// Lines dropped from the top of the history at its limit so far
+    /// (`history_collected`).
+    pub scroll_collected: u32,
+    /// Changed whenever the history is cleared or reflowed, so a reader
+    /// knows the other two counters no longer describe the same lines
+    /// (`history_generation`).
+    pub scroll_generation: u32,
+
     pub linedata: Vec<GridLine>,
 }
 
@@ -439,6 +450,9 @@ impl Grid {
             hscrolled: 0,
             hsize: 0,
             hlimit,
+            scroll_added: 0,
+            scroll_collected: 0,
+            scroll_generation: 0,
             linedata,
         }
     }
@@ -709,13 +723,14 @@ impl Grid {
         grid_trim_history(self, ny);
 
         self.hsize -= ny;
+        self.scroll_collected = self.scroll_collected.wrapping_add(ny);
         if self.hscrolled > self.hsize {
             self.hscrolled = self.hsize;
         }
     }
 
     /// Trims the history down to the limit after the limit was lowered,
-    /// dropping the oldest lines, as 3.8's grid_collect_history with
+    /// dropping the oldest lines, as 3.8's `grid_collect_history` with
     /// `all`. Like C, a full history loses one line even when it is at
     /// the limit exactly.
     pub fn collect_history_all(&mut self) {
@@ -725,6 +740,7 @@ impl Grid {
         let ny = (self.hsize - self.hlimit).clamp(1, self.hsize);
         grid_trim_history(self, ny);
         self.hsize -= ny;
+        self.scroll_collected = self.scroll_collected.wrapping_add(ny);
         if self.hscrolled > self.hsize {
             self.hscrolled = self.hsize;
         }
@@ -764,6 +780,7 @@ impl Grid {
         grid_compact_line(gl);
         gl.time = now;
         self.hsize += 1;
+        self.scroll_added = self.scroll_added.wrapping_add(1);
     }
 
     /// Drop all scrollback lines and reset `hsize` and `hscrolled` to zero.
@@ -773,6 +790,7 @@ impl Grid {
 
         self.hscrolled = 0;
         self.hsize = 0;
+        self.scroll_generation = self.scroll_generation.wrapping_add(1);
 
         self.linedata.resize_with(self.sy as usize, GridLine::new);
     }
@@ -807,6 +825,7 @@ impl Grid {
         // Move history offset down
         self.hscrolled += 1;
         self.hsize += 1;
+        self.scroll_added = self.scroll_added.wrapping_add(1);
     }
 
     /// Reset the rectangular region `(px, py) .. (px+nx, py+ny)` to blank
@@ -1176,6 +1195,7 @@ impl Grid {
             }
             // Swap linedata: old Vec drops automatically, take target's.
             self.linedata = std::mem::take(&mut target.linedata);
+            self.scroll_generation = self.scroll_generation.wrapping_add(1);
             target.sy = 0;
             // target is now an empty Grid, and Box drop handles cleanup.
             drop(target);
@@ -2716,6 +2736,28 @@ mod tests {
     }
 
     #[test]
+    fn grid_history_counters() {
+        let mut gd = Grid::new(10, 3, 10);
+        for _ in 0..10 {
+            gd.scroll_history(8, 0);
+        }
+        gd.scroll_history_region(0, 2, 8, 0);
+        assert_eq!(gd.scroll_added, 11);
+        assert_eq!(gd.scroll_collected, 0);
+        gd.collect_history();
+        assert_eq!(gd.scroll_collected, 1);
+        gd.hlimit = 5;
+        gd.collect_history_all();
+        assert_eq!(gd.scroll_collected, 6);
+        assert_eq!(gd.scroll_generation, 0);
+        gd.clear_history();
+        assert_eq!(gd.scroll_generation, 1);
+        // Clearing does not reset the other counters, as in 3.8.
+        assert_eq!(gd.scroll_added, 11);
+        assert_eq!(gd.scroll_collected, 6);
+    }
+
+    #[test]
     fn grid_collect_history_trims_oldest() {
         // hlimit=10, fill 10 history lines, collect should trim ~10%.
         let mut gd = Grid::new(80, 3, 10);
@@ -2923,6 +2965,8 @@ mod tests {
 
             // Reflow to width 10. A short unwrapped line should stay as-is.
             gd.reflow(10);
+            // A reflow starts a new history generation.
+            assert_eq!(gd.scroll_generation, 1);
 
             let mut gc: GridCell;
             gc = gd.get_cell(0, 0);

@@ -16,6 +16,15 @@
   formats are cached, which makes status lines cheaper to draw.
 - A client whose `COLORTERM` is `truecolor` or `24bit` gets the RGB
   terminal feature, one with `256` in it the 256 colour feature.
+- tmux 3.8's format variables bracket_paste_flag, buffer_full,
+  client_colours, cursor_blinking, cursor_colour, cursor_shape,
+  cursor_very_visible, history_added, history_collected,
+  history_generation, pane_flags, pane_last_output_time,
+  pane_output_generation, pane_pipe_pid, pane_private_modes,
+  pane_start_command_list, pane_x, pane_y, pane_zoomed_flag,
+  session_active, session_activity_flag, session_alert, session_bell_flag,
+  session_silence_flag, sixel_support, window_manual_width and
+  window_manual_height.
 - Option values, pane titles and other values that are not UTF-8 keep
   their bytes in formats and in what commands print, as in tmux 3.8.
   Before, they became U+FFFD or the whole line was replaced by an error

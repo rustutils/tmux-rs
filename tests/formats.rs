@@ -1006,6 +1006,406 @@ fn values_not_utf8_printed() {
     );
 }
 
+/// Expands `format` in `target` and returns the output without the final
+/// newline.
+fn expand_at(tmux: &TmuxTestHarness, target: &str, format: &str) -> String {
+    let out = tmux
+        .cmd()
+        .args(["display-message", "-t", target, "-p", "--", format])
+        .run()
+        .stdout_str();
+    out.strip_suffix('\n').unwrap_or(&out).to_string()
+}
+
+/// Like `check`, expanding in `target`.
+fn check_at(tmux: &TmuxTestHarness, target: &str, cases: &[(&str, &str)]) {
+    let failures: Vec<String> = cases
+        .iter()
+        .filter_map(|(format, expected)| {
+            let actual = expand_at(tmux, target, format);
+            (actual != *expected)
+                .then(|| format!("  {target} {format:?}: expected {expected:?}, got {actual:?}"))
+        })
+        .collect();
+    assert!(
+        failures.is_empty(),
+        "{} of {} formats differ:\n{}",
+        failures.len(),
+        cases.len(),
+        failures.join("\n")
+    );
+}
+
+/// Waits until `format` expands to `expected` in `target`, for state that
+/// changes when a pane's program has written.
+fn wait_at(tmux: &TmuxTestHarness, target: &str, format: &str, expected: &str) {
+    let start = std::time::Instant::now();
+    loop {
+        let actual = expand_at(tmux, target, format);
+        if actual == expected {
+            return;
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{target} {format:?}: waited for {expected:?}, got {actual:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// 3.8's variables for the modes and cursor of the screen a pane shows,
+/// set by escape sequences the pane's program writes: `bracket_paste_flag`,
+/// `cursor_blinking`, `cursor_very_visible`, `cursor_shape`, `cursor_colour` and
+/// `pane_private_modes` (the DECSET numbers, 12 only when the application
+/// set blinking).
+#[test]
+fn screen_mode_variables() {
+    let tmux = server();
+    let windows: &[(&str, &str)] = &[
+        (
+            "modes",
+            "printf '\\033[?2004h\\033[?1004h\\033[?1000h\\033[?1006h\\033[4 q\\033]12;red\\007'; sleep 1000",
+        ),
+        (
+            "modes2",
+            "printf '\\033[?25l\\033[?7l\\033[?1h\\033[6 q\\033]12;#123456\\007'; sleep 1000",
+        ),
+        ("blink", "printf '\\033[1 q\\033[?12h\\033[34l'; sleep 1000"),
+    ];
+    for (name, command) in windows {
+        tmux.cmd()
+            .args(["new-window", "-d", "-t", "beta:", "-n", name, command])
+            .run()
+            .assert_success();
+        wait_at(
+            &tmux,
+            &format!("beta:{name}"),
+            "#{e|>:#{pane_output_generation},0}",
+            "1",
+        );
+    }
+    check_at(
+        &tmux,
+        "beta:modes",
+        &[
+            ("#{pane_private_modes}", "7,25,1000,1004,1006,2004"),
+            ("#{bracket_paste_flag}", "1"),
+            ("#{cursor_blinking}", "0"),
+            ("#{cursor_very_visible}", "0"),
+            ("#{cursor_shape}", "underline"),
+            ("#{cursor_colour}", "#ff0000"),
+        ],
+    );
+    check_at(
+        &tmux,
+        "beta:modes2",
+        &[
+            ("#{pane_private_modes}", "1"),
+            ("#{bracket_paste_flag}", "0"),
+            ("#{cursor_shape}", "bar"),
+            ("#{cursor_colour}", "#123456"),
+        ],
+    );
+    check_at(
+        &tmux,
+        "beta:blink",
+        &[
+            ("#{pane_private_modes}", "7,12,25"),
+            ("#{cursor_blinking}", "1"),
+            ("#{cursor_very_visible}", "1"),
+            ("#{cursor_shape}", "block"),
+        ],
+    );
+    check(
+        &tmux,
+        &[
+            ("#{pane_private_modes}", "7,25"),
+            ("#{bracket_paste_flag}", "0"),
+            ("#{cursor_blinking}", "0"),
+            ("#{cursor_very_visible}", "0"),
+            ("#{cursor_shape}", "default"),
+            ("#{cursor_colour}", "none"),
+        ],
+    );
+}
+
+/// 3.8's counters: `history_added` and `history_collected` count lines moved
+/// into the history and dropped at its limit, `history_generation` changes
+/// when the history is cleared or reflowed, `pane_output_generation` counts
+/// reads of the pane's output and `pane_last_output_time` is when the last
+/// one was.
+#[test]
+fn history_and_output_counters() {
+    let tmux = server();
+    tmux.cmd()
+        .args(["set", "-t", "beta", "history-limit", "10"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args([
+            "new-window",
+            "-d",
+            "-t",
+            "beta:",
+            "-n",
+            "hist",
+            "seq 1 50; sleep 1000",
+        ])
+        .run()
+        .assert_success();
+    wait_at(&tmux, "beta:hist", "#{history_added}", "27");
+    check_at(
+        &tmux,
+        "beta:hist",
+        &[
+            ("#{history_collected}", "17"),
+            ("#{history_generation}", "0"),
+            ("#{history_size}", "10"),
+            ("#{e|>:#{pane_output_generation},0}", "1"),
+            ("#{e|>:#{pane_last_output_time},1700000000}", "1"),
+        ],
+    );
+    tmux.cmd()
+        .args(["clear-history", "-t", "beta:hist"])
+        .run()
+        .assert_success();
+    check_at(
+        &tmux,
+        "beta:hist",
+        &[
+            ("#{history_added}", "27"),
+            ("#{history_collected}", "17"),
+            ("#{history_generation}", "1"),
+            ("#{history_size}", "0"),
+        ],
+    );
+    // A new width reflows the grid.
+    tmux.cmd()
+        .args(["resize-window", "-t", "beta:hist", "-x", "60"])
+        .run()
+        .assert_success();
+    wait_at(&tmux, "beta:hist", "#{history_generation}", "2");
+    check(
+        &tmux,
+        &[
+            ("#{history_added}", "0"),
+            ("#{history_collected}", "0"),
+            ("#{history_generation}", "0"),
+            ("#{pane_output_generation}", "0"),
+            ("[#{pane_last_output_time}]", "[]"),
+        ],
+    );
+}
+
+/// 3.8's `pane_flags` (`*` active, `-` last, `Z` zoomed), `pane_x`, `pane_y`
+/// and `pane_zoomed_flag`, before and after selecting and zooming.
+#[test]
+fn pane_flags_and_position() {
+    let tmux = server();
+    let format = "#{pane_flags}|#{pane_x}|#{pane_y}|#{pane_zoomed_flag}";
+    check_at(&tmux, "alpha:one.0", &[(format, "*|0|0|0")]);
+    check_at(&tmux, "alpha:one.1", &[(format, "|0|13|0")]);
+    tmux.cmd()
+        .args(["select-pane", "-t", "alpha:one.1"])
+        .run()
+        .assert_success();
+    check_at(&tmux, "alpha:one.0", &[(format, "-|0|0|0")]);
+    check_at(&tmux, "alpha:one.1", &[(format, "*|0|13|0")]);
+    tmux.cmd()
+        .args(["resize-pane", "-Z", "-t", "alpha:one.1"])
+        .run()
+        .assert_success();
+    check_at(&tmux, "alpha:one.0", &[(format, "-|0|0|0")]);
+    check_at(&tmux, "alpha:one.1", &[(format, "*Z|0|0|1")]);
+    tmux.cmd()
+        .args(["resize-pane", "-Z", "-t", "alpha:one.1"])
+        .run()
+        .assert_success();
+    check_at(&tmux, "alpha:one.1", &[(format, "*|0|13|0")]);
+}
+
+/// 3.8's `pane_start_command_list` quotes each argument of the pane's
+/// command for the shell, and `pane_pipe_pid` is the pipe-pane process while
+/// there is one.
+#[test]
+fn pane_command_and_pipe() {
+    let tmux = server();
+    tmux.cmd()
+        .args([
+            "new-window",
+            "-d",
+            "-t",
+            "beta:",
+            "-n",
+            "args",
+            "--",
+            "sleep",
+            "1000",
+        ])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args([
+            "new-window",
+            "-d",
+            "-t",
+            "beta:",
+            "-n",
+            "quote",
+            "--",
+            "sh",
+            "-c",
+            "sleep 1000 # it's",
+        ])
+        .run()
+        .assert_success();
+    check(&tmux, &[("#{pane_start_command_list}", "'sleep 1000'")]);
+    check_at(
+        &tmux,
+        "beta:args",
+        &[("#{pane_start_command_list}", "'sleep' '1000'")],
+    );
+    check_at(
+        &tmux,
+        "beta:quote",
+        &[(
+            "#{pane_start_command_list}",
+            "'sh' '-c' 'sleep 1000 # it'\\''s'",
+        )],
+    );
+    check_at(&tmux, "alpha:two", &[("[#{pane_pipe_pid}]", "[]")]);
+    tmux.cmd()
+        .args(["pipe-pane", "-t", "alpha:two", "cat >/dev/null"])
+        .run()
+        .assert_success();
+    check_at(
+        &tmux,
+        "alpha:two",
+        &[("#{m/r:^[0-9]+$,#{pane_pipe_pid}}", "1")],
+    );
+}
+
+/// 3.8's session alert variables: `session_alert` gives each kind of alert
+/// once, `session_bell_flag`, `session_activity_flag` and `session_silence_flag`
+/// whether any window has it.
+#[test]
+fn session_alert_variables() {
+    let tmux = server();
+    let format =
+        "#{session_alert}|#{session_bell_flag}#{session_activity_flag}#{session_silence_flag}";
+    check_at(&tmux, "alpha:", &[(format, "|000")]);
+    tmux.cmd()
+        .args([
+            "respawn-pane",
+            "-k",
+            "-t",
+            "alpha:two",
+            "printf '\\a'; sleep 1000",
+        ])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set", "-w", "-t", "alpha:one", "monitor-activity", "on"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args([
+            "respawn-pane",
+            "-k",
+            "-t",
+            "alpha:one.1",
+            "sleep 0.3; printf x; sleep 1000",
+        ])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set", "-w", "-t", "beta:three", "monitor-silence", "1"])
+        .run()
+        .assert_success();
+    wait_at(&tmux, "alpha:", "#{session_alerts}", "0#,1!");
+    check_at(&tmux, "alpha:", &[(format, "#!|110")]);
+    wait_at(&tmux, "beta:", "#{session_alerts}", "0~");
+    check_at(&tmux, "beta:", &[(format, "~|001")]);
+}
+
+/// 3.8's session and window lists for a session group with an attached
+/// client, `session_active`, `client_colours` and `sixel_support`.
+#[test]
+fn group_and_client_lists() {
+    let tmux = server();
+    tmux.cmd()
+        .args(["new-session", "-d", "-s", "gamma", "-t", "alpha"])
+        .run()
+        .assert_success();
+    tmux.cmd()
+        .args(["set", "-as", "terminal-features", "screen:RGB"])
+        .run()
+        .assert_success();
+    check(
+        &tmux,
+        &[
+            ("#{window_linked_sessions_list}", "alpha,gamma"),
+            ("#{window_active_sessions_list}", "alpha,gamma"),
+            ("[#{window_active_clients_list}]", "[]"),
+            ("[#{session_group_attached_list}]", "[]"),
+            ("#{session_group_many_attached}", "0"),
+            ("[#{session_active}]", "[]"),
+            ("[#{client_colours}]", "[]"),
+            ("#{sixel_support}", "1"),
+        ],
+    );
+    let _client = PtyClient::attach_to(&tmux, "alpha", 80, 24);
+    let name = tmux.wait_for(
+        "#{L:#{client_name}}",
+        |name| !name.is_empty(),
+        Duration::from_secs(5),
+    );
+    check_for(
+        &tmux,
+        Some(&name),
+        &[
+            ("#{window_active_clients_list}", name.as_str()),
+            ("#{session_group_attached_list}", name.as_str()),
+            ("#{session_group_many_attached}", "0"),
+            (
+                "#{S:#{session_name}=#{session_active} }",
+                "alpha=1 beta=0 gamma=0 ",
+            ),
+            ("#{client_colours}", "16777216"),
+        ],
+    );
+}
+
+/// 3.8's `window_manual_width` and `window_manual_height` are empty unless
+/// window-size is manual, which resize-window makes it.
+#[test]
+fn window_manual_size() {
+    let tmux = server();
+    let format = "[#{window_manual_width}x#{window_manual_height}]";
+    check_at(&tmux, "alpha:two", &[(format, "[x]")]);
+    tmux.cmd()
+        .args(["resize-window", "-t", "alpha:two", "-x", "60", "-y", "20"])
+        .run()
+        .assert_success();
+    check_at(&tmux, "alpha:two", &[(format, "[60x20]")]);
+}
+
+/// 3.8's `buffer_full` is the whole buffer.
+#[test]
+fn buffer_full() {
+    let tmux = server();
+    tmux.cmd()
+        .args(["set-buffer", "-b", "full", "one\ntwo"])
+        .run()
+        .assert_success();
+    let out = tmux
+        .cmd()
+        .args(["list-buffers", "-F", "[#{buffer_full}]"])
+        .run()
+        .stdout_str();
+    assert_eq!(out, "[one\ntwo]\n");
+}
+
 /// 3.8's limits. The precision of `e` is between -100 and 100 (a negative
 /// one is printf's default of 6), outside that the result is empty. The
 /// widths of `=` and `p` are between -10000 and 10000, outside that they

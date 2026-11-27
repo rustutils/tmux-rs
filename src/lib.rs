@@ -1104,7 +1104,8 @@ bitflags::bitflags! {
         const PANE_DROP = 0x2;
         const PANE_FOCUSED = 0x4;
         const PANE_VISITED = 0x8;
-        /* 0x10 unused */
+        /// The pane its window is zoomed on (`pane_zoomed_flag`).
+        const PANE_ZOOMED = 0x10;
         /* 0x20 unused */
         const PANE_INPUTOFF = 0x40;
         const PANE_CHANGED = 0x80;
@@ -1172,12 +1173,21 @@ struct window_pane {
     resize_timer: Option<TimerHandle>,
 
     ictx: *mut input_ctx,
+    /// Counts the reads of the pane's output that reached the parser
+    /// (`pane_output_generation`).
+    output_generation: u64,
+    /// When the pane's program last wrote, 0 before it has
+    /// (`pane_last_output_time`).
+    last_output_time: time_t,
 
     cached_gc: GridCell,
     cached_active_gc: GridCell,
     palette: colour_palette,
 
     pipe_fd: i32,
+    /// The process pipe-pane started, valid while `pipe_fd` is not -1
+    /// (`pane_pipe_pid`).
+    pipe_pid: pid_t,
     /// Buffered data to write to the pipe fd (pane output → pipe process).
     pipe_output: tmux_event::Evbuffer,
     /// Buffered data read from the pipe fd (pipe process → pane input).
