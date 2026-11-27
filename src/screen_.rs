@@ -807,7 +807,7 @@ pub fn screen_mode_to_string(mode: mode_flag) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::mem::zeroed;
 
@@ -837,7 +837,7 @@ mod tests {
     }
 
     /// Helper: create and initialize a screen for testing.
-    unsafe fn make_screen(sx: u32, sy: u32) -> *mut screen {
+    pub(crate) unsafe fn make_screen(sx: u32, sy: u32) -> *mut screen {
         unsafe {
             init_globals();
             let s = Box::into_raw(Box::new(screen_placeholder()));
@@ -847,7 +847,7 @@ mod tests {
     }
 
     /// Helper: destroy a test screen and free its Box.
-    unsafe fn destroy_screen(s: *mut screen) {
+    pub(crate) unsafe fn destroy_screen(s: *mut screen) {
         unsafe {
             screen_free(s);
             drop(Box::from_raw(s));

@@ -95,7 +95,7 @@
 36 src/events/mod.rs
 60 src/file.rs
 434 src/format.rs
-22 src/format_draw_.rs
+7 src/format_draw_.rs
 58 src/format_env.rs
 22 src/hook_monitor.rs
 12 src/hooks.rs

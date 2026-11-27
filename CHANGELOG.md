@@ -29,9 +29,16 @@
   their bytes in formats and in what commands print, as in tmux 3.8.
   Before, they became U+FFFD or the whole line was replaced by an error
   marker.
+- The `set-default` style replaces the default colours and attributes for
+  the rest of a status line, and `link=` and `nolink` make text a hyperlink
+  (sent to the terminal in builds with the `hyperlinks` feature).
 
 ### Fixes
 
+- A click on the column after a window in the status line selected that
+  window. Ranges now end where their text ends, as in tmux 3.8.
+- `#[list=focus]` or a list marker outside a list stopped the rest of the
+  line from being drawn.
 - A `NAME=value` line in a configuration file made the server crash when it
   started the first pane. This came with 0.3.0 and broke configurations and
   themes that set variables this way.

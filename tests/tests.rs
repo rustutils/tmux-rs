@@ -30,6 +30,7 @@ mod session;
 mod sort;
 mod source_and_misc;
 mod status_and_style;
+mod status_draw;
 mod style;
 mod subscriptions;
 mod terminal;

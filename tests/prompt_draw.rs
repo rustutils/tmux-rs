@@ -15,20 +15,20 @@ use harness::TmuxTestHarness;
 use super::harness;
 
 const T: Duration = Duration::from_secs(5);
-const WIDTH: u16 = 40;
+pub(crate) const WIDTH: u16 = 40;
 const HEIGHT: u16 = 12;
 
 /// The server under test with a client attached in an outer server's pane.
-struct Nested {
-    inner: TmuxTestHarness,
-    outer: TmuxTestHarness,
+pub(crate) struct Nested {
+    pub(crate) inner: TmuxTestHarness,
+    pub(crate) outer: TmuxTestHarness,
     name: String,
 }
 
 impl Nested {
     /// Starts the inner server with a pane running sleep, runs `setup`
     /// on it and attaches a client from a 40x12 outer pane.
-    fn new(setup: &[&[&str]]) -> Self {
+    pub(crate) fn new(setup: &[&[&str]]) -> Self {
         let mut inner = TmuxTestHarness::new();
         inner
             .new_session()
@@ -80,12 +80,12 @@ impl Nested {
     }
 
     /// Runs a command on the inner server.
-    fn run(&self, args: &[&str]) {
+    pub(crate) fn run(&self, args: &[&str]) {
         self.inner.cmd().args(args).run().assert_success();
     }
 
     /// Opens a command-prompt with `args` on the client.
-    fn prompt(&self, args: &[&str]) {
+    pub(crate) fn prompt(&self, args: &[&str]) {
         self.inner
             .cmd()
             .args(["command-prompt", "-b", "-t", &self.name])
@@ -96,7 +96,7 @@ impl Nested {
 
     /// Sends keys (tmux key names) to the outer pane, so they reach the
     /// client.
-    fn keys(&self, keys: &[&str]) {
+    pub(crate) fn keys(&self, keys: &[&str]) {
         for key in keys {
             self.outer
                 .cmd()
@@ -109,7 +109,7 @@ impl Nested {
 
     /// Clicks the left mouse button at column `x` and row `y` of the
     /// client (both from 0).
-    fn click(&self, x: u16, y: u16) {
+    pub(crate) fn click(&self, x: u16, y: u16) {
         let seq = format!("\x1b[<0;{};{}M\x1b[<0;{};{}m", x + 1, y + 1, x + 1, y + 1);
         self.outer
             .cmd()
@@ -120,7 +120,7 @@ impl Nested {
     }
 
     /// The client's screen as text.
-    fn screen(&self) -> Vec<String> {
+    pub(crate) fn screen(&self) -> Vec<String> {
         let out = self
             .outer
             .cmd()
@@ -131,7 +131,7 @@ impl Nested {
     }
 
     /// Row `y` of the client's screen with its escape sequences.
-    fn styled(&self, y: u16) -> String {
+    pub(crate) fn styled(&self, y: u16) -> String {
         let out = self
             .outer
             .cmd()
@@ -149,7 +149,7 @@ impl Nested {
     }
 
     /// Waits until row `y` matches `pred` and returns it.
-    fn wait_line(&self, y: u16, pred: impl Fn(&str) -> bool) -> String {
+    pub(crate) fn wait_line(&self, y: u16, pred: impl Fn(&str) -> bool) -> String {
         let start = Instant::now();
         loop {
             let screen = self.screen();
@@ -167,12 +167,12 @@ impl Nested {
     }
 
     /// Waits until the outer pane's `format` (cursor formats) is `want`.
-    fn wait_outer(&self, format: &str, want: &str) {
+    pub(crate) fn wait_outer(&self, format: &str, want: &str) {
         self.outer.wait_for(format, |v| v == want, T);
     }
 
     /// Waits for the cursor to be visible at column `x` and row `y`.
-    fn wait_cursor(&self, x: u16, y: u16) {
+    pub(crate) fn wait_cursor(&self, x: u16, y: u16) {
         self.wait_outer(
             "#{cursor_x},#{cursor_y},#{cursor_flag}",
             &format!("{x},{y},1"),
@@ -180,19 +180,19 @@ impl Nested {
     }
 
     /// Waits until the inner option `option` is `want`.
-    fn wait_option(&self, option: &str, want: &str) {
+    pub(crate) fn wait_option(&self, option: &str, want: &str) {
         self.inner
             .wait_for(&format!("#{{{option}}}"), |v| v == want, T);
     }
 
     /// Clears the inner option `option`.
-    fn unset(&self, option: &str) {
+    pub(crate) fn unset(&self, option: &str) {
         self.run(&["set", "-gu", option]);
     }
 }
 
 /// The status line row.
-const STATUS: u16 = HEIGHT - 1;
+pub(crate) const STATUS: u16 = HEIGHT - 1;
 /// The pane's last row, above the status line.
 const PANE_LAST: u16 = HEIGHT - 2;
 
