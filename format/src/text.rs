@@ -392,27 +392,58 @@ pub(crate) fn basename(s: &[u8]) -> Vec<u8> {
     }
 }
 
-/// POSIX dirname.
+/// dirname as glibc does it, which keeps exactly two leading slashes
+/// ("//a" gives "//").
 pub(crate) fn dirname(s: &[u8]) -> Vec<u8> {
-    let mut end = s.len();
-    while end > 1 && s[end - 1] == b'/' {
-        end -= 1;
-    }
-    let trimmed = &s[..end];
-    let Some(mut p) = trimmed.iter().rposition(|&c| c == b'/') else {
+    let Some(mut last) = s.iter().rposition(|&c| c == b'/') else {
         return b".".to_vec();
     };
-    while p > 0 && trimmed[p - 1] == b'/' {
-        p -= 1;
+    if last != 0 && last + 1 == s.len() {
+        // A trailing slash: find the slash before the last name.
+        let mut run = last;
+        while run != 0 && s[run - 1] == b'/' {
+            run -= 1;
+        }
+        if run != 0 {
+            match s[..run].iter().rposition(|&c| c == b'/') {
+                Some(p) => last = p,
+                None => return b".".to_vec(),
+            }
+        }
     }
-    if p == 0 {
-        return b"/".to_vec();
+    let mut run = last;
+    while run != 0 && s[run - 1] == b'/' {
+        run -= 1;
     }
-    trimmed[..p].to_vec()
+    let end = if run == 0 {
+        if last == 1 { 2 } else { 1 }
+    } else {
+        run
+    };
+    s[..end].to_vec()
 }
 
 /// strtonum: a base 10 number between `min` and `max`, the whole string.
 pub(crate) fn strtonum(s: &[u8], min: i64, max: i64) -> Option<i64> {
+    strtonum_err(s, min, max).ok()
+}
+
+/// strtonum with its error string ("invalid", "too small" or "too
+/// large"), which C logs.
+pub(crate) fn strtonum_err(s: &[u8], min: i64, max: i64) -> Result<i64, &'static str> {
+    match parse_ll(s) {
+        None => Err("invalid"),
+        Some(Err(true)) => Err("too small"),
+        Some(Err(false)) => Err("too large"),
+        Some(Ok(v)) if v < min => Err("too small"),
+        Some(Ok(v)) if v > max => Err("too large"),
+        Some(Ok(v)) => Ok(v),
+    }
+}
+
+/// strtoll over the whole string: None when it is not a number, an
+/// error with whether it was negative when it does not fit.
+fn parse_ll(s: &[u8]) -> Option<Result<i64, bool>> {
     let mut i = 0;
     while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
         i += 1;
@@ -429,69 +460,239 @@ pub(crate) fn strtonum(s: &[u8], min: i64, max: i64) -> Option<i64> {
         _ => false,
     };
     let start = i;
-    let mut value: i64 = 0;
+    let mut value: Option<i64> = Some(0);
     while i < s.len() && s[i].is_ascii_digit() {
         let d = (s[i] - b'0') as i64;
-        value = if negative {
-            value.checked_mul(10)?.checked_sub(d)?
-        } else {
-            value.checked_mul(10)?.checked_add(d)?
-        };
+        value = value.and_then(|v| {
+            if negative {
+                v.checked_mul(10)?.checked_sub(d)
+            } else {
+                v.checked_mul(10)?.checked_add(d)
+            }
+        });
         i += 1;
     }
-    if i == start || i != s.len() || value < min || value > max {
+    if i == start || i != s.len() {
         return None;
     }
-    Some(value)
+    Some(value.ok_or(negative))
 }
 
-/// strtod with C's end pointer check: Some only when the whole string
-/// was read. An empty string reads as 0, as `*endch == '\0'` there.
-/// Hexadecimal floats are not handled (a gap of the spike).
+/// strtod with C's end pointer check (`*endch == '\0'`): Some only when
+/// the whole string was read. It reads what glibc's strtod reads:
+/// leading white space, a sign, decimal and hexadecimal numbers (with a
+/// binary exponent), "inf", "infinity" and "nan" with an optional
+/// "(chars)" in any case. An empty string reads as 0, because strtod
+/// then leaves the end pointer on the terminator.
 pub(crate) fn strtod(s: &[u8]) -> Option<f64> {
     if s.is_empty() {
         return Some(0.0);
     }
     let mut i = 0;
-    while i < s.len() && s[i].is_ascii_whitespace() {
+    while i < s.len() && matches!(s[i], b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r') {
         i += 1;
     }
-    let text = std::str::from_utf8(&s[i..]).ok()?;
-    let body = text.strip_prefix(['+', '-']).unwrap_or(text);
-    let lower = body.to_ascii_lowercase();
-    if matches!(lower.as_str(), "inf" | "infinity" | "nan") {
-        let v = if lower == "nan" {
-            f64::NAN
-        } else {
-            f64::INFINITY
-        };
-        return Some(if text.starts_with('-') { -v } else { v });
+    let negative = s.get(i) == Some(&b'-');
+    if matches!(s.get(i), Some(b'-' | b'+')) {
+        i += 1;
     }
-    if !body
-        .bytes()
-        .next()
-        .is_some_and(|c| c.is_ascii_digit() || c == b'.')
-    {
+    let (value, end) = unsigned_strtod(s, i)?;
+    if end != s.len() {
         return None;
     }
-    if !body
-        .bytes()
-        .all(|c| c.is_ascii_digit() || b".eE+-".contains(&c))
-    {
-        return None;
-    }
-    text.parse::<f64>().ok()
+    Some(if negative { -value } else { value })
 }
 
-/// A double to long long as x86_64 converts it: out of range and NaN
-/// become i64::MIN (arm64 saturates instead, so C tmux's output for
-/// `#{e|/|:1,0}` depends on the machine).
+/// Whether `s` has `word` at `i`, ignoring case.
+fn has_word(s: &[u8], i: usize, word: &[u8]) -> bool {
+    s.len() >= i + word.len() && s[i..i + word.len()].eq_ignore_ascii_case(word)
+}
+
+/// The number strtod reads at `i` after the sign, and where it ends.
+/// None when there is no number.
+fn unsigned_strtod(s: &[u8], i: usize) -> Option<(f64, usize)> {
+    if has_word(s, i, b"infinity") {
+        return Some((f64::INFINITY, i + 8));
+    }
+    if has_word(s, i, b"inf") {
+        return Some((f64::INFINITY, i + 3));
+    }
+    if has_word(s, i, b"nan") {
+        let mut end = i + 3;
+        if s.get(end) == Some(&b'(') {
+            let mut j = end + 1;
+            while j < s.len() && (s[j].is_ascii_alphanumeric() || s[j] == b'_') {
+                j += 1;
+            }
+            if s.get(j) == Some(&b')') {
+                end = j + 1;
+            }
+        }
+        return Some((f64::NAN, end));
+    }
+    if s.get(i) == Some(&b'0')
+        && matches!(s.get(i + 1), Some(b'x' | b'X'))
+        && let Some(found) = hex_strtod(s, i + 2)
+    {
+        return Some(found);
+    }
+
+    // Decimal: digits with an optional point, at least one digit, then
+    // an exponent only when it has digits.
+    let mut j = i;
+    let mut digits = 0;
+    while j < s.len() && s[j].is_ascii_digit() {
+        j += 1;
+        digits += 1;
+    }
+    if s.get(j) == Some(&b'.') {
+        j += 1;
+        while j < s.len() && s[j].is_ascii_digit() {
+            j += 1;
+            digits += 1;
+        }
+    }
+    if digits == 0 {
+        return None;
+    }
+    if matches!(s.get(j), Some(b'e' | b'E')) {
+        let mut k = j + 1;
+        if matches!(s.get(k), Some(b'+' | b'-')) {
+            k += 1;
+        }
+        if s.get(k).is_some_and(u8::is_ascii_digit) {
+            while k < s.len() && s[k].is_ascii_digit() {
+                k += 1;
+            }
+            j = k;
+        }
+    }
+    // Only ASCII digits, a point, an e and a sign were taken, which
+    // Rust's parser reads the same way.
+    let text = std::str::from_utf8(&s[i..j]).ok()?;
+    Some((text.parse::<f64>().ok()?, j))
+}
+
+/// A hexadecimal number after its "0x": hex digits with an optional
+/// point, at least one digit, then an optional binary exponent. None
+/// when there is no digit, then strtod reads only the "0".
+fn hex_strtod(s: &[u8], i: usize) -> Option<(f64, usize)> {
+    let mut j = i;
+    let mut mantissa: u64 = 0;
+    // Binary exponent for digits that did not fit and for those after
+    // the point.
+    let mut exp: i64 = 0;
+    let mut sticky = false;
+    let mut digits = 0;
+    let mut point = false;
+    loop {
+        match s.get(j) {
+            Some(b'.') if !point => point = true,
+            Some(&c) if c.is_ascii_hexdigit() => {
+                let d = (c as char).to_digit(16).unwrap_or(0) as u64;
+                digits += 1;
+                if mantissa >> 56 == 0 {
+                    mantissa = mantissa << 4 | d;
+                    if point {
+                        exp -= 4;
+                    }
+                } else {
+                    sticky |= d != 0;
+                    if !point {
+                        exp += 4;
+                    }
+                }
+            }
+            _ => break,
+        }
+        j += 1;
+    }
+    if digits == 0 {
+        return None;
+    }
+    if matches!(s.get(j), Some(b'p' | b'P')) {
+        let mut k = j + 1;
+        let negative = s.get(k) == Some(&b'-');
+        if matches!(s.get(k), Some(b'+' | b'-')) {
+            k += 1;
+        }
+        if s.get(k).is_some_and(u8::is_ascii_digit) {
+            let mut e: i64 = 0;
+            while k < s.len() && s[k].is_ascii_digit() {
+                e = (e * 10 + (s[k] - b'0') as i64).min(1 << 20);
+                k += 1;
+            }
+            exp += if negative { -e } else { e };
+            j = k;
+        }
+    }
+    // The low bit stands for any digits that were dropped, so rounding
+    // to 53 bits stays right.
+    let mantissa = if sticky { mantissa | 1 } else { mantissa };
+    Some((scale2(mantissa as f64, exp), j))
+}
+
+/// `v` times two to the power `exp`, in steps that stay exact.
+fn scale2(mut v: f64, mut exp: i64) -> f64 {
+    while exp > 1000 {
+        v *= 2f64.powi(1000);
+        exp -= 1000;
+    }
+    while exp < -1000 {
+        v *= 2f64.powi(-1000);
+        exp += 1000;
+    }
+    v * 2f64.powi(exp as i32)
+}
+
+/// A double to long long and back, as x86_64 converts it: out of range
+/// values and NaN become INT64_MIN (arm64 saturates instead, so C tmux's
+/// output for `#{e|/|:1,0}` depends on the machine). The result is
+/// never negative zero.
 pub(crate) fn to_long_long(v: f64) -> f64 {
     let limit = -(i64::MIN as f64);
     if v.is_nan() || v >= limit || v < -limit {
         return i64::MIN as f64;
     }
-    v.trunc()
+    v as i64 as f64
+}
+
+/// A NaN with the given sign.
+fn nan(negative: bool) -> f64 {
+    if negative { -f64::NAN } else { f64::NAN }
+}
+
+/// The NaN x86_64 gives for `left op right` when one is NaN or the
+/// operation is invalid: the left NaN, else the right one, else the
+/// default NaN, which is negative. Rust on other machines may give
+/// another NaN, so this picks it.
+pub(crate) fn x86_nan(left: f64, right: f64, result: f64) -> f64 {
+    if !result.is_nan() {
+        return result;
+    }
+    if left.is_nan() {
+        return nan(left.is_sign_negative());
+    }
+    if right.is_nan() {
+        return nan(right.is_sign_negative());
+    }
+    nan(true)
+}
+
+/// glibc's fmod on x86_64, NaNs included: with two NaNs the result is
+/// negative only when both are, with one it keeps that one's sign, and
+/// an invalid operation gives the negative default NaN. Checked against
+/// tmux 3.8 on x86_64.
+pub(crate) fn fmod(left: f64, right: f64) -> f64 {
+    match (left.is_nan(), right.is_nan()) {
+        (true, true) => nan(left.is_sign_negative() && right.is_sign_negative()),
+        (true, false) => nan(left.is_sign_negative()),
+        (false, true) => nan(right.is_sign_negative()),
+        (false, false) => {
+            let r = left % right;
+            if r.is_nan() { nan(true) } else { r }
+        }
+    }
 }
 
 /// printf("%.*f", prec, v). A negative precision means the default, 6.
@@ -534,8 +735,8 @@ pub(crate) fn ctime(tm: &Tm) -> Vec<u8> {
     .into_bytes()
 }
 
-/// format_time_difference: "1d2h", "3m4s" and so on, None in the future.
-pub(crate) fn time_difference(now: i64, t: i64) -> Option<Vec<u8>> {
+/// format_relative_time: "1d2h", "3m4s" and so on, None in the future.
+pub(crate) fn relative_time(now: i64, t: i64) -> Option<Vec<u8>> {
     if t > now {
         return None;
     }

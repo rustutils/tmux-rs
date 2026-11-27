@@ -267,4 +267,36 @@ pub trait FormatEnv {
     /// Asks for the status line to be redrawn while an animation of `A`
     /// runs (format_cycle_start_timer).
     fn start_cycle_timer(&self) {}
+
+    /// Whether to log each step of the expansion (C's format_logging:
+    /// display -v or a server log). Asked once, of the env passed to
+    /// [`Engine::expand`], when the expansion starts.
+    fn logging(&self) -> bool {
+        false
+    }
+
+    /// One line of the log, the text C's format_log formats, and `depth`,
+    /// C's es->loop at that point. C prints it with display -v as "#",
+    /// then `depth` spaces (at most 10), then the message. Only called on
+    /// the env passed to [`Engine::expand`], also for lines from inside a
+    /// loop, and only when [`FormatEnv::logging`] said yes.
+    fn log(&self, depth: u32, message: &[u8]) {
+        let _ = (depth, message);
+    }
+
+    /// For a child of a loop: the line C logs before it expands the
+    /// child, such as "session loop: $1", "window loop: 0 @1", "pane
+    /// loop: %2", "client loop: name", "option loop: name",
+    /// "option loop: name[key]" or "environment loop: NAME". Only asked
+    /// when logging. None logs nothing.
+    fn loop_message(&self) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// The ID of the pane (without the %), for the log line of `C:`.
+    /// Only asked when logging and [`FormatEnv::search_pane`] found a
+    /// pane.
+    fn pane_id(&self) -> Option<u32> {
+        None
+    }
 }

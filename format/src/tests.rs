@@ -465,8 +465,12 @@ fn time_values() {
         b"Tue Nov 14 22:13:20 2023"
     );
     assert_eq!(
-        engine.expand(&env, &env, b"#{t/d:window_activity}", PLAIN),
+        engine.expand(&env, &env, b"#{t/r:window_activity}", PLAIN),
         b"1108d2h"
+    );
+    assert_eq!(
+        engine.expand(&env, &env, b"#{t/d:window_activity}", PLAIN),
+        b"95739400"
     );
 }
 

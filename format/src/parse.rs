@@ -51,11 +51,26 @@ pub(crate) enum Part {
     Text(Vec<u8>),
     /// `#(command)`: the raw command and the command parsed.
     Job(Vec<u8>, Box<Format>),
-    /// `#{...}` or an alias.
+    /// `#{...}`.
     Replace(Box<Replace>),
+    /// A single letter alias such as `#S`, with its letter. C finds no
+    /// end for it, so it skips the time check that the scan for the end
+    /// of a `#{` makes.
+    Alias(u8, Box<Replace>),
+    /// Nothing to output, but C logs it here when it expands verbosely.
+    Mark(Mark),
     /// C stops expanding here: a `#{` or `#(` without its end. Output
     /// so far is kept, the rest is dropped.
     Stop,
+}
+
+/// What format_expand1 logs while it copies text.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Mark {
+    /// A style, `#[` after this many characters ("found #*%zu[").
+    Style(usize),
+    /// An escaped `}` or `,` ("found #%c").
+    Escape(u8),
 }
 
 /// A modifier and its arguments.
@@ -71,6 +86,9 @@ pub(crate) struct Modifier {
 /// A replacement, `#{modifiers:text}`.
 #[derive(Debug)]
 pub(crate) struct Replace {
+    /// The whole text inside the `#{}` (or the name of an alias), which
+    /// C logs.
+    pub(crate) key: Vec<u8>,
     /// The modifiers. Empty when the list was malformed, then `copy` is
     /// the whole key, as in C.
     pub(crate) mods: Vec<Modifier>,
@@ -301,6 +319,8 @@ pub fn parse(input: &[u8]) -> Format {
                 }
                 if at(raw, ptr) == b'[' {
                     style_end = skip(raw, i - 2, b"]");
+                    flush(&mut text, &mut parts);
+                    parts.push(Part::Mark(Mark::Style(n)));
                     text.extend_from_slice(&raw[i - 2..i - 2 + n + 1]);
                     i = ptr + 1;
                     continue;
@@ -310,13 +330,17 @@ pub fn parse(input: &[u8]) -> Format {
                 text.extend(std::iter::repeat_n(b'#', n / 2));
                 i = if n % 2 != 0 { ptr - 1 } else { ptr };
             }
-            b'}' | b',' => text.push(ch),
+            b'}' | b',' => {
+                flush(&mut text, &mut parts);
+                parts.push(Part::Mark(Mark::Escape(ch)));
+                text.push(ch);
+            }
             _ => {
                 let after_style = style_end.is_none_or(|end| i > end);
                 match alias(ch).filter(|_| after_style) {
                     Some(name) => {
                         flush(&mut text, &mut parts);
-                        parts.push(Part::Replace(Box::new(parse_replace(name))));
+                        parts.push(Part::Alias(ch, Box::new(parse_replace(name))));
                     }
                     None => {
                         text.push(b'#');
@@ -345,6 +369,7 @@ pub(crate) fn parse_replace(key: &[u8]) -> Replace {
         None => (Vec::new(), key.to_vec()),
     };
     Replace {
+        key: key.to_vec(),
         mods,
         copy,
         whole: OnceCell::new(),
