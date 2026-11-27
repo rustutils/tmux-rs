@@ -632,6 +632,20 @@ pub unsafe fn tty_term_create(
                 }
             }
 
+            // Check for COLORTERM (3.8): truecolor or 24bit adds the RGB
+            // feature, a value with 256 in it the 256 colour one.
+            let c = (*tty).client;
+            if !c.is_null()
+                && let Some(value) = (*c).environ.value(b"COLORTERM")
+            {
+                log_debug!("{} COLORTERM={}", _s((*c).name), String::from_utf8_lossy(value));
+                if value.eq_ignore_ascii_case(b"truecolor") || value.eq_ignore_ascii_case(b"24bit") {
+                    tty_add_features(feat, "RGB", c!(","));
+                } else if value.windows(3).any(|w| w == b"256") {
+                    tty_add_features(feat, "256", c!(","));
+                }
+            }
+
             // Apply overrides so any capabilities used for features are changed.
             tty_term_apply_overrides(term);
 
