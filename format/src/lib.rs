@@ -42,6 +42,14 @@
 //! - `#{` or `#(` without an end, and a replacement that fails (a loop
 //!   without a session, a comparison without a comma), stop the whole
 //!   expansion with what was output so far.
+//! - The time limit (100 milliseconds of [`Host::timer_ms`]) is checked
+//!   where C checks it: at each expansion level and wherever C scans for
+//!   the end of something at run time (a `#{`, a comma of a choice, a
+//!   condition or an operator). The tree was scanned when it was parsed,
+//!   so the evaluator checks at the same points instead. Past the limit
+//!   each level expands to nothing and the next `#{` stops the output.
+//! - With [`FormatEnv::logging`] on, the engine logs the lines C's
+//!   format_log does (display -v), through [`FormatEnv::log`].
 
 #![forbid(unsafe_code)]
 
@@ -139,8 +147,13 @@ pub struct LoopSort {
 pub struct LoopChild<'a> {
     /// The environment of the item (its own format tree in C), holding
     /// everything C adds to it: loop_index, loop_last_flag, the neighbour
-    /// variables of `W:`, the option_ and environ_ variables of `O:` and
-    /// `V:`.
+    /// variables of `W:` (window_before_active, window_after_active and
+    /// the next_ and prev_ variables), the option_ and environ_
+    /// variables of `O:` and `V:`, and the session, window, pane and
+    /// client variables of format_defaults. Its other methods answer for
+    /// the item as C's tree for it would (the client of `L:` is the
+    /// item). For the log, [`FormatEnv::loop_message`] gives the line C
+    /// logs for the item.
     pub env: Box<dyn FormatEnv + 'a>,
     /// Whether it is the current item, which uses the second format of
     /// `S:`, `W:` and `P:`.
@@ -212,10 +225,18 @@ pub trait FormatEnv {
     /// modifiers. `for_time` is set for `t:`, which skips the environment.
     fn lookup(&self, name: &[u8], for_time: bool) -> Option<Value>;
 
-    /// The items of a loop, sorted. `flags` is the argument of `O` and
-    /// `V` (empty for the others). None when there is nothing to loop
-    /// over and the replacement fails (`W:` without a session, `P:`
-    /// without a window). `O:` and `V:` without a scope give an empty list.
+    /// The items of a loop, sorted. `flags` is C's loop_flags: the
+    /// expanded argument of the last `O` or `V` that has exactly one
+    /// argument, empty otherwise and for the other loops. The env reads
+    /// it as format_loop_options and format_loop_environ do (empty means
+    /// `s`). `sort` is what the last of `S`, `W`, `P` and `L` asked for,
+    /// C's defaults without one. None when there is nothing to loop over
+    /// and the replacement fails (`W:` without a session, `P:` without a
+    /// window). `O:` and `V:` without a scope give an empty list.
+    ///
+    /// When several loop modifiers are given, the engine picks one in
+    /// C's order: `S`, `W`, `P`, `L`, `O`, then `V`. Only `S`, `W` and
+    /// `P` split their format at the first comma for the active item.
     fn children(&self, kind: LoopKind, sort: LoopSort, flags: &[u8]) -> Option<Vec<LoopChild<'_>>>;
 
     /// Whether `#()` is disabled for this tree (FORMAT_NOJOBS).
@@ -232,7 +253,9 @@ pub trait FormatEnv {
     }
 
     /// Whether a window of the session (or a session) has this name. None
-    /// for a window without a session, which fails the replacement.
+    /// for a window without a session, which fails the replacement. C
+    /// fails before it expands the name, so the engine first asks with an
+    /// empty name to find out. None for a session counts as false.
     fn name_exists(&self, kind: NameKind, name: &[u8]) -> Option<bool> {
         let _ = (kind, name);
         None
@@ -246,20 +269,24 @@ pub trait FormatEnv {
     }
 
     /// `I`: None without an attached client with a terminal, which gives
-    /// an empty value. Capabilities and features answer `1` or `0`.
+    /// an empty value. Capabilities and features answer `1` or `0`, a
+    /// variable of the environment its value or nothing. `name` is the
+    /// raw text after the modifiers, not expanded, as in C.
     fn client_query(&self, query: ClientQuery, name: &[u8]) -> Option<Vec<u8>> {
         let _ = (query, name);
         None
     }
 
-    /// colour_toescape for the attached client (`c/f` and `c/b`), None
-    /// when there is none.
+    /// colour_toescape for the client of this tree (`c/f` and `c/b`).
+    /// Without one C assumes a terminal with 256 and RGB colours. None
+    /// when colour_toescape gives nothing, which gives an empty value.
     fn colour_escape(&self, colour: i32, background: bool) -> Option<Vec<u8>> {
         let _ = (colour, background);
         None
     }
 
     /// Whether this is a status line (FORMAT_STATUS), where `A` animates.
+    /// Asked once, of the env passed to [`Engine::expand`].
     fn is_status(&self) -> bool {
         false
     }
@@ -287,7 +314,7 @@ pub trait FormatEnv {
     /// For a child of a loop: the line C logs before it expands the
     /// child, such as "session loop: $1", "window loop: 0 @1", "pane
     /// loop: %2", "client loop: name", "option loop: name",
-    /// "option loop: name[key]" or "environment loop: NAME". Only asked
+    /// `option loop: name[key]` or "environment loop: NAME". Only asked
     /// when logging. None logs nothing.
     fn loop_message(&self) -> Option<Vec<u8>> {
         None
