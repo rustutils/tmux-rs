@@ -1,0 +1,760 @@
+# Formats for cargo xtask format-diff, one per line.
+#
+# A line that is exactly "#" or starts with "# " is a comment, empty lines
+# are skipped. Lines are taken as they are, spaces included. A line that
+# starts with a backslash is the format after that backslash, so "\# x"
+# is the format "# x" and a lone "\" is the empty format.
+#
+# The servers are set up by setup_commands in xtask/src/format_diff/mod.rs:
+# sessions alpha (windows 0 editor with three panes, 3 logs, 5 "café ☕"),
+# beta, gamma (grouped with alpha) and δelta, user options @plain, @num,
+# @neg, @float, @path, @dir, @utf8, @empty, @dotdot, @fmt, @punct, @hashbrace,
+# @long, @spaces, @shell, @colour, @true, @false, @zero, @wopt, @popt,
+# @sopt, environment FOO, EMPTYENV, SESSVAR, REMOVED (removed) and the
+# buffers buf0 and buf1. The target is alpha:0.1.
+
+# Plain text and escapes.
+plain text
+\
+
+##
+###
+####
+#,
+#}
+#{
+\#
+a#
+a##b
+a#,b#}c
+#{l:##}
+x#{@plain}#,#}##y
+#[fg=red]text#[default]
+#{?1,a#,b,c}
+#{?1,a#}b,c}
+#{?0,a,b#,c}
+,
+}
+{
+},{
+#{}
+#{ }
+#{,}
+#:
+
+# Short aliases.
+#S
+#W
+#I
+#P
+#D
+#F
+#T
+#S:#I.#P
+##S
+#Z
+#q
+#1
+#S#W#I#P#D#F#T
+
+# Variables.
+#{session_name}
+#{session_id}
+#{session_windows}
+#{session_attached}
+#{session_grouped}
+#{session_group}
+#{session_group_size}
+#{session_group_list}
+#{session_group_attached}
+#{session_group_many_attached}
+#{session_many_attached}
+#{session_active}
+#{session_marked}
+#{session_path}
+#{session_stack}
+#{session_alerts}
+#{session_format}
+#{session_bell_flag}
+#{session_activity_flag}
+#{session_silence_flag}
+#{session_attached_list}
+#{window_name}
+#{window_index}
+#{window_id}
+#{window_panes}
+#{window_flags}
+#{window_raw_flags}
+#{window_active}
+#{window_active_clients}
+#{window_active_sessions}
+#{window_active_sessions_list}
+#{window_layout}
+#{window_visible_layout}
+#{window_width}
+#{window_height}
+#{window_zoomed_flag}
+#{window_linked}
+#{window_linked_sessions}
+#{window_linked_sessions_list}
+#{window_bigger}
+#{window_format}
+#{window_start_flag}
+#{window_end_flag}
+#{window_last_flag}
+#{window_marked_flag}
+#{window_bell_flag}
+#{window_silence_flag}
+#{window_activity_flag}
+#{window_stack_index}
+#{window_offset_x}
+#{window_offset_y}
+#{window_cell_width}
+#{window_cell_height}
+#{window_manual_width}
+#{window_manual_height}
+#{window_modal_pane}
+#{active_window_index}
+#{last_window_index}
+#{next_window_index}
+#{prev_window_index}
+#{next_window_active}
+#{prev_window_active}
+#{next_session_id}
+#{pane_index}
+#{pane_id}
+#{pane_title}
+#{pane_width}
+#{pane_height}
+#{pane_active}
+#{pane_last}
+#{pane_dead}
+#{pane_dead_status}
+#{pane_dead_signal}
+#{pane_in_mode}
+#{pane_mode}
+#{pane_flags}
+#{pane_format}
+#{pane_current_command}
+#{pane_start_command}
+#{pane_start_command_list}
+#{pane_start_path}
+#{pane_current_path}
+#{pane_path}
+#{pane_left}
+#{pane_right}
+#{pane_top}
+#{pane_bottom}
+#{pane_at_top}
+#{pane_at_bottom}
+#{pane_at_left}
+#{pane_at_right}
+#{pane_marked}
+#{pane_marked_set}
+#{pane_synchronized}
+#{pane_input_off}
+#{pane_pipe}
+#{pane_tabs}
+#{pane_search_string}
+#{pane_unseen_changes}
+#{pane_key_mode}
+#{pane_fg}
+#{pane_bg}
+#{pane_x}
+#{pane_y}
+#{pane_z}
+#{pane_floating_flag}
+#{pane_modal_flag}
+#{pane_zoomed_flag}
+#{pane_unzoomed_width}
+#{pane_unzoomed_height}
+#{pane_private_modes}
+#{pane_output_generation}
+#{pane_pb_state}
+#{pane_pb_progress}
+#{pane_command_running}
+#{pane_command_status}
+#{cursor_x}
+#{cursor_y}
+#{cursor_flag}
+#{cursor_character}
+#{cursor_colour}
+#{cursor_shape}
+#{cursor_blinking}
+#{cursor_very_visible}
+#{insert_flag}
+#{keypad_cursor_flag}
+#{keypad_flag}
+#{wrap_flag}
+#{origin_flag}
+#{mouse_any_flag}
+#{mouse_all_flag}
+#{mouse_button_flag}
+#{mouse_standard_flag}
+#{mouse_sgr_flag}
+#{mouse_utf8_flag}
+#{bracket_paste_flag}
+#{synchronized_output_flag}
+#{scroll_region_upper}
+#{scroll_region_lower}
+#{alternate_on}
+#{alternate_saved_x}
+#{alternate_saved_y}
+#{history_size}
+#{history_limit}
+#{history_added}
+#{history_collected}
+#{history_generation}
+#{history_bytes}
+#{server_sessions}
+#{buffer_name}
+#{buffer_size}
+#{buffer_sample}
+#{client_session}
+#{client_control_mode}
+#{client_flags}
+#{client_utf8}
+#{client_readonly}
+#{client_prefix}
+#{client_key_table}
+#{client_termname}
+#{client_termtype}
+#{client_termfeatures}
+#{client_width}
+#{client_height}
+#{client_colours}
+#{client_last_session}
+#{client_user}
+#{client_uid}
+#{user}
+#{uid}
+#{sixel_support}
+#{config_files}
+#{line}
+#{loop_index}
+#{loop_last_flag}
+#{selection_present}
+#{search_present}
+#{copy_cursor_x}
+#{scroll_position}
+#{hook}
+#{command}
+#{nosuchvar}
+#{session_name }
+#{ session_name}
+#{SESSION_NAME}
+
+# Options, user options and the environment.
+#{@plain}
+#{@num}
+#{@neg}
+#{@float}
+#{@path}
+#{@dir}
+#{@utf8}
+#{@empty}
+#{@fmt}
+#{@punct}
+#{@hashbrace}
+#{@long}
+#{@spaces}
+#{@shell}
+#{@colour}
+#{@wopt}
+#{@popt}
+#{@sopt}
+#{@nosuch}
+#{@}
+#{status}
+#{status-left}
+#{status-left-length}
+#{status-position}
+#{base-index}
+#{mode-keys}
+#{history-limit}
+#{automatic-rename}
+#{automatic-rename-format}
+#{window-status-format}
+#{window-status-current-format}
+#{pane-border-format}
+#{set-titles-string}
+#{default-shell}
+#{terminal-features}
+#{terminal-overrides}
+#{update-environment}
+#{command-alias}
+#{command-alias[0]}
+#{command-alias[1]}
+#{user-keys}
+#{status-format}
+#{status-format[0]}
+#{status-format[1]}
+#{FOO}
+#{EMPTYENV}
+#{SESSVAR}
+#{REMOVED}
+#{NOSUCHENV}
+#{HOME}
+#{TERM}
+#{CLIENTVAR}
+
+# Conditionals.
+#{?1,yes,no}
+#{?0,yes,no}
+#{?,yes,no}
+#{?@true,yes,no}
+#{?@false,yes,no}
+#{?@zero,yes,no}
+#{?@empty,yes,no}
+#{?@plain,yes,no}
+#{?@nosuch,yes,no}
+#{?pane_active,active,inactive}
+#{?window_zoomed_flag,Z,}
+#{?session_attached,attached,not attached}
+#{?automatic-rename,yes,no}
+#{?#{n:window_name},#{window_name} - }
+#{?@false,a,@true,b,c}
+#{?@false,a,@false,b,c}
+#{?@false,a,@false,b}
+#{?@false,a,@false,b,@true,c,d}
+#{?@true,a,@true,b,c}
+#{?@true,a}
+#{?@false,a}
+#{?@true}
+#{?}
+#{?,}
+#{?1,}
+#{?1,a,b,c}
+#{?0,a,b,c}
+#{?#{==:#{@num},42},forty-two,other}
+#{?#{@true},#{?#{@false},x,y},z}
+#{?#{?@true,1,0},nested,flat}
+#{?pane_in_mode,#[fg=white#,bg=red],#[fg=red#,bg=white]}#W
+#{?session_format,format1,window_format,format2,format3}
+#{?1,#{@plain},#{@num}}
+#{?1,a{b}c,d}
+#{?1,a}b,c}
+#{?1,#{l:x,y},z}
+#{?#{@empty},#{@empty},empty}
+#{?00,yes,no}
+#{? 1,yes,no}
+#{?x,yes,no}
+
+# Comparisons.
+#{==:a,a}
+#{==:a,b}
+#{!=:a,b}
+#{!=:a,a}
+#{<:a,b}
+#{>:a,b}
+#{<=:a,a}
+#{>=:a,b}
+#{<:10,9}
+#{==:#{@num},42}
+#{==:#{session_name},alpha}
+#{==:,}
+#{==:a}
+#{==:a,b,c}
+#{==:}
+#{==:a,}
+#{!=:#{@empty},}
+#{==:é,é}
+#{<:é,f}
+
+# Boolean operators.
+#{||:0,0}
+#{||:0,1}
+#{||:1}
+#{||:0}
+#{||:}
+#{||:0,0,0,1}
+#{||:0,0,0,0}
+#{&&:1,1}
+#{&&:1,0}
+#{&&:1,1,1,1}
+#{&&:1,1,0,1}
+#{&&:1}
+#{&&:}
+#{||:#{pane_in_mode},#{alternate_on}}
+#{&&:#{@true},#{@plain}}
+#{||:#{@false},#{@empty},#{@zero}}
+#{||:x,0}
+#{&&:#{==:a,a},#{!=:a,b},#{<:a,b}}
+#{!:0}
+#{!:1}
+#{!:}
+#{!:x}
+#{!:#{pane_in_mode}}
+#{!:@true}
+#{!:@false}
+#{!;!:@true}
+#{!!:non-empty string}
+#{!!:0}
+#{!!:}
+#{!!:@true}
+#{!!:@plain}
+#{!!:#{@false}}
+#{!!:00}
+
+# Modifiers without arguments.
+#{l:#{?pane_in_mode,yes,no}}
+#{l:@plain}
+#{l:}
+#{l:a,b}
+#{a:98}
+#{a:65}
+#{a:0}
+#{a:256}
+#{a:x}
+#{a:@num}
+#{b:@path}
+#{b:@dir}
+#{b:/}
+#{b:}
+#{b:@plain}
+#{b:@empty}
+#{b:@dotdot}
+#{d:@path}
+#{d:@dir}
+#{d:/}
+#{d:}
+#{d:@plain}
+#{d:@empty}
+#{d:@dotdot}
+#{n:@plain}
+#{n:@utf8}
+#{n:@empty}
+#{n:window_name}
+#{n:nosuch}
+#{w:@utf8}
+#{w:@plain}
+#{w:window_name}
+#{E:@fmt}
+#{E:@hashbrace}
+#{E:status-left}
+#{E:window-status-format}
+#{E:window-status-current-format}
+#{E:pane-border-format}
+#{E:@plain}
+#{E:@punct}
+#{T:@fmt}
+#{T:status-left}
+#{T:@plain}
+#{q:@shell}
+#{q:@utf8}
+#{q:@punct}
+#{q:@spaces}
+#{q/s:@shell}
+#{q/s:@plain}
+#{q/a:@shell}
+#{q/a:@punct}
+#{q/h:@punct}
+#{q/h:@hashbrace}
+#{q/e:@punct}
+#{q/x:@shell}
+#{c:red}
+#{c:@colour}
+#{c:colour100}
+#{c:#ff0000}
+#{c:default}
+#{c:nosuchcolour}
+#{c/f:red}
+#{c/b:blue}
+#{c/fb:green}
+#{c:}
+#{N:editor}
+#{N:nosuch}
+#{N/w:logs}
+#{N/s:beta}
+#{N/s:nosuch}
+#{N/s:δelta}
+#{C:hello}
+#{C/r:^$}
+#{C/i:x}
+#{I/e:CLIENTVAR}
+#{I/e:FOO}
+#{I/f:RGB}
+#{I/c:smcup}
+#{I:x}
+#{A:a,b,c}
+#{A/2:|,/,-,\}
+#{A/0:a,b}
+
+# Limits and padding.
+#{=5:@long}
+#{=-5:@long}
+#{=0:@long}
+#{=100:@long}
+#{=5:@utf8}
+#{=-5:@utf8}
+#{=/5/...:@long}
+#{=/-5/...:@long}
+#{=/5/:@long}
+#{=/100/...:@long}
+#{=/5/...:@plain}
+#{=x:@long}
+#{=10000:@long}
+#{=10001:@long}
+#{=-10001:@long}
+#{=:@long}
+#{=5;=3:@long}
+#{p10:@plain}
+#{p-10:@plain}
+#{p0:@plain}
+#{p3:@plain}
+#{p10:@utf8}
+#{p20:@utf8}
+#{p10000:x}
+#{p10001:x}
+#{px:@plain}
+#{p10;=3:@long}
+#{=3;p10:@long}
+#{=/3/é:@long}
+
+# Repeat.
+#{R:a,3}
+#{R:ab,0}
+#{R:a,-1}
+#{R:a,x}
+#{R:,5}
+#{R:é,4}
+#{R:a}
+#{R:#{@plain},2}
+#{R:-,#{@num}}
+#{R:a,10000}
+#{R:ab,10001}
+#{R:abcdefgh,10000}
+#{R:a,1,2}
+
+# Substitution.
+#{s/l/L/:@plain}
+#{s/l/L:@plain}
+#{s/^h/H/:@plain}
+#{s/o$/O/:@plain}
+#{s/(l+)/[\1]/:@plain}
+#{s/a(.)/\1x/i:@long}
+#{s/L/x/i:@plain}
+#{s/L/x/:@plain}
+#{s|/|::|:@path}
+#{s,l,L,:@plain}
+#{s/x/y/:@plain}
+#{s/./-/:@utf8}
+#{s/é/e/:@utf8}
+#{s/[/x/:@plain}
+#{s///:@plain}
+#{s/l//:@plain}
+#{s/l/#{@num}/:@plain}
+#{s/#{@plain}/bye/:@fmt}
+#{s/l/L/;s/L/M/:@plain}
+#{s/.*/&&/:@plain}
+#{s/$/!/:@plain}
+#{s/^/>/:@plain}
+#{s/a*/-/:@plain}
+#{s:@plain}
+#{s/l:@plain}
+
+# Matching.
+#{m:*foo*,foobar}
+#{m:*foo*,bar}
+#{m:h*,#{@plain}}
+#{m:h?llo,hello}
+#{m:[a-h]ello,hello}
+#{m:HELLO,hello}
+#{m/i:HELLO,hello}
+#{m/r:^h.*o$,hello}
+#{m/r:^H,hello}
+#{m/ri:^H,hello}
+#{m/r:[,x}
+#{m/r:(,x}
+#{m:,}
+#{m:a}
+#{m:}
+#{m/z:dev bash,dev:1 bash}
+#{m/z:^dev | ^prod,prod:1 ssh}
+#{m/z:xyz,abc}
+#{m/z:'bash,dev bash}
+#{m/z:!bash,dev zsh}
+#{m/z:bash$,dev bash}
+#{m/p:dev bash,dev:1 bash}
+#{m/p:abc,aXbXc}
+#{m/z:,abc}
+#{<:a,b}
+#{<:b,a}
+#{>:b,a}
+
+# Arithmetic.
+#{e|+|:1,2}
+#{e|-|:1,2}
+#{e|*|:3,4}
+#{e|/|:7,2}
+#{e|/|:7,0}
+#{e|m|:7,3}
+#{e|%|:7,3}
+#{e|%|:7,0}
+#{e|==|:1,1}
+#{e|!=|:1,1}
+#{e|<|:1,2}
+#{e|>|:1,2}
+#{e|<=|:2,2}
+#{e|>=|:1,2}
+#{e|+|f|:1.5,2.25}
+#{e|*|f|4:5.5,3}
+#{e|/|f|2:1,3}
+#{e|/|f|0:1,3}
+#{e|/|f|100:1,3}
+#{e|/|f|101:1,3}
+#{e|+|f|x:1,2}
+#{e|+|:x,2}
+#{e|+|:1.9,2}
+#{e|+|:1e3,2}
+#{e|+|:,}
+#{e|+|:1}
+#{e|+|:1,2,3}
+#{e|^|:1,2}
+#{e|+:1,2}
+#{e:1,2}
+#{e|+|:#{@num},#{@neg}}
+#{e|-|:#{window_index},1}
+#{e|*|:99999999999,99999999999}
+#{e|+|:-3,-4}
+#{e|/|f|2:#{@float},2}
+
+# Time with a fixed value (TZ is UTC).
+#{t:@num}
+#{t/f/%%Y-%%m-%%d:@num}
+#{t/f/%%H#:%%M:@num}
+#{t:@plain}
+#{t:}
+
+# Loops.
+#{S:#{session_name} }
+#{S:#{session_name},*}
+#{S/n:#{session_name} }
+#{S/nr:#{session_name} }
+#{S/i:#{session_name} }
+#{S/r:#{session_name} }
+#{S/x:#{session_name} }
+#{S:#{loop_index}#{?loop_last_flag,.,-}}
+#{S:#{session_name}=#{session_windows} }
+#{W:#{window_name} }
+#{W:#{window_index}:#{window_name},*#{window_index} }
+#{W/n:#{window_name} }
+#{W/nr:#{window_name} }
+#{W/r:#{window_index} }
+#{W/i:#{window_index} }
+#{W:#{loop_index},#{loop_last_flag} }
+#{W:#{E:window-status-format} ,#{E:window-status-current-format} }
+#{W:#{next_@wopt}|#{prev_@wopt} }
+#{W:#{window_index}#{?window_active,*,}}
+#{P:#{pane_index} }
+#{P:#{pane_index},*}
+#{P/r:#{pane_index} }
+#{P/i:#{pane_index} }
+#{P/z:#{pane_index} }
+#{P:#{pane_title}|}
+#{P:#{loop_index}#{loop_last_flag}}
+#{P:#{pane_width}x#{pane_height} }
+#{L:#{client_name}}
+#{L:x,y}
+#{S:#{W:#{session_name}.#{window_index} }}
+#{S:#{W:#{P:#{pane_id}}}}
+#{O/p:#{option_name}=#{option_value} }
+#{O/pg:#{option_name} }
+#{O:#{option_name} }
+#{O/w:#{option_name} }
+#{O/s:#{?option_is_user,#{option_name} ,}}
+#{O/g:#{?#{==:#{option_name},@plain},#{option_value},}}
+#{O/v:#{option_name} }
+#{V:#{environ_name} }
+#{V/s:#{environ_name}=#{environ_value} }
+#{V/g:#{environ_name} }
+#{V/c:#{environ_name} }
+#{S:}
+#{W:}
+#{S}
+#{W}
+
+# Several modifiers.
+#{T;=10:status-left}
+#{=3;l:#{session_name}}
+#{l;=3:#{session_name}}
+#{b;n:@path}
+#{n;b:@path}
+#{d;b:@path}
+#{q;=5:@shell}
+#{=5;q:@shell}
+#{E;n:@fmt}
+#{s/a/b/;=3;p5:@long}
+#{!;!!:@plain}
+#{a;n:@num}
+#{w;p5:@utf8}
+
+# Nesting.
+#{#{@plain}}
+#{@#{l:plain}}
+#{=#{@num}:@long}
+#{=/#{e|+|:2,3}/...:@long}
+#{p#{@num}:x}
+#{R:#{R:a,2},2}
+#{s/#{l:l}/L/:@plain}
+#{?#{&&:#{@true},#{||:0,#{@true}}},deep,shallow}
+#{E:#{l:#{session_name}}}
+#{l:#{E:@fmt}}
+#{n:#{@long}}
+#{b:#{@path}}
+
+# Malformed input must not crash.
+#{
+#{session_name
+#{?
+#{?1
+#{?1,a
+#{?1,a,b
+#{=5:
+#{=5
+#{s/a/
+#{s/a/b
+#{e|+|
+#{e|
+#{R:
+#{l:
+#{||:
+#{W:
+#{W:#{
+#{;:x}
+#{;;;:x}
+#{:x}
+#{:}
+#{=/5:@long}
+#{=/:@long}
+#{=//:@long}
+#{=/5/.../extra:@long}
+#{p:@plain}
+#{a}
+#{a:}
+#{m/:a,b}
+#{=-:@long}
+#{=--5:@long}
+#{=+5:@long}
+#{=5x:@long}
+#{=0x10:@long}
+#{=9999999999999999999999:@long}
+#{p-9999999999999999999999:x}
+#{R:a,9999999999999999999999}
+#{e|+|f|9999999999999999999999:1,2}
+#{e|+|:9999999999999999999999,1}
+#{}}
+#{{}}
+#{#}
+#{##}
+#{#,}
+#{x#}y}
+#{x}}
+}}}
+{{{
+#{?#{,a,b}
+#{l:#{}
+#{E:#{E:#{E:#{E:@fmt}}}}
+#{@fmt}#{E:@hashbrace}
+#{=5:#{R:é,10}}
+#{q/a:#{R:#,5}}

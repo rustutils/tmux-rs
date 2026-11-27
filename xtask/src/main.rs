@@ -7,6 +7,8 @@
 //!   code.
 //! - `limits [--allow-raise]`: rewrites xtask/unsafe-limits.txt from the
 //!   current counts. Refuses to raise a limit unless told to.
+//! - `format-diff [options]`: expands formats on tmux-rs and tmux 3.8 and
+//!   reports the differences (see [`xtask::format_diff`]).
 
 use std::fs;
 use std::process::ExitCode;
@@ -18,7 +20,8 @@ const USAGE: &str = "usage: cargo xtask <command>
 commands:
   metrics                  unsafe code totals and the 30 worst files
   false-safe               functions with a safe signature that hide unsafe code
-  limits [--allow-raise]   rewrite xtask/unsafe-limits.txt from the current counts";
+  limits [--allow-raise]   rewrite xtask/unsafe-limits.txt from the current counts
+  format-diff [options]    compare format expansion with tmux 3.8 (--help for options)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -29,6 +32,9 @@ fn main() -> ExitCode {
     if matches!(command, "help" | "-h" | "--help") {
         println!("{USAGE}");
         return ExitCode::SUCCESS;
+    }
+    if command == "format-diff" {
+        return xtask::format_diff::main(&args[1..], &workspace_root());
     }
     if !matches!(command, "metrics" | "false-safe" | "limits") {
         eprintln!("unknown command {command}\n\n{USAGE}");
