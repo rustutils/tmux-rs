@@ -148,7 +148,6 @@
 41 src/tty_term_.rs
 5 src/utempter.rs
 11 src/utf8.rs
-10 src/utf8_combined.rs
 188 src/window_.rs
 34 src/window_buffer.rs
 24 src/window_client.rs

@@ -4369,5 +4369,31 @@ mod tests {
             p.feed(b";5H");
             assert_eq!(p.cursor(), (4, 2));
         }
+
+        /// Two regional indicators make one flag cell, a skin tone joins
+        /// the emoji before it, and a third indicator starts a
+        /// cell of its own (one column wide).
+        /// The decision needs the UTF-8 locale the parser sets up.
+        #[test]
+        fn flags_and_skin_tones_combine() {
+            use tmux_utf8::combined::utf8_should_combine;
+            let mut p = Parser::new(20, 1);
+            let ud = |s: &str| {
+                let mut ud = Utf8Data::new([0u8; 0], 0, 0, 0);
+                ud.data[..s.len()].copy_from_slice(s.as_bytes());
+                ud.size = s.len() as u8;
+                ud
+            };
+            assert!(utf8_should_combine(&ud("\u{1f1ec}"), &ud("\u{1f1e7}")));
+            assert!(!utf8_should_combine(&ud("\u{1f1ec}\u{1f1e7}"), &ud("\u{1f1eb}")));
+            assert!(utf8_should_combine(&ud("\u{1f3fb}"), &ud("\u{1f44d}")));
+            assert!(!utf8_should_combine(&ud("\u{1f3fb}"), &ud("\u{1f600}")));
+
+            p.feed("\u{1f1ec}\u{1f1e7}\u{1f1eb}|\u{1f44d}\u{1f3fb}|".as_bytes());
+            assert_eq!(p.cell(0, 0).data.initialized_slice(), "\u{1f1ec}\u{1f1e7}".as_bytes());
+            assert_eq!(p.cell(2, 0).data.initialized_slice(), "\u{1f1eb}".as_bytes());
+            assert_eq!(p.cell(4, 0).data.initialized_slice(), "\u{1f44d}\u{1f3fb}".as_bytes());
+            assert_eq!(p.cursor(), (7, 0));
+        }
     }
 }

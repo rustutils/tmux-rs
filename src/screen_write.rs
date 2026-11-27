@@ -2271,104 +2271,55 @@ pub unsafe fn screen_write_cell(ctx: *mut screen_write_ctx, gc: *const GridCell)
 }
 
 /// Combine a UTF-8 zero-width character onto the previous if necessary.
+/// Returns 1 when the character was combined or is dropped, 0 when it
+/// goes in a cell of its own. The decision is
+/// [`tmux_utf8::combined::utf8_combine`].
 pub unsafe fn screen_write_combine(ctx: *mut screen_write_ctx, gc: *const GridCell) -> i32 {
+    use tmux_utf8::combined::{Combine, utf8_combine};
     unsafe {
         let s = (*ctx).s;
         let gd: *mut Grid = &raw mut *(*s).grid;
-        let ud: *const Utf8Data = &raw const (*gc).data;
         let mut cx = (*s).cx;
         let cy = (*s).cy;
 
-        let mut last: GridCell;
         let mut ttyctx: tty_ctx = zeroed();
 
-        let mut force_wide = 0;
-        let mut zero_width = 0;
-
-        // Ignore U+3164 HANGUL FILLER entirely.
-        if utf8_is_hangul_filler(&*ud) {
-            return 1;
-        }
-
-        // Is this character which makes no sense without being combined? If
-        // this is true then flag it here and discard the character (return 1)
-        // if we cannot combine it.
-        if utf8_is_zwj(ud) {
-            zero_width = 1;
-        } else if utf8_is_vs(ud) {
-            // tmux 3.8 makes this depend on variation-selector-always-wide,
-            // which defaults to on (Track 3: new options).
-            zero_width = 1;
-            force_wide = 1;
-        } else if (*ud).width == 0 {
-            zero_width = 1;
-        }
-
-        // Cannot combine empty character or at left.
-        if (*ud).size < 2 || cx == 0 {
-            return zero_width;
-        }
-        // log_debug("%s: character %.*s at %u,%u (width %u)", __func__, (int)(*ud).size, (*ud).data, cx, cy, (*ud).width);
-
-        // Find the cell to combine with.
+        // Find the cell to combine with: the one before the cursor, or the
+        // one before that when the cell before is padding. It must start
+        // that far back.
         let mut n = 1;
-        last = (*gd).view_get_cell(cx - n, cy);
-        if cx != 1 && last.flags.intersects(GridFlag::PADDING) {
-            n = 2;
-            last = (*gd).view_get_cell(cx - n, cy);
-        }
-        if n != last.data.width as u32 || last.flags.intersects(GridFlag::PADDING) {
-            return zero_width;
-        }
-
-        // Check if we need to combine characters. This could be a Korean
-        // Hangul Jamo character, zero width (set above), a modifier
-        // character (with an existing Unicode character) or a previous ZWJ.
-        if zero_width == 0 {
-            match hanguljamo_check_state(&last.data, &*ud) {
-                HangulJamoState::NotComposable => return 1,
-                HangulJamoState::Choseong => return 0,
-                HangulJamoState::Composable => (),
-                HangulJamoState::NotHangulJamo => {
-                    if utf8_should_combine(&last.data, &*ud) || utf8_should_combine(&*ud, &last.data) {
-                        force_wide = 1;
-                    } else if !utf8_has_zwj(&raw mut last.data) {
-                        return 0;
-                    }
-                }
+        let mut last: Option<GridCell> = None;
+        if cx != 0 {
+            let mut cell = (*gd).view_get_cell(cx - n, cy);
+            if cx != 1 && cell.flags.intersects(GridFlag::PADDING) {
+                n = 2;
+                cell = (*gd).view_get_cell(cx - n, cy);
+            }
+            if n == cell.data.width as u32 && !cell.flags.intersects(GridFlag::PADDING) {
+                last = Some(cell);
             }
         }
 
-        // Check if this combined character would be too long.
-        if last.data.size as usize + (*ud).size as usize > UTF8_SIZE {
-            return zero_width;
-        }
+        let (data, widen) = match utf8_combine(last.as_ref().map(|l| &l.data), &(*gc).data) {
+            Combine::Discard => return 1,
+            Combine::Separate => return 0,
+            Combine::Combined { data, widen } => (data, widen),
+        };
+        let Some(mut last) = last else {
+            unreachable!("combined without a cell")
+        };
 
         // Combining; flush any pending output.
         screen_write_collect_flush(ctx, 0, "screen_write_combine");
 
-        // log_debug("%s: %.*s -> %.*s at %u,%u (offset %u, width %u)", __func__, (int)(*ud).size, (*ud).data, (int)last.data.size, last.data.data, cx - n, cy, n, last.data.width);
-
-        // Append the data.
-        libc::memcpy(
-            (&raw mut last.data.data[last.data.size as usize]).cast(),
-            (&raw const (*ud).data).cast(),
-            (*ud).size as usize,
-        );
-        last.data.size += (*ud).size;
-
-        // Force the width to 2 for modifiers and variation selector.
-        if last.data.width == 1 && force_wide != 0 {
-            last.data.width = 2;
+        // Set the new cell, two columns wide when forced.
+        last.data = data;
+        if widen {
             n = 2;
             cx += 1;
-        } else {
-            force_wide = 0;
         }
-
-        // Set the new cell.
         (*gd).view_set_cell(cx - n, cy, &last);
-        if force_wide != 0 {
+        if widen {
             (*gd).view_set_padding(cx - 1, cy);
         }
 
@@ -2379,7 +2330,7 @@ pub unsafe fn screen_write_combine(ctx: *mut screen_write_ctx, gc: *const GridCe
         screen_write_set_cursor(ctx, cx as i32 - n as i32, cy as i32);
         screen_write_initctx(ctx, &raw mut ttyctx, 0);
         ttyctx.cell = &raw const last;
-        ttyctx.num = force_wide; // reset cached cursor position
+        ttyctx.num = widen as u32;
         tty_write(tty_cmd_cell, &raw mut ttyctx);
         screen_write_set_cursor(ctx, cx as i32, cy as i32);
 

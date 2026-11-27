@@ -121,7 +121,6 @@ cfg_pub_mods! {
     mod tty_keys;
     mod tty_term_;
     mod utf8;
-    mod utf8_combined;
     mod window_;
     mod window_buffer;
     mod window_client;
@@ -230,7 +229,7 @@ use crate::{
     tty_keys::*,
     tty_term_::*,
     utf8::*,
-    utf8_combined::*,
+
     window_::*,
     window_buffer::WINDOW_BUFFER_MODE,
     window_client::WINDOW_CLIENT_MODE,

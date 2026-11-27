@@ -66,6 +66,7 @@ use std::mem::MaybeUninit;
 use std::ptr::{null, null_mut};
 use std::slice;
 
+pub mod combined;
 mod data;
 
 pub use data::{UTF8_SIZE, Utf8Char, Utf8Data};
