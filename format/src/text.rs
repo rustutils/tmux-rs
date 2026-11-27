@@ -9,7 +9,7 @@ use crate::parse::skip;
 
 /// What reading one UTF-8 character at a position found, as
 /// utf8_open and utf8_append report it.
-enum Char {
+pub(crate) enum Char {
     /// A complete character of `size` bytes and `width` columns.
     Done { size: usize, width: u32 },
     /// A lead byte, then `have` bytes before it went wrong (a bad
@@ -22,7 +22,7 @@ use tmux_utf8::char_width;
 /// Reads a UTF-8 character at `i`, or None when `s[i]` is not a lead
 /// byte (utf8_open fails). Like utf8_append, it takes as many bytes as
 /// the lead byte says before it decides.
-fn read_char(s: &[u8], i: usize) -> Option<Char> {
+pub(crate) fn read_char(s: &[u8], i: usize) -> Option<Char> {
     let size = match s[i] {
         0xc2..=0xdf => 2,
         0xe0..=0xef => 3,
@@ -56,7 +56,7 @@ fn read_char(s: &[u8], i: usize) -> Option<Char> {
 }
 
 /// Printable ASCII, as C's `*cp > 0x1f && *cp < 0x7f` on a signed char.
-fn printable(b: u8) -> bool {
+pub(crate) fn printable(b: u8) -> bool {
     (0x20..0x7f).contains(&b)
 }
 

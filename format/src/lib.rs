@@ -50,9 +50,18 @@
 //!   each level expands to nothing and the next `#{` stops the output.
 //! - With [`FormatEnv::logging`] on, the engine logs the lines C's
 //!   format_log does (display -v), through [`FormatEnv::log`].
+//!
+//! # Drawing
+//!
+//! [`draw::draw`] lays out an expanded format with its `#[]` styles
+//! (format-draw.c): alignments, lists with markers and focus, fill and
+//! ranges. It returns the cells to write and the ranges, the caller
+//! writes them to its screen. Styles are parsed by the caller through
+//! [`draw::DrawHost`].
 
 #![forbid(unsafe_code)]
 
+pub mod draw;
 mod eval;
 mod parse;
 mod text;

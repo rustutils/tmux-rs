@@ -6,10 +6,11 @@ authors.workspace    = true
 license.workspace    = true
 repository.workspace = true
 homepage.workspace   = true
-description  = "The format engine of tmux-rs: parsing and expanding #{} formats as tmux 3.8 does."
+description  = "The format engine of tmux-rs: parsing, expanding and drawing #{} formats as tmux 3.8 does."
 
 [dependencies]
 tmux-utf8     = { path = "../utf8" }
+tmux-grid     = { path = "../grid" }
 tmux-compat   = { path = "../compat" }
 
 [dev-dependencies]

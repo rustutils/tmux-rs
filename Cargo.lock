@@ -895,6 +895,7 @@ version = "0.3.0"
 dependencies = [
  "regex",
  "tmux-compat",
+ "tmux-grid",
  "tmux-regsub",
  "tmux-utf8",
 ]
