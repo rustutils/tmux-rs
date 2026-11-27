@@ -120,6 +120,25 @@ pub fn regsub(pattern: &CStr, with: &CStr, text: &CStr, flags: c_int) -> Option<
     Some(buf)
 }
 
+/// Whether `pattern` (compiled with `flags`, REG_NOSUB is added) matches
+/// anywhere in `text`. False when the pattern does not compile, as the
+/// `m/r` format modifier and the pane search treat it.
+pub fn regmatch(pattern: &CStr, text: &CStr, flags: c_int) -> bool {
+    // SAFETY: as in `regsub`, `r` is initialised by `regcomp` before it is
+    // read and freed before returning.
+    let mut r: regex_t = unsafe { mem::zeroed() };
+    // SAFETY: `pattern` is a NUL-terminated CStr.
+    if unsafe { regcomp(&raw mut r, pattern.as_ptr(), flags | libc::REG_NOSUB) } != 0 {
+        return false;
+    }
+    // SAFETY: `r` was compiled above and `text` is a NUL-terminated CStr.
+    // With no match array, regexec writes nothing.
+    let found = unsafe { regexec(&raw const r, text.as_ptr(), 0, core::ptr::null_mut(), 0) } == 0;
+    // SAFETY: `r` was successfully initialised by `regcomp` above.
+    unsafe { regfree(&raw mut r) };
+    found
+}
+
 /// Expands backreferences (`\0`–`\9`) in the replacement string `with`,
 /// substituting matched groups from `m` (offsets relative to `text`), and
 /// appends the result to `buf`. A backslash at the end of `with` is kept,
@@ -193,6 +212,17 @@ mod tests {
     // -----------------------------------------------------------------
     // Basic substitution
     // -----------------------------------------------------------------
+
+    #[test]
+    fn regmatch_finds_and_fails() {
+        let m = |p: &str, t: &str, f: c_int| {
+            regmatch(&CString::new(p).unwrap(), &CString::new(t).unwrap(), f)
+        };
+        assert!(m("b+", "abbc", libc::REG_EXTENDED));
+        assert!(!m("^b", "abc", libc::REG_EXTENDED));
+        assert!(m("B", "abc", libc::REG_EXTENDED | libc::REG_ICASE));
+        assert!(!m("(", "(", libc::REG_EXTENDED));
+    }
 
     #[test]
     fn simple_replacement() {

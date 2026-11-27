@@ -26,7 +26,7 @@
 5 protocol/src/compat.rs
 43 protocol/src/imsg.rs
 109 protocol/src/imsg_buffer.rs
-5 regsub/src/lib.rs
+9 regsub/src/lib.rs
 26 src/alerts.rs
 98 src/arguments.rs
 12 src/cfg_.rs
@@ -94,8 +94,9 @@
 8 src/environ/mod.rs
 36 src/events/mod.rs
 60 src/file.rs
-443 src/format.rs
-28 src/format_draw_.rs
+381 src/format.rs
+22 src/format_draw_.rs
+60 src/format_env.rs
 22 src/hook_monitor.rs
 12 src/hooks.rs
 14 src/hyperlinks_.rs
@@ -112,7 +113,7 @@
 60 src/lib.rs
 82 src/libc.rs
 11 src/main.rs
-24 src/menu_.rs
+23 src/menu_.rs
 2 src/message_log/mod.rs
 107 src/mode_tree.rs
 6 src/monitor/mod.rs
@@ -142,11 +143,11 @@
 24 src/tmux.rs
 238 src/tty_.rs
 16 src/tty_acs.rs
-7 src/tty_features.rs
+9 src/tty_features.rs
 36 src/tty_keys.rs
-38 src/tty_term_.rs
+41 src/tty_term_.rs
 5 src/utempter.rs
-15 src/utf8.rs
+11 src/utf8.rs
 10 src/utf8_combined.rs
 188 src/window_.rs
 34 src/window_buffer.rs

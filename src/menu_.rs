@@ -168,7 +168,7 @@ pub unsafe fn menu_create(title: &str) -> Box<menu> {
     Box::new(menu {
         title: title.to_string(),
         items: Vec::new(),
-        width: unsafe { format_width(title) },
+        width: format_width(title),
     })
 }
 

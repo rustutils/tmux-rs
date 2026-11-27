@@ -1008,3 +1008,23 @@ pub unsafe fn tty_term_print_summary(item: *mut cmdq_item, only: Option<ClientId
         n != 0
     }
 }
+
+/// `tty_term_has_name`: whether the terminal has the capability called
+/// `name` (its terminfo name, as `I/c` in formats asks).
+///
+/// # Safety
+/// `term` must be a valid terminal.
+pub unsafe fn tty_term_has_name(term: *mut tty_term, name: &[u8]) -> bool {
+    for (i, ent) in TTY_TERM_CODES.iter().enumerate() {
+        // SAFETY: every entry of the table names a static C string.
+        let ent_name = unsafe { CStr::from_ptr(ent.name.as_ptr().cast()) };
+        if ent_name.to_bytes() == name {
+            let Ok(code) = tty_code_code::try_from(i as u32) else {
+                return false;
+            };
+            // SAFETY: the caller passes a valid terminal.
+            return unsafe { tty_term_has(term, code) };
+        }
+    }
+    false
+}

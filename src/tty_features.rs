@@ -348,3 +348,34 @@ pub unsafe fn tty_default_features(feat: *mut i32, name: *const u8, version: u32
         }
     }
 }
+
+/// `tty_feature_present`: whether the terminal has the feature called
+/// `name` (`I/f` in formats). A feature counts when it was applied, or
+/// when the terminal has its flags and all of its capabilities anyway.
+/// `utf8` asks the client.
+///
+/// # Safety
+/// `term` must be a valid terminal whose tty and client are valid.
+pub unsafe fn tty_feature_present(term: *mut tty_term, name: &[u8]) -> bool {
+    unsafe {
+        if name == b"utf8" {
+            return (*(*(*term).tty).client).flags.intersects(client_flag::UTF8);
+        }
+        let Some((i, tf)) = TTY_FEATURES.iter().enumerate().find(|(_, tf)| tf.name.as_bytes() == name) else {
+            return false;
+        };
+        if (*term).features & (1 << i) != 0 {
+            return true;
+        }
+        if tf.capabilities.is_empty() || name == b"ignorefkeys" {
+            return false;
+        }
+        if !tf.flags.is_empty() && !(*term).flags.contains(tf.flags) {
+            return false;
+        }
+        tf.capabilities.iter().all(|capability| {
+            let cap = capability.split('=').next().unwrap_or("");
+            tty_term_has_name(term, cap.as_bytes())
+        })
+    }
+}

@@ -39,6 +39,8 @@ use std::cell::RefCell;
 use crate::environ::Environ;
 use crate::cmd_::CmdList;
 use crate::events::EventBus;
+use crate::format_jobs::FormatJobs;
+use crate::job_::JobId;
 use crate::cmd_::cmd_wait_for::Waiter;
 use crate::key_bindings::KeyTables;
 use crate::links::Links;
@@ -68,6 +70,27 @@ thread_local! {
     static WAIT_CHANNELS: RefCell<WaitChannels<Waiter>> = RefCell::new(WaitChannels::new());
     /// The links between sessions and windows, and the session groups.
     static LINKS: RefCell<Links> = RefCell::new(Links::new());
+    /// The `#()` jobs of format trees without a client.
+    static FORMAT_JOBS: RefCell<FormatJobs<JobId>> = RefCell::new(FormatJobs::new());
+    /// The format engine and its cache of parsed formats. It has no
+    /// RefCell: the engine takes `&self` and may be reached again while it
+    /// expands (a callback that expands a format).
+    static FORMAT_ENGINE: tmux_format::Engine = tmux_format::Engine::new();
+}
+
+/// Run `f` with the `#()` jobs of format trees without a client.
+///
+/// # Panics
+/// If `f` reaches these jobs again (see the module rules).
+pub fn with_format_jobs<R>(f: impl FnOnce(&mut FormatJobs<JobId>) -> R) -> R {
+    FORMAT_JOBS.with(|jobs| f(&mut jobs.borrow_mut()))
+}
+
+/// Run `f` with the format engine. Unlike the stores, `f` may expand
+/// formats and reach the engine again, which only takes shared
+/// references.
+pub fn with_format_engine<R>(f: impl FnOnce(&tmux_format::Engine) -> R) -> R {
+    FORMAT_ENGINE.with(f)
 }
 
 /// Run `f` with the wait channels.

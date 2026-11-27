@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Compatibility with tmux 3.8
+
+- Formats are expanded by a new engine written at tmux 3.8's semantics. It
+  adds else-if chains and the implied empty else in `#{?}`, `&&` and `||`
+  with any number of arguments, `!` and `!!`, the `R` (repeat), `A`
+  (animation in status lines), `c/f` and `c/b` (colour escapes) and `I`
+  (client terminal and environment) modifiers, the `O:` (options) and `V:`
+  (environment) loops, `t/r` and `t/d`, the `window_before_active`,
+  `window_after_active`, `next_` and `prev_` variables in `W:` loops, `q`
+  escaping braces, tab and newline, and 3.8's limits. Times that cannot be
+  converted print nothing. Formats are expanded as bytes, and parsed
+  formats are cached, which makes status lines cheaper to draw.
+- A client whose `COLORTERM` is `truecolor` or `24bit` gets the RGB
+  terminal feature, one with `256` in it the 256 colour feature.
+
 ### Fixes
 
 - A `NAME=value` line in a configuration file made the server crash when it
@@ -24,6 +39,8 @@
   `config_files` no longer ends with a comma, `history_bytes` and
   `history_all_bytes` give the sizes tmux 3.8 gives, and `#{C:...}` gives 0
   instead of the pane height when nothing matches.
+- `pane_tabs` and other format variables built from a list could print
+  bytes from after the value.
 
 ## 0.3.0 (2026-11-26)
 

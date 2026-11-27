@@ -954,6 +954,7 @@ dependencies = [
  "thiserror",
  "tmux-compat",
  "tmux-event",
+ "tmux-format",
  "tmux-grid",
  "tmux-log",
  "tmux-protocol",

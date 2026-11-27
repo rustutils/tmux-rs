@@ -67,6 +67,8 @@ cfg_pub_mods! {
     mod file;
     mod format;
     mod format_draw_;
+    mod format_env;
+    mod format_jobs;
     mod fuzzy;
     mod hook_monitor;
     mod hooks;
@@ -178,6 +180,7 @@ use crate::{
     file::*,
     format::*,
     format_draw_::*,
+    format_env::{format_lost_client, format_tidy_jobs},
     hooks::*,
     hyperlinks_::*,
     input::*,
@@ -2391,7 +2394,10 @@ struct client {
     last_activity_time: timeval,
 
     environ: Box<Environ>,
-    jobs: Option<Box<format_job_tree>>,
+    jobs: Option<Box<format_jobs::FormatJobs<JobId>>>,
+    /// Redraws the status line while an animation of the A format modifier
+    /// runs.
+    cycle_timer: Option<TimerHandle>,
 
     title: Option<String>,
     path: Option<String>,
@@ -2569,9 +2575,6 @@ impl SyncCharPtr {
     }
     const fn from_ptr(value: *const u8) -> Self {
         Self(value)
-    }
-    const fn null() -> Self {
-        Self(null())
     }
     const fn as_ptr(&self) -> *const u8 {
         self.0

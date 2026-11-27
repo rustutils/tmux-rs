@@ -54,6 +54,8 @@ features are still missing. It reads the same configuration files as tmux
   prompts in panes (`command-prompt -P`) and inside modes, mouse clicks in
   the prompt, fuzzy matching in formats, and `paste-buffer` escaping what
   it pastes.
+- Formats as 3.8 expands them, with all of its modifiers, operators and
+  loops. Some 3.8 format variables are still missing.
 
 ### Not ported yet
 

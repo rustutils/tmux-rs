@@ -12,16 +12,15 @@
 // IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 // OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
+use std::ffi::CStr;
+
+use crate::format_env::{format_bytes, format_engine_expand, format_to_c};
 
 use crate::compat::HOST_NAME_MAX;
-use crate::libc::{
-    FNM_CASEFOLD, REG_NOSUB, getpwuid, getuid, ispunct, localtime_r, memcpy, regcomp, regex_t,
-    regexec, regfree, strchr, strcmp, strftime, strstr, strtod, tm,
-};
-use crate::options_::*;
-use crate::sort::{SortCriteria, SortOrder};
+use crate::libc::{getpwuid, getuid, localtime_r, strchr, strftime, tm};
 use crate::*;
+use crate::options_::*;
 
 bitflags::bitflags! {
     #[repr(transparent)]
@@ -38,78 +37,7 @@ pub const FORMAT_NONE: i32 = 0;
 pub const FORMAT_PANE: u32 = 0x80000000u32;
 pub const FORMAT_WINDOW: u32 = 0x40000000u32;
 
-/// The largest precision the `e` modifier takes, either sign (3.8).
-const FORMAT_MAX_PRECISION: i32 = 100;
-
-/// The largest width the `=` and `p` modifiers take, either sign (3.8).
-/// A width outside it is ignored.
-const FORMAT_MAX_WIDTH: i32 = 10000;
-
 pub type format_cb = unsafe fn(_: &format_tree) -> format_table_type;
-
-// Entry in format job tree.
-pub struct format_job {
-    pub client: *mut client,
-    pub cmd: *mut u8,
-    pub expanded: *mut u8,
-
-    pub last: time_t,
-    pub out: *mut u8,
-    pub updated: i32,
-
-    pub job: Option<JobId>,
-    pub status: i32,
-}
-
-pub type format_job_tree = BTreeMap<(u32, String), Box<format_job>>;
-
-pub static mut FORMAT_JOBS: format_job_tree = BTreeMap::new();
-
-bitflags::bitflags! {
-    #[repr(transparent)]
-    #[derive(Copy, Clone)]
-    pub struct format_modifiers : i32 {
-        const FORMAT_TIMESTRING = 0x1;
-        const FORMAT_BASENAME   = 0x2;
-        const FORMAT_DIRNAME    = 0x4;
-        const FORMAT_QUOTE_SHELL  = 0x8;
-        const FORMAT_LITERAL = 0x10;
-        const FORMAT_EXPAND = 0x20;
-        const FORMAT_EXPANDTIME = 0x40;
-        const FORMAT_SESSIONS = 0x80;
-        const FORMAT_WINDOWS = 0x100;
-        const FORMAT_PANES = 0x200;
-        const FORMAT_PRETTY = 0x400;
-        const FORMAT_LENGTH = 0x800;
-        const FORMAT_WIDTH = 0x1000;
-        const FORMAT_QUOTE_STYLE = 0x2000;
-        const FORMAT_WINDOW_NAME = 0x4000;
-        const FORMAT_SESSION_NAME = 0x8000;
-        const FORMAT_CHARACTER = 0x10000;
-        const FORMAT_COLOUR = 0x20000;
-        const FORMAT_CLIENTS = 0x40000;
-        const FORMAT_QUOTE_SHELL_SQ = 0x20000000;
-        const FORMAT_QUOTE_ARGUMENTS = 0x400000;
-    }
-}
-
-/// Limit on recursion.
-const FORMAT_LOOP_LIMIT: i32 = 100;
-
-/// Limit on the time one expansion may take, in milliseconds. Deeply
-/// nested formats can take exponential time and would make the server
-/// appear hung (upstream 303edb71).
-const FORMAT_TIME_LIMIT: u64 = 100;
-
-bitflags::bitflags! {
-    /// Format expand flags.
-    #[repr(transparent)]
-    #[derive(Copy, Clone)]
-    pub struct format_expand_flags: i32 {
-        const FORMAT_EXPAND_TIME = 0x1;
-        const FORMAT_EXPAND_NOJOBS = 0x2;
-    }
-}
 
 #[repr(i32)]
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -120,12 +48,15 @@ pub enum format_type {
     FORMAT_TYPE_PANE,
 }
 
-// Entry in format tree.
-pub struct format_entry {
-    pub key: *mut u8,
-    pub value: *mut u8,
-    pub time: time_t,
-    pub cb: Option<format_cb>,
+/// An entry that `format_add`, `format_add_tv` or `format_add_cb` put in a
+/// format tree.
+pub enum format_entry {
+    /// A value, as bytes.
+    Value(Vec<u8>),
+    /// A time in seconds (`format_add_tv`).
+    Time(time_t),
+    /// A callback, run the first time the entry is looked up and kept.
+    Callback(format_cb, std::cell::OnceCell<Vec<u8>>),
 }
 
 pub struct format_tree {
@@ -147,326 +78,13 @@ pub struct format_tree {
 
     pub m: mouse_event,
 
-    pub tree: HashMap<String, Box<format_entry>>,
+    /// The `format_add` entries by name, in name order as C's tree.
+    pub tree: BTreeMap<Vec<u8>, format_entry>,
 }
-
-/// Format expand state.
-pub struct format_expand_state {
-    pub ft: *mut format_tree,
-    pub loop_: u32,
-    /// When the top-level expansion started, from `get_timer`.
-    pub start_time: u64,
-    pub time: time_t,
-    pub tm: tm,
-    pub flags: format_expand_flags,
-}
-
-/// Format modifier.
-pub struct format_modifier {
-    pub modifier: [u8; 3],
-    pub size: u32,
-
-    pub argv: *mut *mut u8,
-    pub argc: i32,
-}
-
-/// Single-character uppercase aliases.
-static FORMAT_UPPER: [SyncCharPtr; 26] = const {
-    const fn idx(c: char) -> usize {
-        (c as u8 - b'A') as usize
-    }
-    let mut tmp = [SyncCharPtr::null(); 26];
-
-    tmp[idx('D')] = SyncCharPtr::new(c"pane_id");
-    tmp[idx('F')] = SyncCharPtr::new(c"window_flags");
-    tmp[idx('H')] = SyncCharPtr::new(c"host");
-    tmp[idx('I')] = SyncCharPtr::new(c"window_index");
-    tmp[idx('P')] = SyncCharPtr::new(c"pane_index");
-    tmp[idx('S')] = SyncCharPtr::new(c"session_name");
-    tmp[idx('T')] = SyncCharPtr::new(c"pane_title");
-    tmp[idx('W')] = SyncCharPtr::new(c"window_name");
-
-    tmp
-};
-
-/// Single-character lowercase aliases.
-static FORMAT_LOWER: [SyncCharPtr; 26] = const {
-    const fn idx(c: char) -> usize {
-        (c as u8 - b'a') as usize
-    }
-    let mut tmp = [SyncCharPtr::null(); 26];
-    tmp[idx('h')] = SyncCharPtr::new(c"host_short");
-    tmp
-};
 
 /// Is logging enabled?
 pub fn format_logging(ft: &format_tree) -> bool {
     log_get_level() != 0 || ft.flags.intersects(format_flags::FORMAT_VERBOSE)
-}
-
-macro_rules! format_log1 {
-   ($es:expr, $from:expr, $fmt:literal $(, $args:expr)* $(,)?) => {
-        format_log1_($es, $from, format_args!($fmt $(, $args)*))
-    };
-}
-
-/// Log a message if verbose.
-pub unsafe fn format_log1_(
-    es: *mut format_expand_state,
-    from: *const u8,
-    args: std::fmt::Arguments,
-) {
-    unsafe {
-        let ft: *mut format_tree = (*es).ft;
-        let spaces = c"          ";
-
-        if !format_logging(&*ft) {
-            return;
-        }
-
-        let s = args.to_string();
-
-        log_debug!("{}: {}", _s(from), s);
-        if !(*ft).item.is_null() && (*ft).flags.intersects(format_flags::FORMAT_VERBOSE) {
-            cmdq_print!(
-                (*ft).item,
-                "#{1:0$}{2}",
-                (*es).loop_ as usize,
-                _s(spaces.as_ptr()),
-                s
-            );
-        }
-    }
-}
-
-/// Copy expand state.
-pub unsafe fn format_copy_state(
-    to: *mut format_expand_state,
-    from: *mut format_expand_state,
-    flags: format_expand_flags,
-) {
-    unsafe {
-        (*to).ft = (*from).ft;
-        (*to).loop_ = (*from).loop_;
-        (*to).start_time = (*from).start_time;
-        (*to).time = (*from).time;
-        memcpy__(&raw mut (*to).tm, &raw const (*from).tm);
-        (*to).flags = (*from).flags | flags;
-    }
-}
-
-/// Format job update callback.
-pub unsafe fn format_job_update(job: JobId) {
-    unsafe {
-        let fj = job_get_data(job) as *mut format_job;
-        let evb: *mut evbuffer = job_get_input(job);
-        let mut line: *mut u8 = null_mut();
-
-        while let Some(next) = NonNull::new(evbuffer_readline(evb)) {
-            free(line.cast());
-            line = next.as_ptr();
-        }
-        if line.is_null() {
-            return;
-        }
-        (*fj).updated = 1;
-
-        free((*fj).out.cast());
-        (*fj).out = line;
-
-        log_debug!(
-            "{}: {:p} {}: {}",
-            function_name!(),
-            fj,
-            _s((*fj).cmd),
-            _s((*fj).out)
-        );
-
-        let t = libc::time(null_mut());
-        if (*fj).status != 0 && (*fj).last != t {
-            if !(*fj).client.is_null() {
-                server_status_client((*fj).client);
-            }
-            (*fj).last = t;
-        }
-    }
-}
-
-/// Format job complete callback.
-pub unsafe fn format_job_complete(job: JobId) {
-    unsafe {
-        let fj = job_get_data(job) as *mut format_job;
-        let evb: *mut evbuffer = job_get_input(job);
-
-        (*fj).job = None;
-
-        let buf: *mut u8;
-
-        let line = evbuffer_readline(evb);
-        if line.is_null() {
-            let len = EVBUFFER_LENGTH(evb);
-            buf = xmalloc(len + 1).as_ptr().cast();
-            if len != 0 {
-                memcpy(buf.cast(), EVBUFFER_DATA(evb).cast(), len);
-            }
-            *buf.add(len) = b'\0';
-        } else {
-            buf = line;
-        }
-
-        log_debug!(
-            "{}: {:p} {}: {}",
-            function_name!(),
-            fj,
-            _s((*fj).cmd),
-            _s(buf)
-        );
-
-        if *buf != b'\0' || (*fj).updated == 0 {
-            free((*fj).out.cast());
-            (*fj).out = buf;
-        } else {
-            free(buf.cast());
-        }
-
-        if (*fj).status != 0 {
-            if !(*fj).client.is_null() {
-                server_status_client((*fj).client);
-            }
-            (*fj).status = 0;
-        }
-    }
-}
-
-pub unsafe fn format_job_get(es: *mut format_expand_state, cmd: *mut u8) -> *mut u8 {
-    unsafe {
-        let ft: *mut format_tree = (*es).ft;
-
-        let jobs = if (*ft).client.is_null() {
-            &mut *(&raw mut FORMAT_JOBS)
-        } else {
-            (*(*ft).client)
-                .jobs
-                .get_or_insert_with(|| Box::new(BTreeMap::new()))
-        };
-
-        let key = ((*ft).tag, cstr_to_str(cmd).to_string());
-        let fj = &mut **jobs.entry(key).or_insert_with(|| {
-            Box::new(format_job {
-                client: (*ft).client,
-                cmd: xstrdup(cmd).as_ptr(),
-                expanded: null_mut(),
-                last: 0,
-                out: null_mut(),
-                updated: 0,
-                job: None,
-                status: 0,
-            })
-        }) as *mut format_job;
-
-        let mut next = MaybeUninit::<format_expand_state>::uninit();
-        let next = next.as_mut_ptr();
-        format_copy_state(next, es, format_expand_flags::FORMAT_EXPAND_NOJOBS);
-        (*next).flags &= !format_expand_flags::FORMAT_EXPAND_TIME;
-
-        let expanded = format_expand1(next, cmd);
-
-        let force = if (*fj).expanded.is_null() || strcmp(expanded, (*fj).expanded) != 0 {
-            free((*fj).expanded.cast());
-            (*fj).expanded = xstrdup(expanded).as_ptr();
-            true
-        } else {
-            (*ft).flags.intersects(format_flags::FORMAT_FORCE)
-        };
-
-        let t = libc::time(null_mut());
-        if force && let Some(job) = (*fj).job {
-            job_free(job);
-        }
-        if force || ((*fj).job.is_none() && (*fj).last != t) {
-            let cwd_path = server_client_get_cwd((*ft).client, null_mut());
-            let cwd_c =
-                std::ffi::CString::new(cwd_path.to_string_lossy().as_bytes()).unwrap_or_default();
-            (*fj).job = job_run(
-                expanded,
-                0,
-                null_mut(),
-                None,
-                null_mut(),
-                cwd_c.as_ptr().cast(),
-                Some(format_job_update),
-                Some(format_job_complete),
-                None,
-                fj.cast(),
-                job_flag::JOB_NOWAIT,
-                -1,
-                -1,
-            );
-            if (*fj).job.is_none() {
-                free((*fj).out.cast());
-                (*fj).out = format_nul!("<'{}' didn't start>", _s((*fj).cmd),);
-            }
-            (*fj).last = t;
-            (*fj).updated = 0;
-        } else if (*fj).job.is_some() && (t - (*fj).last) > 1 && (*fj).out.is_null() {
-            (*fj).out = format_nul!("<'{}' not ready>", _s((*fj).cmd));
-        }
-        free(expanded.cast());
-
-        if (*ft).flags.intersects(format_flags::FORMAT_STATUS) {
-            (*fj).status = 1;
-        }
-        if (*fj).out.is_null() {
-            return xstrdup_(c"").as_ptr();
-        }
-
-        format_expand1(next, (*fj).out)
-    }
-}
-
-pub unsafe fn format_job_tidy(jobs: &mut format_job_tree, force: i32) {
-    unsafe {
-        let now = libc::time(null_mut());
-        let keys_to_remove: Vec<(u32, String)> = jobs
-            .iter()
-            .filter(|(_, fj)| force != 0 || (fj.last <= now && now - fj.last >= 3600))
-            .map(|(k, _)| k.clone())
-            .collect();
-
-        for key in keys_to_remove {
-            if let Some(fj) = jobs.remove(&key) {
-                log_debug!("{}: {}", "format_job_tidy", _s(fj.cmd));
-
-                if let Some(job) = fj.job {
-                    job_free(job);
-                }
-
-                free_(fj.expanded);
-                free_(fj.cmd);
-                free_(fj.out);
-            }
-        }
-    }
-}
-
-pub unsafe fn format_tidy_jobs() {
-    unsafe {
-        format_job_tidy(&mut *(&raw mut FORMAT_JOBS), 0);
-        for c in clients_iter() {
-            if let Some(jobs) = (*c).jobs.as_mut() {
-                format_job_tidy(jobs, 0);
-            }
-        }
-    }
-}
-
-pub unsafe fn format_lost_client(c: *mut client) {
-    unsafe {
-        if let Some(jobs) = (*c).jobs.as_mut() {
-            format_job_tidy(jobs, 1);
-        }
-        (*c).jobs = None;
-    }
 }
 
 pub unsafe fn format_cb_host(_ft: &format_tree) -> format_table_type {
@@ -506,9 +124,7 @@ pub unsafe fn format_cb_pid(_ft: &format_tree) -> format_table_type {
 /// Callback for `session_attached_list`.
 pub unsafe fn format_cb_session_attached_list(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
 
         if s.is_null() {
             return format_table_type::None;
@@ -530,9 +146,7 @@ pub unsafe fn format_cb_session_attached_list(ft: &format_tree) -> format_table_
 
         let size = EVBUFFER_LENGTH(buffer);
         let result = if size != 0 {
-            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size))
-                .into_owned()
-                .into()
+            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into()
         } else {
             format_table_type::None
         };
@@ -544,9 +158,7 @@ pub unsafe fn format_cb_session_attached_list(ft: &format_tree) -> format_table_
 /// Callback for `session_alerts`.
 pub unsafe fn format_cb_session_alerts(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s: *mut session =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s: *mut session = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         const SIZEOF_ALERTS: usize = 1024;
         const SIZEOF_TMP: usize = 16;
         let mut alerts = MaybeUninit::<[u8; 1024]>::uninit();
@@ -586,9 +198,7 @@ pub unsafe fn format_cb_session_alerts(ft: &format_tree) -> format_table_type {
 /// Callback for `session_stack`.
 pub unsafe fn format_cb_session_stack(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         const SIZEOF_RESULT: usize = 1024;
         const SIZEOF_TMP: usize = 16;
 
@@ -621,9 +231,7 @@ pub unsafe fn format_cb_window_stack_index(ft: &format_tree) -> format_table_typ
             return format_table_type::None;
         };
         let s = session_from_id(wl.session).unwrap_or(null_mut());
-        if s.is_null() {
-            return "0".into();
-        }
+        if s.is_null() { return "0".into(); }
 
         // Its place on the stack counting from 1, 0 if it is not on it.
         let id = wl.id;
@@ -652,18 +260,14 @@ pub unsafe fn format_cb_window_linked_sessions_list(ft: &format_tree) -> format_
                 evbuffer_add(buffer, c!(",").cast(), 1);
             }
             let s = session_from_id(wl.session).unwrap_or(null_mut());
-            if !s.is_null() {
-                evbuffer_add_printf!(buffer, "{}", (*s).name);
-            }
+            if !s.is_null() { evbuffer_add_printf!(buffer, "{}", (*s).name); }
         }
 
         let size = EVBUFFER_LENGTH(buffer);
         let mut value = format_table_type::None;
         if size != 0 {
             value = format_table_type::String(
-                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size))
-                    .into_owned()
-                    .into(),
+                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into(),
             );
         }
         evbuffer_free(buffer);
@@ -679,9 +283,7 @@ pub unsafe fn format_cb_window_active_sessions(ft: &format_tree) -> format_table
         };
         let w = winlink_window(wl);
 
-        let n = (*w)
-            .winlinks()
-            .iter()
+        let n = (*w).winlinks().iter()
             .filter(|wl| {
                 let s = session_from_id(wl.session).unwrap_or(null_mut());
                 !s.is_null() && (*s).curw_id() == Some(wl.id)
@@ -719,9 +321,7 @@ pub unsafe fn format_cb_window_active_sessions_list(ft: &format_tree) -> format_
         let mut value = format_table_type::None;
         if size != 0 {
             value = format_table_type::String(
-                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size))
-                    .into_owned()
-                    .into(),
+                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into(),
             );
         }
         evbuffer_free(buffer);
@@ -786,9 +386,7 @@ pub unsafe fn format_cb_window_active_clients_list(ft: &format_tree) -> format_t
         let mut value = format_table_type::None;
         if size != 0 {
             value = format_table_type::String(
-                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size))
-                    .into_owned()
-                    .into(),
+                String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into(),
             );
         }
         evbuffer_free(buffer);
@@ -900,9 +498,7 @@ pub unsafe fn format_cb_current_path(ft: &format_tree) -> format_table_type {
             return format_table_type::None;
         }
 
-        osdep_get_cwd((*wp).fd).map_or(format_table_type::None, |cwd| {
-            cwd.to_string_lossy().into_owned().into()
-        })
+        osdep_get_cwd((*wp).fd).map_or(format_table_type::None, |cwd| cwd.to_string_lossy().into_owned().into())
     }
 }
 
@@ -999,9 +595,7 @@ pub unsafe fn format_cb_pane_tabs(ft: &format_tree) -> format_table_type {
 
         let size = EVBUFFER_LENGTH(buffer);
         let result = if size != 0 {
-            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size))
-                .into_owned()
-                .into()
+            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into()
         } else {
             format_table_type::None
         };
@@ -1045,9 +639,7 @@ pub unsafe fn format_cb_pane_bg(ft: &format_tree) -> format_table_type {
 /// Callback for `session_group_list`.
 pub unsafe fn format_cb_session_group_list(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if s.is_null() {
             return format_table_type::None;
         }
@@ -1070,9 +662,7 @@ pub unsafe fn format_cb_session_group_list(ft: &format_tree) -> format_table_typ
 
         let size = EVBUFFER_LENGTH(buffer);
         let result = if size != 0 {
-            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size))
-                .into_owned()
-                .into()
+            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into()
         } else {
             format_table_type::None
         };
@@ -1084,9 +674,7 @@ pub unsafe fn format_cb_session_group_list(ft: &format_tree) -> format_table_typ
 /// Callback for `session_group_attached_list`.
 pub unsafe fn format_cb_session_group_attached_list(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if s.is_null() {
             return format_table_type::None;
         }
@@ -1118,9 +706,7 @@ pub unsafe fn format_cb_session_group_attached_list(ft: &format_tree) -> format_
 
         let size = EVBUFFER_LENGTH(buffer);
         let result = if size != 0 {
-            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size))
-                .into_owned()
-                .into()
+            String::from_utf8_lossy(std::slice::from_raw_parts(EVBUFFER_DATA(buffer), size)).into_owned().into()
         } else {
             format_table_type::None
         };
@@ -1309,6 +895,8 @@ pub unsafe fn format_cb_mouse_status_range(ft: &format_tree) -> format_table_typ
             return format_table_type::None;
         }
 
+        
+        
         let (x, y) = if ft.m.statusat == 0 && ft.m.y < ft.m.statuslines {
             (ft.m.x, ft.m.y)
         } else if ft.m.statusat > 0 && ft.m.y >= ft.m.statusat as u32 {
@@ -1337,11 +925,7 @@ pub unsafe fn format_cb_mouse_status_range(ft: &format_tree) -> format_table_typ
 pub unsafe fn format_cb_alternate_on(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .saved_grid
-                .is_some()
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.saved_grid.is_some() {
                 return "1".into();
             }
             return "0".into();
@@ -1353,13 +937,7 @@ pub unsafe fn format_cb_alternate_on(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_alternate_saved_x(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                    .base
-                    .saved_cx
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.saved_cx).into();
         }
         format_table_type::None
     }
@@ -1368,34 +946,22 @@ pub unsafe fn format_cb_alternate_saved_x(ft: &format_tree) -> format_table_type
 pub unsafe fn format_cb_alternate_saved_y(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                    .base
-                    .saved_cy
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.saved_cy).into();
         }
         format_table_type::None
     }
 }
 
 pub fn format_cb_buffer_name(ft: &format_tree) -> format_table_type {
-    ft.pb
-        .as_ref()
-        .map_or(format_table_type::None, |pb| pb.name().to_string().into())
+    ft.pb.as_ref().map_or(format_table_type::None, |pb| pb.name().to_string().into())
 }
 
 pub fn format_cb_buffer_sample(ft: &format_tree) -> format_table_type {
-    ft.pb
-        .as_ref()
-        .map_or(format_table_type::None, |pb| pb.sample().into())
+    ft.pb.as_ref().map_or(format_table_type::None, |pb| pb.sample().into())
 }
 
 pub fn format_cb_buffer_size(ft: &format_tree) -> format_table_type {
-    ft.pb.as_ref().map_or(format_table_type::None, |pb| {
-        pb.data().len().to_string().into()
-    })
+    ft.pb.as_ref().map_or(format_table_type::None, |pb| pb.data().len().to_string().into())
 }
 
 pub unsafe fn format_cb_client_cell_height(ft: &format_tree) -> format_table_type {
@@ -1626,10 +1192,7 @@ pub unsafe fn format_cb_client_written(ft: &format_tree) -> format_table_type {
 /// Callback for `config_files`.
 pub unsafe fn format_cb_config_files(_ft: &format_tree) -> format_table_type {
     let files = CFG_FILES.lock().unwrap();
-    let names: Vec<String> = files
-        .iter()
-        .map(|file| file.to_string_lossy().into_owned())
-        .collect();
+    let names: Vec<String> = files.iter().map(|file| file.to_string_lossy().into_owned()).collect();
     names.join(",").into()
 }
 
@@ -1637,11 +1200,7 @@ pub unsafe fn format_cb_config_files(_ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_cursor_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_CURSOR)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_CURSOR) {
                 return "1".into();
             }
             return "0".into();
@@ -1654,13 +1213,7 @@ pub unsafe fn format_cb_cursor_flag(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_cursor_x(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                    .base
-                    .cx
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.cx).into();
         }
         format_table_type::None
     }
@@ -1670,13 +1223,7 @@ pub unsafe fn format_cb_cursor_x(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_cursor_y(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                    .base
-                    .cy
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.cy).into();
         }
         format_table_type::None
     }
@@ -1686,14 +1233,7 @@ pub unsafe fn format_cb_cursor_y(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_history_limit(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                    .base
-                    .grid
-                    .hlimit
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.grid.hlimit).into();
         }
         format_table_type::None
     }
@@ -1703,14 +1243,7 @@ pub unsafe fn format_cb_history_limit(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_history_size(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                    .base
-                    .grid
-                    .hsize
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.grid.hsize).into();
         }
         format_table_type::None
     }
@@ -1720,11 +1253,7 @@ pub unsafe fn format_cb_history_size(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_insert_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_INSERT)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_INSERT) {
                 return "1".into();
             }
             return "0".into();
@@ -1737,11 +1266,7 @@ pub unsafe fn format_cb_insert_flag(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_keypad_cursor_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_KCURSOR)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_KCURSOR) {
                 return "1".into();
             }
             return "0".into();
@@ -1754,11 +1279,7 @@ pub unsafe fn format_cb_keypad_cursor_flag(ft: &format_tree) -> format_table_typ
 pub unsafe fn format_cb_keypad_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_KKEYPAD)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_KKEYPAD) {
                 return "1".into();
             }
             return "0".into();
@@ -1771,11 +1292,7 @@ pub unsafe fn format_cb_keypad_flag(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_mouse_all_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_MOUSE_ALL)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_MOUSE_ALL) {
                 return "1".into();
             }
             return "0".into();
@@ -1788,11 +1305,7 @@ pub unsafe fn format_cb_mouse_all_flag(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_mouse_any_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(ALL_MOUSE_MODES)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(ALL_MOUSE_MODES) {
                 return "1".into();
             }
             return "0".into();
@@ -1835,11 +1348,7 @@ pub unsafe fn format_cb_mouse_pane(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_mouse_sgr_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_MOUSE_SGR)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_MOUSE_SGR) {
                 return "1".into();
             }
             return "0".into();
@@ -1869,11 +1378,7 @@ pub unsafe fn format_cb_mouse_standard_flag(ft: &format_tree) -> format_table_ty
 pub unsafe fn format_cb_mouse_utf8_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_MOUSE_UTF8)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_MOUSE_UTF8) {
                 return "1".into();
             }
             return "0".into();
@@ -1944,11 +1449,7 @@ pub unsafe fn format_cb_next_session_id(_ft: &format_tree) -> format_table_type 
 pub unsafe fn format_cb_origin_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_ORIGIN)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_ORIGIN) {
                 return "1".into();
             }
             return "0".into();
@@ -2002,13 +1503,7 @@ pub unsafe fn format_cb_pane_at_right(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_bottom(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).yoff
-                    + (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).sy
-                    - 1
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).yoff + (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).sy - 1).into();
         }
         format_table_type::None
     }
@@ -2082,11 +1577,7 @@ pub unsafe fn format_cb_pane_format(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_height(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).sy
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).sy).into();
         }
         format_table_type::None
     }
@@ -2096,11 +1587,7 @@ pub unsafe fn format_cb_pane_height(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_id(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "%{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).id
-            )
-            .into();
+            return format!("%{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).id).into();
         }
         format_table_type::None
     }
@@ -2153,14 +1640,8 @@ pub unsafe fn format_cb_pane_unseen_changes(ft: &format_tree) -> format_table_ty
 /// Callback for `pane_key_mode`.
 pub unsafe fn format_cb_pane_key_mode(ft: &format_tree) -> format_table_type {
     unsafe {
-        if ft.wp.is_some()
-            && !(*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .screen
-                .is_null()
-        {
-            match (*(*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).screen).mode
-                & EXTENDED_KEY_MODES
-            {
+        if ft.wp.is_some() && !(*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).screen.is_null() {
+            match (*(*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).screen).mode & EXTENDED_KEY_MODES {
                 mode_flag::MODE_KEYS_EXTENDED => return "Ext 1".into(),
                 mode_flag::MODE_KEYS_EXTENDED_2 => {
                     return "Ext 2".into();
@@ -2177,13 +1658,7 @@ pub unsafe fn format_cb_pane_last(ft: &format_tree) -> format_table_type {
     unsafe {
         let wp = ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
         if !wp.is_null() {
-            if wp
-                == (*window_pane_window(wp))
-                    .last_panes
-                    .first()
-                    .copied()
-                    .unwrap_or(null_mut())
-            {
+            if wp == (*window_pane_window(wp)).last_panes.first().copied().unwrap_or(null_mut()) {
                 return "1".into();
             }
             return "0".into();
@@ -2196,11 +1671,7 @@ pub unsafe fn format_cb_pane_last(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_left(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).xoff
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).xoff).into();
         }
         format_table_type::None
     }
@@ -2236,11 +1707,7 @@ pub unsafe fn format_cb_pane_marked_set(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_mode(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            let wme = (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .modes
-                .first()
-                .copied()
-                .unwrap_or(null_mut());
+            let wme = (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).modes.first().copied().unwrap_or(null_mut());
             if !wme.is_null() {
                 return (*(*wme).mode).name.into();
             }
@@ -2268,11 +1735,7 @@ pub unsafe fn format_cb_pane_path(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_pid(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).pid as i64
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).pid as i64).into();
         }
         format_table_type::None
     }
@@ -2295,13 +1758,7 @@ pub unsafe fn format_cb_pane_pipe(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_right(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).xoff
-                    + (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).sx
-                    - 1
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).xoff + (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).sx - 1).into();
         }
         format_table_type::None
     }
@@ -2322,11 +1779,7 @@ pub unsafe fn format_cb_pane_search_string(ft: &format_tree) -> format_table_typ
 pub unsafe fn format_cb_pane_synchronized(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if options_get_number___::<i64>(
-                &*(*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).options,
-                "synchronize-panes",
-            ) != 0
-            {
+            if options_get_number___::<i64>(&*(*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).options, "synchronize-panes") != 0 {
                 return "1".into();
             }
             return "0".into();
@@ -2339,17 +1792,7 @@ pub unsafe fn format_cb_pane_synchronized(ft: &format_tree) -> format_table_type
 pub unsafe fn format_cb_pane_title(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                _s(
-                    (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                        .base
-                        .title
-                        .as_ptr()
-                        .cast::<u8>()
-                )
-            )
-            .into();
+            return format!("{}", _s((*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.title.as_ptr().cast::<u8>())).into();
         }
         format_table_type::None
     }
@@ -2359,11 +1802,7 @@ pub unsafe fn format_cb_pane_title(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_top(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).yoff
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).yoff).into();
         }
         format_table_type::None
     }
@@ -2373,15 +1812,7 @@ pub unsafe fn format_cb_pane_top(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_tty(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                _s(
-                    (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                        .tty
-                        .as_ptr()
-                )
-            )
-            .into();
+            return format!("{}", _s((*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).tty.as_ptr())).into();
         }
         format_table_type::None
     }
@@ -2391,11 +1822,7 @@ pub unsafe fn format_cb_pane_tty(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_pane_width(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).sx
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).sx).into();
         }
         format_table_type::None
     }
@@ -2405,13 +1832,7 @@ pub unsafe fn format_cb_pane_width(ft: &format_tree) -> format_table_type {
 pub unsafe fn format_cb_scroll_region_lower(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                    .base
-                    .rlower
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.rlower).into();
         }
         format_table_type::None
     }
@@ -2421,13 +1842,7 @@ pub unsafe fn format_cb_scroll_region_lower(ft: &format_tree) -> format_table_ty
 pub unsafe fn format_cb_scroll_region_upper(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            return format!(
-                "{}",
-                (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                    .base
-                    .rupper
-            )
-            .into();
+            return format!("{}", (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.rupper).into();
         }
         format_table_type::None
     }
@@ -2444,9 +1859,7 @@ pub unsafe fn format_cb_server_sessions(_ft: &format_tree) -> format_table_type 
 /// Callback for `session_attached`.
 pub unsafe fn format_cb_session_attached(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             return format!("{}", (*s).attached).into();
         }
@@ -2465,9 +1878,7 @@ pub unsafe fn format_cb_session_format(ft: &format_tree) -> format_table_type {
 /// Callback for `session_group`.
 pub unsafe fn format_cb_session_group(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null()
             && let Some(sg) = session_group_contains(s)
         {
@@ -2480,9 +1891,7 @@ pub unsafe fn format_cb_session_group(ft: &format_tree) -> format_table_type {
 /// Callback for `session_group_attached`.
 pub unsafe fn format_cb_session_group_attached(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null()
             && let Some(sg) = session_group_contains(s)
         {
@@ -2495,9 +1904,7 @@ pub unsafe fn format_cb_session_group_attached(ft: &format_tree) -> format_table
 /// Callback for `session_group_many_attached`.
 pub unsafe fn format_cb_session_group_many_attached(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null()
             && let Some(sg) = session_group_contains(s)
         {
@@ -2513,9 +1920,7 @@ pub unsafe fn format_cb_session_group_many_attached(ft: &format_tree) -> format_
 /// Callback for `session_group_size`.
 pub unsafe fn format_cb_session_group_size(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null()
             && let Some(sg) = session_group_contains(s)
         {
@@ -2528,9 +1933,7 @@ pub unsafe fn format_cb_session_group_size(ft: &format_tree) -> format_table_typ
 /// Callback for `session_grouped`.
 pub unsafe fn format_cb_session_grouped(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             if session_group_contains(s).is_some() {
                 return "1".into();
@@ -2544,9 +1947,7 @@ pub unsafe fn format_cb_session_grouped(ft: &format_tree) -> format_table_type {
 /// Callback for `session_id`.
 pub unsafe fn format_cb_session_id(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             return format!("${}", (*s).id).into();
         }
@@ -2557,9 +1958,7 @@ pub unsafe fn format_cb_session_id(ft: &format_tree) -> format_table_type {
 /// Callback for `session_many_attached`.
 pub unsafe fn format_cb_session_many_attached(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             if (*s).attached > 1 {
                 return "1".into();
@@ -2573,17 +1972,9 @@ pub unsafe fn format_cb_session_many_attached(ft: &format_tree) -> format_table_
 /// Callback for `session_marked`.
 pub unsafe fn format_cb_session_marked(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
-            if server_check_marked()
-                && MARKED_PANE
-                    .s
-                    .and_then(|id| session_from_id(id))
-                    .unwrap_or(null_mut())
-                    == s
-            {
+            if server_check_marked() && MARKED_PANE.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()) == s {
                 return "1".into();
             }
             return "0".into();
@@ -2595,9 +1986,7 @@ pub unsafe fn format_cb_session_marked(ft: &format_tree) -> format_table_type {
 /// Callback for `session_name`.
 pub unsafe fn format_cb_session_name(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             return format!("{}", (*s).name).into();
         }
@@ -2608,16 +1997,9 @@ pub unsafe fn format_cb_session_name(ft: &format_tree) -> format_table_type {
 /// Callback for `session_path`.
 pub unsafe fn format_cb_session_path(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
-            return (*s)
-                .cwd
-                .as_deref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_default()
-                .into();
+            return (*s).cwd.as_deref().map(|p| p.display().to_string()).unwrap_or_default().into();
         }
         format_table_type::None
     }
@@ -2626,9 +2008,7 @@ pub unsafe fn format_cb_session_path(ft: &format_tree) -> format_table_type {
 /// Callback for `session_windows`.
 pub unsafe fn format_cb_session_windows(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             return format!("{}", winlink_count((*s).sid())).into();
         }
@@ -2649,9 +2029,7 @@ pub unsafe fn format_cb_version(_ft: &format_tree) -> format_table_type {
 /// Callback for `active_window_index`.
 pub unsafe fn format_cb_active_window_index(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             return format!("{}", (*s).curw().unwrap().idx).into();
         }
@@ -2662,9 +2040,7 @@ pub unsafe fn format_cb_active_window_index(ft: &format_tree) -> format_table_ty
 /// Callback for `last_window_index`.
 pub unsafe fn format_cb_last_window_index(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             let wl = (*s).windows().last().copied().unwrap();
             return format!("{}", wl.idx).into();
@@ -2690,7 +2066,10 @@ pub unsafe fn format_cb_window_active(ft: &format_tree) -> format_table_type {
 /// Callback for `window_activity_flag`.
 pub fn format_cb_window_activity_flag(ft: &format_tree) -> format_table_type {
     if let Some(wl) = ft.wl {
-        if wl.flags.intersects(winlink_flags::WINLINK_ACTIVITY) {
+        if wl
+            .flags
+            .intersects(winlink_flags::WINLINK_ACTIVITY)
+        {
             return "1".into();
         }
         return "0".into();
@@ -2978,11 +2357,7 @@ pub unsafe fn format_cb_window_zoomed_flag(ft: &format_tree) -> format_table_typ
 pub unsafe fn format_cb_wrap_flag(ft: &format_tree) -> format_table_type {
     unsafe {
         if ft.wp.is_some() {
-            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()))
-                .base
-                .mode
-                .intersects(mode_flag::MODE_WRAP)
-            {
+            if (*ft.wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())).base.mode.intersects(mode_flag::MODE_WRAP) {
                 return "1".into();
             }
             return "0".into();
@@ -3024,9 +2399,7 @@ pub unsafe fn format_cb_client_created(ft: &format_tree) -> format_table_type {
 /// Callback for `session_activity`.
 pub unsafe fn format_cb_session_activity(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             return format_table_type::Time((*s).activity_time);
         }
@@ -3037,9 +2410,7 @@ pub unsafe fn format_cb_session_activity(ft: &format_tree) -> format_table_type 
 /// Callback for `session_created`.
 pub unsafe fn format_cb_session_created(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             return format_table_type::Time((*s).creation_time);
         }
@@ -3050,9 +2421,7 @@ pub unsafe fn format_cb_session_created(ft: &format_tree) -> format_table_type {
 /// Callback for `session_last_attached`.
 pub unsafe fn format_cb_session_last_attached(ft: &format_tree) -> format_table_type {
     unsafe {
-        let s =
-            ft.s.and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut());
+        let s = ft.s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
         if !s.is_null() {
             return format_table_type::Time((*s).last_attached_time);
         }
@@ -3062,10 +2431,7 @@ pub unsafe fn format_cb_session_last_attached(ft: &format_tree) -> format_table_
 
 /// Callback for `start_time`.
 pub unsafe fn format_cb_start_time(_ft: &format_tree) -> format_table_type {
-    format_table_type::Time(START_TIME.get().copied().unwrap_or(timeval {
-        tv_sec: 0,
-        tv_usec: 0,
-    }))
+    format_table_type::Time(START_TIME.get().copied().unwrap_or(timeval { tv_sec: 0, tv_usec: 0 }))
 }
 
 /// Callback for `window_activity`.
@@ -3141,8 +2507,8 @@ impl From<&'static str> for format_table_type {
 
 /// Format table entry.
 pub struct format_table_entry {
-    key: &'static str,
-    cb: format_cb,
+    pub key: &'static str,
+    pub cb: format_cb,
 }
 
 impl format_table_entry {
@@ -3154,7 +2520,7 @@ impl format_table_entry {
 // Format table. Default format variables (that are almost always in the tree
 // and where the value is expanded by a callback in this file) are listed
 // here. Only variables which are added by the caller go into the tree.
-static FORMAT_TABLE: &[format_table_entry] = &[
+pub(crate) static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("active_window_index", format_cb_active_window_index),
     format_table_entry::new("alternate_on", format_cb_alternate_on),
     format_table_entry::new("alternate_saved_x", format_cb_alternate_saved_x),
@@ -3343,27 +2709,11 @@ static FORMAT_TABLE: &[format_table_entry] = &[
     format_table_entry::new("wrap_flag", format_cb_wrap_flag),
 ];
 
-pub unsafe fn format_table_compare(
-    key: *const u8,
-    entry: *const format_table_entry,
-) -> std::cmp::Ordering {
-    unsafe { strcmp_(key, (*entry).key) }
-}
-
-pub unsafe fn format_table_get(key: *const u8) -> Option<&'static format_table_entry> {
-    unsafe {
-        match FORMAT_TABLE.binary_search_by(|e| format_table_compare(key, e).reverse()) {
-            Ok(idx) => Some(&FORMAT_TABLE[idx]),
-            Err(_) => None,
-        }
-    }
-}
-
 pub unsafe fn format_merge(ft: *mut format_tree, from: *mut format_tree) {
     unsafe {
-        for fe in (*from).tree.values() {
-            if !fe.value.is_null() {
-                format_add!(ft, cstr_to_str(fe.key), "{}", _s(fe.value));
+        for (key, fe) in &(*from).tree {
+            if let format_entry::Value(v) = fe {
+                (*ft).tree.insert(key.clone(), format_entry::Value(v.clone()));
             }
         }
     }
@@ -3393,7 +2743,7 @@ pub unsafe fn format_create(
         let ft = xcalloc1::<format_tree>() as *mut format_tree;
         // xcalloc returns zeroed memory. HashMap is not valid when zeroed,
         // so we must use ptr::write to avoid dropping the invalid value.
-        std::ptr::write(&raw mut (*ft).tree, HashMap::new());
+        std::ptr::write(&raw mut (*ft).tree, BTreeMap::new());
         std::ptr::write(&raw mut (*ft).pb, None);
 
         if !c.is_null() {
@@ -3414,10 +2764,6 @@ pub unsafe fn format_create(
 
 pub unsafe fn format_free(ft: *mut format_tree) {
     unsafe {
-        for (_key, fe) in (*ft).tree.drain() {
-            free_(fe.value);
-            free_(fe.key);
-        }
         // Drop the HashMap and the buffer before freeing the raw allocation.
         std::ptr::drop_in_place(&raw mut (*ft).tree);
         std::ptr::drop_in_place(&raw mut (*ft).pb);
@@ -3457,23 +2803,18 @@ pub unsafe fn format_each<T>(ft: *mut format_tree, cb: unsafe fn(&str, &str, *mu
             }
         }
 
-        for fe in (*ft).tree.values_mut() {
-            if fe.time != 0 {
-                let s = format!("{}", fe.time);
-                cb(cstr_to_str(fe.key), &s, arg);
-            } else {
-                if let Some(fe_cb) = fe.cb
-                    && fe.value.is_null()
-                {
-                    fe.value = match fe_cb(&*ft) {
-                        format_table_type::None => CString::default().into_raw().cast(),
-                        format_table_type::String(cow) => {
-                            CString::new(cow.into_owned()).unwrap().into_raw().cast()
-                        }
-                        format_table_type::Time(_timeval) => unreachable!("unreachable?"),
-                    }
+        for (key, fe) in &(*ft).tree {
+            let key = String::from_utf8_lossy(key);
+            match fe {
+                format_entry::Time(t) => cb(&key, &t.to_string(), arg),
+                format_entry::Value(v) => cb(&key, &String::from_utf8_lossy(v), arg),
+                format_entry::Callback(fe_cb, cached) => {
+                    let v = cached.get_or_init(|| match fe_cb(&*ft) {
+                        format_table_type::String(cow) => cow.into_owned().into_bytes(),
+                        _ => Vec::new(),
+                    });
+                    cb(&key, &String::from_utf8_lossy(v), arg);
                 }
-                cb(cstr_to_str(fe.key), cstr_to_str(fe.value), arg);
             }
         }
     }
@@ -3489,158 +2830,24 @@ pub(crate) use format_add;
 /// Add a key-value pair.
 pub unsafe fn format_add_(ft: *mut format_tree, key: &str, args: std::fmt::Arguments) {
     unsafe {
-        let key_str = key.to_string();
-        let mut value = args.to_string();
-        value.push('\0');
-        let value_ptr = value.leak().as_mut_ptr().cast();
-
-        let entry = (*ft).tree.entry(key_str);
-        match entry {
-            std::collections::hash_map::Entry::Occupied(mut occ) => {
-                let fe = occ.get_mut();
-                free_(fe.value);
-                fe.value = value_ptr;
-                fe.time = 0;
-                fe.cb = None;
-            }
-            std::collections::hash_map::Entry::Vacant(vac) => {
-                vac.insert(Box::new(format_entry {
-                    key: xstrdup__(key),
-                    value: value_ptr,
-                    time: 0,
-                    cb: None,
-                }));
-            }
-        }
+        (*ft).tree.insert(key.as_bytes().to_vec(), format_entry::Value(args.to_string().into_bytes()));
     }
 }
 
 /// Add a key and time.
 pub unsafe fn format_add_tv(ft: *mut format_tree, key: *const u8, tv: *const timeval) {
     unsafe {
-        let key_str = cstr_to_str(key).to_string();
-        let entry = (*ft).tree.entry(key_str);
-        match entry {
-            std::collections::hash_map::Entry::Occupied(mut occ) => {
-                let fe = occ.get_mut();
-                free_(fe.value);
-                fe.value = null_mut();
-                fe.time = (*tv).tv_sec;
-                fe.cb = None;
-            }
-            std::collections::hash_map::Entry::Vacant(vac) => {
-                vac.insert(Box::new(format_entry {
-                    key: xstrdup(key).as_ptr(),
-                    value: null_mut(),
-                    time: (*tv).tv_sec,
-                    cb: None,
-                }));
-            }
-        }
+        let key = CStr::from_ptr(key.cast()).to_bytes().to_vec();
+        (*ft).tree.insert(key, format_entry::Time((*tv).tv_sec));
     }
 }
 
 /// Add a key and function.
 pub unsafe fn format_add_cb(ft: *mut format_tree, key: *const u8, cb: format_cb) {
     unsafe {
-        let key_str = cstr_to_str(key).to_string();
-        let entry = (*ft).tree.entry(key_str);
-        match entry {
-            std::collections::hash_map::Entry::Occupied(mut occ) => {
-                let fe = occ.get_mut();
-                free_(fe.value);
-                fe.value = null_mut();
-                fe.time = 0;
-                fe.cb = Some(cb);
-            }
-            std::collections::hash_map::Entry::Vacant(vac) => {
-                vac.insert(Box::new(format_entry {
-                    key: xstrdup(key).as_ptr(),
-                    value: null_mut(),
-                    time: 0,
-                    cb: Some(cb),
-                }));
-            }
-        }
+        let key = CStr::from_ptr(key.cast()).to_bytes().to_vec();
+        (*ft).tree.insert(key, format_entry::Callback(cb, std::cell::OnceCell::new()));
     }
-}
-
-/// Quote shell special characters in string.
-pub unsafe fn format_quote_shell(s: *const u8) -> *mut u8 {
-    unsafe {
-        let out: *mut u8 = xmalloc(strlen(s) * 2 + 1).as_ptr().cast();
-        let mut at = out;
-        let mut cp = s;
-        while *cp != b'\0' {
-            if !strchr(c!("|&;<>()$`\\\"'*?[# =%"), *cp as i32).is_null() {
-                *at = b'\\';
-                at = at.add(1);
-            }
-            *at = *cp;
-            at = at.add(1);
-            cp = cp.add(1);
-        }
-        *at = b'\0';
-        out
-    }
-}
-
-/// Quote #s in string.
-pub unsafe fn format_quote_style(s: *const u8) -> *mut u8 {
-    unsafe {
-        let out: *mut u8 = xmalloc(strlen(s) * 2 + 1).as_ptr().cast();
-        let mut at = out;
-
-        let mut cp = s;
-        while *cp != b'\0' {
-            if *cp == b'#' {
-                *at = b'#';
-                at = at.add(1);
-            }
-            *at = *cp;
-            at = at.add(1);
-            cp = cp.add(1);
-        }
-        *at = b'\0';
-        out
-    }
-}
-
-/// A broken down time as ctime writes it, without the newline:
-/// `Tue Nov 24 11:20:02 2026`. The day and month names are always
-/// English, as in the C library, whatever the locale.
-fn format_ctime(tm: &tm) -> String {
-    ctime_string(
-        tm.tm_wday,
-        tm.tm_mon,
-        tm.tm_mday,
-        (tm.tm_hour, tm.tm_min, tm.tm_sec),
-        i64::from(tm.tm_year) + 1900,
-    )
-}
-
-/// ctime's layout from its parts: day of the week from 0 (Sunday), month
-/// from 0, day of the month, time of day and year.
-fn ctime_string(
-    wday: i32,
-    mon: i32,
-    mday: i32,
-    (hour, min, sec): (i32, i32, i32),
-    year: i64,
-) -> String {
-    const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    let day = usize::try_from(wday)
-        .ok()
-        .and_then(|d| DAYS.get(d))
-        .unwrap_or(&"???");
-    let month = usize::try_from(mon)
-        .ok()
-        .and_then(|m| MONTHS.get(m))
-        .unwrap_or(&"???");
-    format!("{day} {month}{mday:3} {hour:02}:{min:02}:{sec:02} {year}")
 }
 
 /// Make a prettier time.
@@ -3694,271 +2901,6 @@ pub unsafe fn format_pretty_time(t: time_t, seconds: i32) -> *mut u8 {
     }
 }
 
-/// Find a format entry.
-unsafe fn format_find(
-    ft: *mut format_tree,
-    key: *const u8,
-    modifiers: format_modifiers,
-    time_format: *const u8,
-) -> *mut u8 {
-    unsafe {
-        let mut s = MaybeUninit::<[u8; 512]>::uninit();
-        let s = s.as_mut_ptr() as *mut u8;
-
-        const SIZEOF_S: usize = 512;
-        let mut t: time_t = 0;
-        let mut idx: Option<ArrayKey> = None;
-        let mut found = null_mut();
-
-        'found: {
-            let mut o = options_parse_get(GLOBAL_OPTIONS, cstr_to_str(key), &mut idx, false);
-            if o.is_null() && (*ft).wp.is_some() {
-                o = options_parse_get(
-                    (*(*ft)
-                        .wp
-                        .and_then(|id| pane_from_id(id))
-                        .unwrap_or(null_mut()))
-                    .options,
-                    cstr_to_str(key),
-                    &mut idx,
-                    false,
-                );
-            }
-            let ftw = (*ft)
-                .w
-                .and_then(|id| window_from_id(id))
-                .unwrap_or(null_mut());
-            if o.is_null() && !ftw.is_null() {
-                o = options_parse_get((*ftw).options, cstr_to_str(key), &mut idx, false);
-            }
-            if o.is_null() {
-                o = options_parse_get(GLOBAL_W_OPTIONS, cstr_to_str(key), &mut idx, false);
-            }
-            {
-                let fts = (*ft)
-                    .s
-                    .and_then(|id| session_from_id(id))
-                    .unwrap_or(null_mut());
-                if o.is_null() && !fts.is_null() {
-                    o = options_parse_get((*fts).options, cstr_to_str(key), &mut idx, false);
-                }
-            }
-            if o.is_null() {
-                o = options_parse_get(GLOBAL_S_OPTIONS, cstr_to_str(key), &mut idx, false);
-            }
-            if !o.is_null() {
-                let value = options_to_string(o, idx.as_ref(), true);
-                found = CString::new(value).unwrap_or_default().into_raw().cast();
-                break 'found;
-            }
-
-            if let Some(fte) = format_table_get(key) {
-                match (fte.cb)(&*ft) {
-                    format_table_type::Time(tv) => t = tv.tv_sec,
-                    format_table_type::String(string) => {
-                        found = CString::new(string.into_owned()).unwrap().into_raw().cast();
-                    }
-                    format_table_type::None => found = null_mut(),
-                }
-                break 'found;
-            }
-
-            if let Some(fe) = (*ft).tree.get_mut(cstr_to_str(key)) {
-                if fe.time != 0 {
-                    t = fe.time;
-                    break 'found;
-                }
-                if let Some(cb) = fe.cb
-                    && fe.value.is_null()
-                {
-                    fe.value = match cb(&*ft) {
-                        format_table_type::None => CString::default().into_raw().cast(),
-                        format_table_type::String(cow) => {
-                            CString::new(cow.into_owned()).unwrap().into_raw().cast()
-                        }
-                        format_table_type::Time(_timeval) => unreachable!("unreachable?"),
-                    };
-                }
-                found = xstrdup(fe.value).as_ptr();
-                break 'found;
-            }
-
-            if !modifiers.intersects(format_modifiers::FORMAT_TIMESTRING) {
-                // A session entry, even a removed one, hides the global one.
-                let name = std::ffi::CStr::from_ptr(key.cast()).to_bytes();
-                let fts = (*ft)
-                    .s
-                    .and_then(|id| session_from_id(id))
-                    .unwrap_or(null_mut());
-                let value = match (!fts.is_null())
-                    .then(|| (*fts).environ.find(name))
-                    .flatten()
-                {
-                    Some(entry) => entry.value().map(<[u8]>::to_vec),
-                    None => global_environ_value(name),
-                };
-                if let Some(value) = value {
-                    let p = xmalloc(value.len() + 1).as_ptr().cast::<u8>();
-                    std::ptr::copy_nonoverlapping(value.as_ptr(), p, value.len());
-                    *p.add(value.len()) = b'\0';
-                    found = p;
-                    break 'found;
-                }
-            }
-
-            return null_mut();
-        }
-        // found
-        if modifiers.intersects(format_modifiers::FORMAT_TIMESTRING) {
-            if t == 0 && !found.is_null() {
-                t = strtonum(found, 0, i64::MAX).unwrap_or_default();
-                free_(found);
-            }
-            if t == 0 {
-                return null_mut();
-            }
-            if modifiers.intersects(format_modifiers::FORMAT_PRETTY) {
-                found = format_pretty_time(t, 0);
-            } else {
-                let mut tm = MaybeUninit::<tm>::zeroed();
-                let tm = tm.as_mut_ptr();
-                localtime_r(&raw const t, tm);
-                if !time_format.is_null() {
-                    strftime(s, SIZEOF_S, time_format, tm);
-                    found = xstrdup(s).as_ptr();
-                } else {
-                    found = format_nul!("{}", format_ctime(&*tm));
-                }
-            }
-            return found;
-        }
-
-        if t != 0 {
-            found = format_nul!("{t}");
-        } else if found.is_null() {
-            return null_mut();
-        }
-        let mut saved: *mut u8;
-        if modifiers.intersects(format_modifiers::FORMAT_BASENAME) {
-            saved = found;
-            found = xmemdup_nul(crate::libc::basename_bytes(
-                std::ffi::CStr::from_ptr(saved.cast()).to_bytes(),
-            ));
-            free_(saved);
-        }
-        if modifiers.intersects(format_modifiers::FORMAT_DIRNAME) {
-            saved = found;
-            found = xstrdup(libc::dirname(saved.cast()).cast()).as_ptr();
-            free_(saved);
-        }
-        if modifiers.intersects(format_modifiers::FORMAT_QUOTE_SHELL) {
-            saved = found;
-            found = format_quote_shell(saved);
-            free_(saved);
-        }
-        if modifiers.intersects(format_modifiers::FORMAT_QUOTE_SHELL_SQ) {
-            saved = found;
-            found = xmemdup_nul(&format_quote_shell_single(
-                CStr::from_ptr(saved.cast()).to_bytes(),
-            ));
-            free_(saved);
-        }
-        if modifiers.intersects(format_modifiers::FORMAT_QUOTE_STYLE) {
-            saved = found;
-            found = format_quote_style(saved);
-            free_(saved);
-        }
-        if modifiers.intersects(format_modifiers::FORMAT_QUOTE_ARGUMENTS) {
-            saved = found;
-            found = args_escape(saved);
-            free_(saved);
-        }
-        found
-    }
-}
-
-/// Unescape escaped characters.
-pub unsafe fn format_unescape(s: *const u8) -> *mut u8 {
-    // SAFETY: the caller passes a valid NUL-terminated string.
-    xmemdup_nul(&format_unescape_bytes(
-        unsafe { CStr::from_ptr(s.cast()) }.to_bytes(),
-    ))
-}
-
-/// Quotes a string with POSIX shell single quotes, for the q/s modifier.
-fn format_quote_shell_single(s: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(s.len() + 2);
-    out.push(b'\'');
-    for &ch in s {
-        if ch == b'\'' {
-            out.extend_from_slice(b"'\\''");
-        } else {
-            out.push(ch);
-        }
-    }
-    out.push(b'\'');
-    out
-}
-
-/// Removes the # escapes in front of `,#{}:` outside any #{}, for the l
-/// modifier. Text inside #{} is copied as it is.
-fn format_unescape_bytes(s: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(s.len());
-    let mut brackets = 0i32;
-    let mut i = 0;
-    while let Some(&ch) = s.get(i) {
-        let next = s.get(i + 1).copied();
-        if ch == b'#' && next == Some(b'{') {
-            brackets += 1;
-        }
-        if brackets == 0
-            && ch == b'#'
-            && let Some(escaped) = next.filter(|c| b",#{}:".contains(c))
-        {
-            out.push(escaped);
-            i += 2;
-            continue;
-        }
-        if ch == b'}' {
-            brackets -= 1;
-        }
-        out.push(ch);
-        i += 1;
-    }
-    out
-}
-
-/// Remove escaped characters.
-pub unsafe fn format_strip(mut s: *const u8) -> *mut u8 {
-    unsafe {
-        let out = xmalloc(strlen(s) + 1).as_ptr().cast();
-        let mut cp = out;
-        let mut brackets = 0;
-
-        while *s != b'\0' {
-            if *s == b'#' && *s.add(1) == b'{' {
-                brackets += 1;
-            }
-            if *s == b'#' && !strchr(c!(",#{}:"), *s.add(1) as i32).is_null() {
-                if brackets != 0 {
-                    *cp = *s;
-                    cp = cp.add(1);
-                }
-                s = s.add(1);
-                continue;
-            }
-            if *s == b'}' {
-                brackets -= 1;
-            }
-            *cp = *s;
-            cp = cp.add(1);
-            s = s.add(1);
-        }
-        *cp = b'\0';
-        out
-    }
-}
-
 /// Skip until end.
 pub unsafe fn format_skip(mut s: *const u8, end: *const u8) -> *const u8 {
     unsafe {
@@ -3988,1684 +2930,19 @@ pub unsafe fn format_skip(mut s: *const u8, end: *const u8) -> *const u8 {
     }
 }
 
-/// Return left and right alternatives separated by commas.
-pub unsafe fn format_choose(
-    es: *mut format_expand_state,
-    s: *const u8,
-    left: *mut *mut u8,
-    right: *mut *mut u8,
-    expand: c_int,
-) -> c_int {
-    unsafe {
-        let cp: *const u8 = format_skip(s, c!(","));
-        if cp.is_null() {
-            return -1;
-        }
-        let left0 = xstrndup(s, cp.offset_from(s) as usize).as_ptr();
-        let right0 = xstrdup(cp.add(1)).as_ptr();
-
-        if expand != 0 {
-            *left = format_expand1(es, left0);
-            free_(left0);
-            *right = format_expand1(es, right0);
-            free_(right0);
-        } else {
-            *left = left0;
-            *right = right0;
-        }
-        0
-    }
-}
-
 /// Is this true?
 pub unsafe fn format_true(s: *const u8) -> bool {
     unsafe { !s.is_null() && *s != b'\0' && (*s != b'0' || *s.add(1) != b'\0') }
 }
 
-/// Check if modifier end.
-pub fn format_is_end(c: u8) -> bool {
-    c == b'\0' || c == b';' || c == b':'
-}
-
-/// Add to modifier list.
-pub unsafe fn format_add_modifier(
-    list: *mut *mut format_modifier,
-    count: *mut u32,
-    c: *const u8,
-    n: usize,
-    argv: *mut *mut u8,
-    argc: i32,
-) {
-    unsafe {
-        *list = xreallocarray_(*list, (*count) as usize + 1).as_ptr();
-        let fm = (*list).add(*count as usize);
-        (*count) += 1;
-
-        memcpy((*fm).modifier.as_mut_ptr().cast(), c.cast(), n);
-        (*fm).modifier[n] = b'\0';
-        (*fm).size = n as u32;
-
-        (*fm).argv = argv;
-        (*fm).argc = argc;
-    }
-}
-
-/// Free modifier list.
-pub unsafe fn format_free_modifiers(list: *mut format_modifier, count: u32) {
-    unsafe {
-        for i in 0..count as usize {
-            cmd_free_argv((*list.add(i)).argc, (*list.add(i)).argv);
-        }
-        free_(list);
-    }
-}
-
-/// Build modifier list.
-pub unsafe fn format_build_modifiers(
-    es: *mut format_expand_state,
-    s: *mut *const u8,
-    count: *mut u32,
-) -> *mut format_modifier {
-    unsafe {
-        let mut cp = *s;
-        let mut end: *const u8;
-        let mut list: *mut format_modifier = null_mut();
-
-        let mut last: [u8; 4] = *b"X;:\0";
-        let last: *mut u8 = last.as_mut_ptr();
-
-        // char c, last[] = "X;:", **argv, *value;
-        // int argc;
-
-        // Modifiers are a ; separated list of the forms:
-        //      l,m,C,a,b,c,d,n,t,w,q,E,T,S,W,P,<,>
-        // 	=a
-        // 	=/a
-        //      =/a/
-        // 	s/a/b/
-        // 	s/a/b
-        // 	||,&&,!=,==,<=,>=
-
-        *count = 0;
-
-        while *cp != b'\0' && *cp != b':' {
-            // Skip any separator character.
-            if *cp == b';' {
-                cp = cp.add(1);
-            }
-            if *cp == b'\0' || *cp == b':' {
-                break;
-            }
-
-            // Check single character modifiers with no arguments.
-            if !strchr(c!("labcdnwETSWPL<>"), *cp as i32).is_null() && format_is_end(*cp.add(1)) {
-                format_add_modifier(&raw mut list, count, cp, 1, null_mut(), 0);
-                cp = cp.add(1);
-                continue;
-            }
-
-            // Then try double character with no arguments.
-            if (memcmp(c!("||").cast(), cp.cast(), 2) == 0
-                || memcmp(c!("&&").cast(), cp.cast(), 2) == 0
-                || memcmp(c!("!=").cast(), cp.cast(), 2) == 0
-                || memcmp(c!("==").cast(), cp.cast(), 2) == 0
-                || memcmp(c!("<=").cast(), cp.cast(), 2) == 0
-                || memcmp(c!(">=").cast(), cp.cast(), 2) == 0)
-                && format_is_end(*cp.add(2))
-            {
-                format_add_modifier(&raw mut list, count, cp, 2, null_mut(), 0);
-                cp = cp.add(2);
-                continue;
-            }
-
-            // Now try single character with arguments.
-            if strchr(c!("mCLNPSst=peqW"), *cp as i32).is_null() {
-                break;
-            }
-            let mut c = *cp;
-
-            // No arguments provided.
-            if format_is_end(*cp.add(1)) {
-                format_add_modifier(&raw mut list, count, cp, 1, null_mut(), 0);
-                cp = cp.add(1);
-                continue;
-            }
-            let mut argv: *mut *mut u8 = null_mut();
-            let mut argc = 0;
-
-            // Single argument with no wrapper character.
-            if ispunct(*cp.add(1) as i32) == 0 || *cp.add(1) == b'-' {
-                end = format_skip(cp.add(1), c!(":;"));
-                if end.is_null() {
-                    break;
-                }
-
-                argv = xcalloc1();
-                let value = xstrndup(cp.add(1), end.offset_from(cp.add(1)) as usize).as_ptr();
-                *argv = format_expand1(es, value);
-                free_(value);
-                argc = 1;
-
-                format_add_modifier(&raw mut list, count, &raw mut c, 1, argv, argc);
-                cp = end;
-                continue;
-            }
-
-            // Multiple arguments with a wrapper character.
-            *last = *cp.add(1);
-            cp = cp.add(1);
-            loop {
-                if *cp == *last && format_is_end(*cp.add(1)) {
-                    cp = cp.add(1);
-                    break;
-                }
-                end = format_skip(cp.add(1), last);
-                if end.is_null() {
-                    break;
-                }
-                cp = cp.add(1);
-
-                argv = xreallocarray_(argv, argc as usize + 1).as_ptr();
-                let value = xstrndup(cp, end.offset_from(cp) as usize).as_ptr();
-                *argv.add(argc as usize) = format_expand1(es, value);
-                argc += 1;
-                free_(value);
-
-                cp = end;
-                if format_is_end(*cp) {
-                    break;
-                }
-            }
-            format_add_modifier(&raw mut list, count, &raw mut c, 1, argv, argc);
-        }
-        if *cp != b':' {
-            format_free_modifiers(list, *count);
-            *count = 0;
-            return null_mut();
-        }
-        *s = cp.add(1);
-        list
-    }
-}
-
-pub unsafe fn format_match(
-    fm: *mut format_modifier,
-    pattern: *const u8,
-    text: *const u8,
-) -> *mut u8 {
-    unsafe {
-        let mut s = c!("");
-        let mut r = MaybeUninit::<regex_t>::uninit();
-        let r = r.as_mut_ptr();
-        let mut flags: i32 = 0;
-
-        if (*fm).argc >= 1 {
-            s = *(*fm).argv;
-        }
-        // z is a fuzzy match giving "1" or "0", p gives the matched
-        // columns as a comma separated list.
-        let positions = !strchr(s, b'p' as i32).is_null();
-        if positions || !strchr(s, b'z' as i32).is_null() {
-            let pattern = CStr::from_ptr(pattern.cast()).to_bytes();
-            let text = CStr::from_ptr(text.cast()).to_bytes();
-            let width = format_width(&String::from_utf8_lossy(text)).max(1);
-
-            // Each style directive is parsed on top of the last, as C does.
-            let mut sy: style = zeroed();
-            style_set(&raw mut sy, &raw const GRID_DEFAULT_CELL);
-            let parse_style = |inner: &[u8]| {
-                let inner = CString::new(inner).ok()?;
-                (style_parse(
-                    &raw mut sy,
-                    &raw const GRID_DEFAULT_CELL,
-                    inner.as_ptr().cast(),
-                ) == 0)
-                    .then_some(sy.align)
-            };
-            let result = match crate::fuzzy::fuzzy_match(pattern, text, width, parse_style) {
-                None if positions => String::new(),
-                None => "0".to_string(),
-                Some(_) if !positions => "1".to_string(),
-                Some(m) => (0..width)
-                    .filter(|&i| m.columns.bit_test(i))
-                    .map(|i| i.to_string())
-                    .collect::<Vec<_>>()
-                    .join(","),
-            };
-            let result = CString::new(result).unwrap_or_default();
-            return xstrdup(result.as_ptr().cast()).as_ptr();
-        }
-        if strchr(s, b'r' as i32).is_null() {
-            if !strchr(s, b'i' as i32).is_null() {
-                flags |= FNM_CASEFOLD;
-            }
-            if libc::fnmatch(pattern, text, flags) != 0 {
-                return xstrdup(c!("0")).as_ptr();
-            }
-        } else {
-            flags = REG_EXTENDED | REG_NOSUB;
-            if !strchr(s, b'i' as i32).is_null() {
-                flags |= REG_ICASE;
-            }
-            if regcomp(r, pattern, flags) != 0 {
-                return xstrdup(c!("0")).as_ptr();
-            }
-            if regexec(r, text, 0, null_mut(), 0) != 0 {
-                regfree(r);
-                return xstrdup(c!("0")).as_ptr();
-            }
-            regfree(r);
-        }
-        xstrdup(c!("1")).as_ptr()
-    }
-}
-
-pub unsafe fn format_sub(
-    fm: *mut format_modifier,
-    text: *const u8,
-    pattern: *const u8,
-    with: *const u8,
-) -> *mut u8 {
-    unsafe {
-        let mut flags: i32 = REG_EXTENDED;
-
-        if (*fm).argc >= 3 && !strchr(*(*fm).argv.add(2), b'i' as i32).is_null() {
-            flags |= REG_ICASE;
-        }
-        let pat = CStr::from_ptr(pattern.cast());
-        let w = CStr::from_ptr(with.cast());
-        let t = CStr::from_ptr(text.cast());
-        match tmux_regsub::regsub(pat, w, t, flags) {
-            Some(v) => {
-                let c = CString::new(v).unwrap();
-                xmalloc::xstrdup_(&c).as_ptr()
-            }
-            None => xstrdup(text).as_ptr(),
-        }
-    }
-}
-
-pub unsafe fn format_search(
-    fm: *mut format_modifier,
-    wp: *mut window_pane,
-    s: *const u8,
-) -> *mut u8 {
-    unsafe {
-        let mut ignore = 0;
-        let mut regex = 0;
-
-        if (*fm).argc >= 1 {
-            if !strchr(*(*fm).argv, b'i' as i32).is_null() {
-                ignore = 1;
-            }
-            if !strchr(*(*fm).argv, b'r' as i32).is_null() {
-                regex = 1;
-            }
-        }
-        format_nul!("{}", window_pane_search(wp, s, regex, ignore))
-    }
-}
-
-pub unsafe fn format_session_name(es: *mut format_expand_state, fmt: *const u8) -> *mut u8 {
-    unsafe {
-        let name = format_expand1(es, fmt);
-
-        for s in sessions_iter() {
-            if streq_(name, &(*s).name) {
-                free_(name);
-                return xstrdup(c!("1")).as_ptr();
-            }
-        }
-
-        free_(name);
-        xstrdup(c!("0")).as_ptr()
-    }
-}
-
-/// The sort criteria for a loop modifier (S, W, P or L) and its argument.
-/// i, n, t and z pick the order, r reverses it. Sessions default to index,
-/// panes to creation, windows and clients to the order they are in.
-fn format_loop_sort(modifier: u8, arg: Option<&[u8]>) -> SortCriteria {
-    let Some(arg) = arg else {
-        let order = match modifier {
-            b'S' => SortOrder::Index,
-            b'P' => SortOrder::Creation,
-            _ => SortOrder::Order,
-        };
-        return SortCriteria::new(Some(order), false);
-    };
-    let has = |c: u8| arg.contains(&c);
-    let order = match modifier {
-        b'S' if has(b'i') => SortOrder::Index,
-        b'S' if has(b'n') => SortOrder::Name,
-        b'S' if has(b't') => SortOrder::Activity,
-        b'S' => SortOrder::Index,
-        b'P' if has(b'i') => SortOrder::Index,
-        b'P' if has(b'z') => SortOrder::Z,
-        b'P' => SortOrder::Creation,
-        _ if has(b'i') => SortOrder::Order,
-        _ if has(b'n') => SortOrder::Name,
-        _ if has(b't') => SortOrder::Activity,
-        _ => SortOrder::Order,
-    };
-    SortCriteria::new(Some(order), has(b'r'))
-}
-
-/// Loop over sessions.
-pub unsafe fn format_loop_sessions(
-    es: *mut format_expand_state,
-    fmt: *const u8,
-    criteria: &SortCriteria,
-) -> *mut u8 {
-    unsafe {
-        let ft = (*es).ft;
-        let c = (*ft).client;
-        let item = (*ft).item;
-        let mut all: *mut u8 = null_mut();
-        let mut active: *mut u8 = null_mut();
-        let mut value: *mut u8 = xcalloc(1, 1).as_ptr().cast();
-        let mut valuelen = 1;
-
-        if format_choose(es, fmt, &mut all, &mut active, 0) != 0 {
-            all = xstrdup(fmt).as_ptr();
-            active = null_mut();
-        }
-        let current = if (*ft).c.is_null() {
-            null_mut()
-        } else {
-            client_get_session((*ft).c)
-        };
-
-        let l = sort_get_sessions(criteria);
-        let n = l.len();
-        for (i, s) in l.into_iter().enumerate() {
-            format_log1!(es, c!("format_loop_sessions"), "session loop: ${}", (*s).id,);
-            let use_ = if !active.is_null() && !current.is_null() && (*s).id == (*current).id {
-                active
-            } else {
-                all
-            };
-            let nft = format_create(c, item, FORMAT_NONE, (*ft).flags);
-            format_add!(nft, "loop_index", "{i}");
-            format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
-            format_defaults(nft, (*ft).c, NonNull::new(s), None, None);
-            let mut next = zeroed();
-            format_copy_state(&mut next, es, format_expand_flags::empty());
-            next.ft = nft;
-            let expanded = format_expand1(&mut next, use_);
-            format_free(next.ft);
-
-            valuelen += strlen(expanded);
-            value = xrealloc(value.cast(), valuelen).as_ptr().cast();
-            strlcat(value, expanded, valuelen);
-            free_(expanded);
-        }
-
-        free_(active);
-        free_(all);
-        value
-    }
-}
-
-pub unsafe fn format_window_name(es: *mut format_expand_state, fmt: *const u8) -> *mut u8 {
-    unsafe {
-        let ft = (*es).ft;
-        let fts = (*ft)
-            .s
-            .and_then(|id| session_from_id(id))
-            .unwrap_or(null_mut());
-        if fts.is_null() {
-            format_log1!(es, c!("format_window_name"), "window name but no session",);
-            return null_mut();
-        }
-
-        let name = format_expand1(es, fmt);
-        for wl in (*fts).windows() {
-            let w_n = winlink_window(wl);
-            if !w_n.is_null() && streq_(name, (*w_n).name.as_deref().unwrap_or("")) {
-                free_(name);
-                return xstrdup(c!("1")).as_ptr();
-            }
-        }
-        free_(name);
-        xstrdup(c!("0")).as_ptr()
-    }
-}
-
-/// Loop over the windows of the session.
-pub unsafe fn format_loop_windows(
-    es: *mut format_expand_state,
-    fmt: *const u8,
-    criteria: &SortCriteria,
-) -> *mut u8 {
-    unsafe {
-        let ft = (*es).ft;
-        let c = (*ft).client;
-        let item = (*ft).item;
-        let mut all: *mut u8 = null_mut();
-        let mut active: *mut u8 = null_mut();
-        let mut value: *mut u8 = xcalloc(1, 1).as_ptr().cast();
-        let mut valuelen = 1;
-
-        let fts = (*ft)
-            .s
-            .and_then(|id| session_from_id(id))
-            .unwrap_or(null_mut());
-        if fts.is_null() {
-            format_log1!(es, c!("format_loop_windows"), "window loop but no session",);
-            return null_mut();
-        }
-
-        if format_choose(es, fmt, &mut all, &mut active, 0) != 0 {
-            all = xstrdup(fmt).as_ptr();
-            active = null_mut();
-        }
-
-        let l = sort_get_winlinks_session(fts, criteria);
-        let n = l.len();
-        for (i, wl) in l.into_iter().enumerate() {
-            let w = winlink_window(wl);
-            format_log1!(
-                es,
-                c!("format_loop_windows"),
-                "window loop: {} @{}",
-                wl.idx,
-                (*w).id,
-            );
-            let use_ = if !active.is_null() && Some(wl.id) == (*fts).curw_id() {
-                active
-            } else {
-                all
-            };
-
-            let nft = format_create(c, item, FORMAT_WINDOW as i32 | (*w).id as i32, (*ft).flags);
-            format_add!(nft, "loop_index", "{i}");
-            format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
-            format_defaults(nft, (*ft).c, NonNull::new(fts), Some(wl.id), None);
-            let mut next = zeroed();
-            format_copy_state(&raw mut next, es, format_expand_flags::empty());
-            next.ft = nft;
-            let expanded = format_expand1(&mut next, use_);
-            format_free(nft);
-
-            valuelen += strlen(expanded);
-            value = xrealloc(value.cast(), valuelen).as_ptr().cast();
-            strlcat(value, expanded, valuelen);
-            free_(expanded);
-        }
-
-        free_(active);
-        free_(all);
-        value
-    }
-}
-
-/// Loop over panes.
-pub unsafe fn format_loop_panes(
-    es: *mut format_expand_state,
-    fmt: *const u8,
-    criteria: &SortCriteria,
-) -> *mut u8 {
-    unsafe {
-        let ft = (*es).ft;
-        let c = (*ft).client;
-        let item = (*ft).item;
-
-        let w = (*ft)
-            .w
-            .and_then(|id| window_from_id(id))
-            .unwrap_or(null_mut());
-        if w.is_null() {
-            format_log1!(es, c!("format_loop_panes"), "pane loop but no window");
-            return null_mut();
-        }
-
-        let mut all: *mut u8 = null_mut();
-        let mut active: *mut u8 = null_mut();
-        if format_choose(es, fmt, &raw mut all, &raw mut active, 0) != 0 {
-            all = xstrdup(fmt).as_ptr();
-            active = null_mut();
-        }
-
-        let mut value: *mut u8 = xcalloc(1, 1).as_ptr().cast();
-        let mut valuelen = 1;
-
-        let mut next = MaybeUninit::<format_expand_state>::uninit();
-        let next = next.as_mut_ptr();
-        let l = sort_get_panes_window(w, criteria);
-        let n = l.len();
-        for (i, wp) in l.into_iter().enumerate() {
-            format_log1!(es, c!("format_loop_panes"), "pane loop: %{}", (*wp).id,);
-            let use_ = if !active.is_null() && wp == window_active_pane(w) {
-                active
-            } else {
-                all
-            };
-            let nft = format_create(c, item, FORMAT_PANE as i32 | (*wp).id as i32, (*ft).flags);
-            format_add!(nft, "loop_index", "{i}");
-            format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
-            format_defaults(
-                nft,
-                (*ft).c,
-                NonNull::new(
-                    (*ft)
-                        .s
-                        .and_then(|id| session_from_id(id))
-                        .unwrap_or(null_mut()),
-                ),
-                (*ft).wl.map(|wl| wl.id),
-                NonNull::new(wp),
-            );
-            format_copy_state(next, es, format_expand_flags::empty());
-            (*next).ft = nft;
-            let expanded = format_expand1(next, use_);
-            format_free(nft);
-
-            valuelen += strlen(expanded);
-            value = xrealloc(value.cast(), valuelen).as_ptr().cast();
-
-            strlcat(value, expanded, valuelen);
-            free_(expanded);
-        }
-
-        free_(active);
-        free_(all);
-
-        value
-    }
-}
-
-/// Loop over clients.
-pub unsafe fn format_loop_clients(
-    es: *mut format_expand_state,
-    fmt: *const u8,
-    criteria: &SortCriteria,
-) -> *mut u8 {
-    unsafe {
-        let ft = (*es).ft;
-        let item = (*ft).item;
-        let mut next = MaybeUninit::<format_expand_state>::uninit();
-        let next = next.as_mut_ptr();
-
-        let mut value = xcalloc(1, 1).as_ptr();
-        let mut valuelen = 1;
-
-        let l = sort_get_clients(criteria);
-        let n = l.len();
-        for (i, c) in l.into_iter().enumerate() {
-            format_log1!(
-                es,
-                c!("format_loop_clients"),
-                "client loop: {}",
-                _s((*c).name),
-            );
-            let nft = format_create(c, item, 0, (*ft).flags);
-            format_add!(nft, "loop_index", "{i}");
-            format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
-            format_defaults(
-                nft,
-                c,
-                NonNull::new(
-                    (*ft)
-                        .s
-                        .and_then(|id| session_from_id(id))
-                        .unwrap_or(null_mut()),
-                ),
-                (*ft).wl.map(|wl| wl.id),
-                NonNull::new(
-                    (*ft)
-                        .wp
-                        .and_then(|id| pane_from_id(id))
-                        .unwrap_or(null_mut()),
-                ),
-            );
-            format_copy_state(next, es, format_expand_flags::empty());
-            (*next).ft = nft;
-            let expanded = format_expand1(next, fmt);
-            format_free(nft);
-
-            valuelen += strlen(expanded);
-            value = xrealloc(value.cast(), valuelen).as_ptr().cast();
-
-            strlcat(value.cast(), expanded, valuelen);
-            free_(expanded);
-        }
-
-        value.cast()
-    }
-}
-
-pub unsafe fn format_replace_expression(
-    mexp: *mut format_modifier,
-    es: *mut format_expand_state,
-    copy: *const u8,
-) -> *mut u8 {
-    unsafe {
-        let argc = (*mexp).argc;
-
-        let mut endch: *mut u8 = null_mut();
-        let value: *mut u8;
-
-        let mut left: *mut u8 = null_mut();
-        let mut right: *mut u8 = null_mut();
-
-        'fail: {
-            let mut use_fp: i32 = 0;
-            let mut prec: i32 = 0;
-
-            let mut mleft: f64;
-            let mut mright: f64;
-
-            enum Operator {
-                Add,
-                Subtract,
-                Multiply,
-                Divide,
-                Modulus,
-                Equal,
-                NotEqual,
-                GreaterThan,
-                GreaterThanEqual,
-                LessThan,
-                LessThanEqual,
-            }
-
-            let operator = if streq_(*(*mexp).argv, "+") {
-                Operator::Add
-            } else if streq_(*(*mexp).argv, "-") {
-                Operator::Subtract
-            } else if streq_(*(*mexp).argv, "*") {
-                Operator::Multiply
-            } else if streq_(*(*mexp).argv, "/") {
-                Operator::Divide
-            } else if streq_(*(*mexp).argv, "%") || streq_(*(*mexp).argv, "m") {
-                Operator::Modulus
-            } else if streq_(*(*mexp).argv, "==") {
-                Operator::Equal
-            } else if streq_(*(*mexp).argv, "!=") {
-                Operator::NotEqual
-            } else if streq_(*(*mexp).argv, ">") {
-                Operator::GreaterThan
-            } else if streq_(*(*mexp).argv, "<") {
-                Operator::LessThan
-            } else if streq_(*(*mexp).argv, ">=") {
-                Operator::GreaterThanEqual
-            } else if streq_(*(*mexp).argv, "<=") {
-                Operator::LessThanEqual
-            } else {
-                format_log1!(
-                    es,
-                    c!("format_replace_expression"),
-                    "expression has no valid operator: '{}'",
-                    _s(*(*mexp).argv),
-                );
-                break 'fail;
-            };
-
-            // The second argument may be flags.
-            if argc >= 2 && !strchr(*(*mexp).argv.add(1), b'f' as i32).is_null() {
-                use_fp = 1;
-                prec = 2;
-            }
-
-            // The third argument may be precision.
-            if argc >= 3 {
-                prec = match strtonum(
-                    *(*mexp).argv.add(2),
-                    -FORMAT_MAX_PRECISION,
-                    FORMAT_MAX_PRECISION,
-                ) {
-                    Ok(value) => value,
-                    Err(errstr) => {
-                        format_log1!(
-                            es,
-                            c!("format_replace_expression"),
-                            "expression precision {}: {}",
-                            errstr.to_string_lossy(),
-                            _s(*(*mexp).argv.add(2)),
-                        );
-                        break 'fail;
-                    }
-                }
-            }
-
-            if format_choose(es, copy, &raw mut left, &raw mut right, 1) != 0 {
-                format_log1!(
-                    es,
-                    c!("format_replace_expression"),
-                    "expression syntax error"
-                );
-                break 'fail;
-            }
-
-            mleft = strtod(left, &raw mut endch);
-            if *endch != b'\0' {
-                format_log1!(
-                    es,
-                    c!("format_replace_expression"),
-                    "expression left side is invalid: {}",
-                    _s(left),
-                );
-                break 'fail;
-            }
-
-            mright = strtod(right, &raw mut endch);
-            if *endch != b'\0' {
-                format_log1!(
-                    es,
-                    c!("format_replace_expression"),
-                    "expression right side is invalid: {}",
-                    _s(right),
-                );
-                break 'fail;
-            }
-
-            if use_fp == 0 {
-                mleft = (mleft as c_longlong) as f64;
-                mright = (mright as c_longlong) as f64;
-            }
-            // C prints with "%.*f", where a negative precision is taken as
-            // omitted, which means 6 digits.
-            let digits: usize = usize::try_from(prec).unwrap_or(6);
-            debug_assert!(digits <= FORMAT_MAX_PRECISION as usize);
-            format_log1!(
-                es,
-                c!("format_replace_expression"),
-                "expression left side is: {1:.0$}",
-                digits,
-                mleft,
-            );
-            format_log1!(
-                es,
-                c!("format_replace_expression"),
-                "expression right side is: {1:.0$}",
-                digits,
-                mright,
-            );
-
-            let result = match operator {
-                Operator::Add => mleft + mright,
-                Operator::Subtract => mleft - mright,
-                Operator::Multiply => mleft * mright,
-                Operator::Divide => mleft / mright,
-                Operator::Modulus => mleft % mright,
-                Operator::Equal => ((mleft - mright).abs() < 1e-9) as i32 as f64,
-                Operator::NotEqual => ((mleft - mright).abs() > 1e-9) as i32 as f64,
-                Operator::GreaterThan => (mleft > mright) as i32 as f64,
-                Operator::GreaterThanEqual => (mleft >= mright) as i32 as f64,
-                Operator::LessThan => (mleft < mright) as i32 as f64,
-                Operator::LessThanEqual => (mleft <= mright) as i32 as f64,
-            };
-
-            value = if use_fp != 0 {
-                format_nul!("{:.*}", digits, result)
-            } else {
-                format_nul!("{:.*}", digits, (result as c_longlong) as f64)
-            };
-            format_log1!(
-                es,
-                c!("format_replace_expression"),
-                "expression result is {}",
-                _s(value),
-            );
-
-            free_(right);
-            free_(left);
-            return value;
-        }
-
-        // fail:
-        free_(right);
-        free_(left);
-        null_mut()
-    }
-}
-
-/// Replace a key.
-pub unsafe fn format_replace(
-    es: *mut format_expand_state,
-    key: *const u8,
-    keylen: usize,
-    buf: *mut *mut u8,
-    len: *mut usize,
-    off: *mut usize,
-) -> i32 {
-    let __func__: *const u8 = c!("format_replace");
-
-    unsafe {
-        let ft = (*es).ft;
-        let wp = (*ft)
-            .wp
-            .and_then(|id| pane_from_id(id))
-            .unwrap_or(null_mut());
-        let mut copy: *const u8;
-        let cp: *const u8;
-        let mut marker: *const u8 = null();
-
-        // Owned copy from format_strip, freed on both exit paths (upstream 94bafa5a).
-        let mut time_format: *mut u8 = null_mut();
-
-        let copy0: *mut u8;
-        let condition: *mut u8;
-        let mut found: *mut u8;
-        let mut new: *mut u8;
-        let mut value: *mut u8 = null_mut();
-        let mut left: *mut u8 = null_mut();
-        let mut right: *mut u8 = null_mut();
-
-        let valuelen;
-
-        let mut modifiers: format_modifiers = format_modifiers::empty();
-        let mut loop_sort = SortCriteria::new(Some(SortOrder::Order), false);
-        let mut limit: i32 = 0;
-        let mut width: i32 = 0;
-
-        let mut c;
-
-        let list: *mut format_modifier;
-        let mut cmp: *mut format_modifier = null_mut();
-        let mut search: *mut format_modifier = null_mut();
-
-        let mut sub: *mut *mut format_modifier = null_mut();
-        let mut mexp: *mut format_modifier = null_mut();
-
-        // let mut i = 0u32;
-        let mut count = 0u32;
-        let mut nsub = 0u32;
-
-        let mut next = MaybeUninit::<format_expand_state>::uninit();
-        let next = next.as_mut_ptr();
-
-        'fail: {
-            'done: {
-                // Make a copy of the key.
-                copy0 = xstrndup(key, keylen).as_ptr();
-                copy = copy0;
-
-                // Process modifier list.
-                list = format_build_modifiers(es, &raw mut copy, &raw mut count);
-                for i in 0..count {
-                    let fm = list.add(i as usize);
-                    if format_logging(&*ft) {
-                        format_log1!(
-                            es,
-                            __func__,
-                            "modifier {} is {}",
-                            i,
-                            _s((&raw mut (*fm).modifier).cast::<u8>())
-                        );
-                        for j in 0..(*fm).argc {
-                            format_log1!(
-                                es,
-                                __func__,
-                                "modifier {} argument {}: {}",
-                                i,
-                                j,
-                                _s(*(*fm).argv.add(j as usize)),
-                            );
-                        }
-                    }
-                    if (*fm).size == 1 {
-                        match (*fm).modifier[0] {
-                            b'm' | b'<' | b'>' => cmp = fm,
-                            b'C' => search = fm,
-                            b's' => {
-                                if (*fm).argc < 2 {
-                                } else {
-                                    sub = xreallocarray_(sub, nsub as usize + 1).as_ptr();
-                                    *sub.add(nsub as usize) = fm;
-                                    nsub += 1;
-                                }
-                            }
-                            b'=' => {
-                                if (*fm).argc < 1 {
-                                } else {
-                                    limit =
-                                        strtonum(*(*fm).argv, -FORMAT_MAX_WIDTH, FORMAT_MAX_WIDTH)
-                                            .unwrap_or_default();
-                                    if (*fm).argc >= 2 && !(*(*fm).argv.add(1)).is_null() {
-                                        marker = *(*fm).argv.add(1);
-                                    }
-                                }
-                            }
-                            b'p' => {
-                                if (*fm).argc < 1 {
-                                    break;
-                                } else {
-                                    width =
-                                        strtonum(*(*fm).argv, -FORMAT_MAX_WIDTH, FORMAT_MAX_WIDTH)
-                                            .unwrap_or_default();
-                                }
-                            }
-                            b'w' => modifiers |= format_modifiers::FORMAT_WIDTH,
-                            b'e' => {
-                                if (*fm).argc < 1 || (*fm).argc > 3 {
-                                } else {
-                                    mexp = fm;
-                                }
-                            }
-                            b'l' => modifiers |= format_modifiers::FORMAT_LITERAL,
-                            b'a' => modifiers |= format_modifiers::FORMAT_CHARACTER,
-                            b'b' => modifiers |= format_modifiers::FORMAT_BASENAME,
-                            b'c' => modifiers |= format_modifiers::FORMAT_COLOUR,
-                            b'd' => modifiers |= format_modifiers::FORMAT_DIRNAME,
-                            b'n' => modifiers |= format_modifiers::FORMAT_LENGTH,
-                            b't' => {
-                                modifiers |= format_modifiers::FORMAT_TIMESTRING;
-                                if (*fm).argc >= 1 {
-                                    if !strchr(*(*fm).argv, b'p' as i32).is_null() {
-                                        modifiers |= format_modifiers::FORMAT_PRETTY;
-                                    } else if (*fm).argc >= 2
-                                        && !strchr(*(*fm).argv, b'f' as i32).is_null()
-                                    {
-                                        // A later t/f/ replaces an earlier one, so free the
-                                        // old copy first (upstream a97cfe51).
-                                        free_(time_format);
-                                        time_format = format_strip(*(*fm).argv.add(1));
-                                    }
-                                }
-                            }
-                            b'q' => {
-                                if (*fm).argc < 1 {
-                                    modifiers |= format_modifiers::FORMAT_QUOTE_SHELL;
-                                } else if !strchr(*(*fm).argv, b's' as i32).is_null() {
-                                    modifiers |= format_modifiers::FORMAT_QUOTE_SHELL_SQ;
-                                } else if !strchr(*(*fm).argv, b'e' as i32).is_null()
-                                    || !strchr(*(*fm).argv, b'h' as i32).is_null()
-                                {
-                                    modifiers |= format_modifiers::FORMAT_QUOTE_STYLE;
-                                } else if !strchr(*(*fm).argv, b'a' as i32).is_null() {
-                                    modifiers |= format_modifiers::FORMAT_QUOTE_ARGUMENTS;
-                                }
-                            }
-                            b'E' => modifiers |= format_modifiers::FORMAT_EXPAND,
-                            b'T' => modifiers |= format_modifiers::FORMAT_EXPANDTIME,
-                            b'N' => {
-                                if (*fm).argc < 1 || !strchr(*(*fm).argv, b'w' as i32).is_null() {
-                                    modifiers |= format_modifiers::FORMAT_WINDOW_NAME;
-                                } else if !strchr(*(*fm).argv, b's' as i32).is_null() {
-                                    modifiers |= format_modifiers::FORMAT_SESSION_NAME;
-                                }
-                            }
-                            ch @ (b'S' | b'W' | b'P' | b'L') => {
-                                modifiers |= match ch {
-                                    b'S' => format_modifiers::FORMAT_SESSIONS,
-                                    b'W' => format_modifiers::FORMAT_WINDOWS,
-                                    b'P' => format_modifiers::FORMAT_PANES,
-                                    _ => format_modifiers::FORMAT_CLIENTS,
-                                };
-                                let arg = if (*fm).argc < 1 {
-                                    None
-                                } else {
-                                    Some(CStr::from_ptr((*(*fm).argv).cast()).to_bytes())
-                                };
-                                loop_sort = format_loop_sort(ch, arg);
-                            }
-                            _ => (),
-                        }
-                    } else if (*fm).size == 2
-                        && (streq_((*fm).modifier.as_ptr(), "||")
-                            || streq_((*fm).modifier.as_ptr(), "&&")
-                            || streq_((*fm).modifier.as_ptr(), "==")
-                            || streq_((*fm).modifier.as_ptr(), "!=")
-                            || streq_((*fm).modifier.as_ptr(), ">=")
-                            || streq_((*fm).modifier.as_ptr(), "<="))
-                    {
-                        cmp = fm;
-                    }
-                }
-
-                // Is this a literal string?
-                if modifiers.intersects(format_modifiers::FORMAT_LITERAL) {
-                    format_log1!(es, __func__, "literal string is '{}'", _s(copy));
-                    value = format_unescape(copy);
-                    break 'done;
-                }
-
-                // Is this a character?
-                if modifiers.intersects(format_modifiers::FORMAT_CHARACTER) {
-                    new = format_expand1(es, copy);
-                    value = match strtonum::<u8>(new, 32, 126) {
-                        Ok(n) => format_nul!("{}", n as char),
-                        Err(_) => xstrdup(c!("")).as_ptr(),
-                    };
-                    free_(new);
-                    break 'done;
-                }
-
-                // Is this a colour?
-                if modifiers.intersects(format_modifiers::FORMAT_COLOUR) {
-                    new = format_expand1(es, copy);
-                    c = colour_fromstring(cstr_to_str(new));
-                    value = if c == -1
-                        || ({
-                            c = colour_force_rgb(c);
-                            c == -1
-                        }) {
-                        xstrdup(c!("")).as_ptr()
-                    } else {
-                        format_nul!("{:06x}", c & 0xffffff)
-                    };
-                    free_(new);
-                    break 'done;
-                }
-
-                // Is this a loop, comparison or condition?
-                if modifiers.intersects(format_modifiers::FORMAT_SESSIONS) {
-                    value = format_loop_sessions(es, copy, &loop_sort);
-                    if value.is_null() {
-                        break 'fail;
-                    }
-                } else if modifiers.intersects(format_modifiers::FORMAT_WINDOWS) {
-                    value = format_loop_windows(es, copy, &loop_sort);
-                    if value.is_null() {
-                        break 'fail;
-                    }
-                } else if modifiers.intersects(format_modifiers::FORMAT_PANES) {
-                    value = format_loop_panes(es, copy, &loop_sort);
-                    if value.is_null() {
-                        break 'fail;
-                    }
-                } else if modifiers.intersects(format_modifiers::FORMAT_CLIENTS) {
-                    value = format_loop_clients(es, copy, &loop_sort);
-                    if value.is_null() {
-                        break 'fail;
-                    }
-                } else if modifiers.intersects(format_modifiers::FORMAT_WINDOW_NAME) {
-                    value = format_window_name(es, copy);
-                    if value.is_null() {
-                        break 'fail;
-                    }
-                } else if modifiers.intersects(format_modifiers::FORMAT_SESSION_NAME) {
-                    value = format_session_name(es, copy);
-                    if value.is_null() {
-                        break 'fail;
-                    }
-                } else if !search.is_null() {
-                    // Search in pane.
-                    new = format_expand1(es, copy);
-                    if wp.is_null() {
-                        format_log1!(es, __func__, "search '{}' but no pane", _s(new));
-                        value = xstrdup(c!("0")).as_ptr();
-                    } else {
-                        format_log1!(es, __func__, "search '{}' pane %{}", _s(new), (*wp).id,);
-                        value = format_search(search, wp, new);
-                    }
-                    free_(new);
-                } else if !cmp.is_null() {
-                    // Comparison of left and right.
-                    if format_choose(es, copy, &raw mut left, &raw mut right, 1) != 0 {
-                        format_log1!(
-                            es,
-                            __func__,
-                            "compare {} syntax error: {}",
-                            _s((&raw const (*cmp).modifier).cast::<u8>()),
-                            _s(copy),
-                        );
-                        break 'fail;
-                    }
-                    format_log1!(
-                        es,
-                        __func__,
-                        "compare {} left is: {}",
-                        _s((&raw const (*cmp).modifier).cast::<u8>()),
-                        _s(left),
-                    );
-                    format_log1!(
-                        es,
-                        __func__,
-                        "compare {} right is: {}",
-                        _s((&raw const (*cmp).modifier).cast::<u8>()),
-                        _s(right),
-                    );
-
-                    if streq_((*cmp).modifier.as_ptr(), "||") {
-                        if format_true(left) || format_true(right) {
-                            value = xstrdup(c!("1")).as_ptr();
-                        } else {
-                            value = xstrdup(c!("0")).as_ptr();
-                        }
-                    } else if streq_((*cmp).modifier.as_ptr(), "&&") {
-                        if format_true(left) && format_true(right) {
-                            value = xstrdup(c!("1")).as_ptr();
-                        } else {
-                            value = xstrdup(c!("0")).as_ptr();
-                        }
-                    } else if streq_((*cmp).modifier.as_ptr(), "==") {
-                        if strcmp(left, right) == 0 {
-                            value = xstrdup(c!("1")).as_ptr();
-                        } else {
-                            value = xstrdup(c!("0")).as_ptr();
-                        }
-                    } else if streq_((*cmp).modifier.as_ptr(), "!=") {
-                        if strcmp(left, right) != 0 {
-                            value = xstrdup(c!("1")).as_ptr();
-                        } else {
-                            value = xstrdup(c!("0")).as_ptr();
-                        }
-                    } else if streq_((*cmp).modifier.as_ptr(), "<") {
-                        if strcmp(left, right) < 0 {
-                            value = xstrdup(c!("1")).as_ptr();
-                        } else {
-                            value = xstrdup(c!("0")).as_ptr();
-                        }
-                    } else if streq_((*cmp).modifier.as_ptr(), ">") {
-                        if strcmp(left, right) > 0 {
-                            value = xstrdup(c!("1")).as_ptr();
-                        } else {
-                            value = xstrdup(c!("0")).as_ptr();
-                        }
-                    } else if streq_((*cmp).modifier.as_ptr(), "<=") {
-                        if strcmp(left, right) <= 0 {
-                            value = xstrdup(c!("1")).as_ptr();
-                        } else {
-                            value = xstrdup(c!("0")).as_ptr();
-                        }
-                    } else if streq_((*cmp).modifier.as_ptr(), ">=") {
-                        if strcmp(left, right) >= 0 {
-                            value = xstrdup(c!("1")).as_ptr();
-                        } else {
-                            value = xstrdup(c!("0")).as_ptr();
-                        }
-                    } else if streq_((*cmp).modifier.as_ptr(), "m") {
-                        value = format_match(cmp, left, right);
-                    }
-
-                    free_(right);
-                    free_(left);
-                } else if *copy == b'?' {
-                    // Conditional: check first and choose second or third.
-                    cp = format_skip(copy.add(1), c!(","));
-                    if cp.is_null() {
-                        format_log1!(es, __func__, "condition syntax error: {}", _s(copy.add(1)),);
-                        break 'fail;
-                    }
-                    condition =
-                        xstrndup(copy.add(1), cp.offset_from(copy.add(1)) as usize).as_ptr();
-                    format_log1!(es, __func__, "condition is: {}", _s(condition));
-
-                    found = format_find(ft, condition, modifiers, time_format);
-                    if found.is_null() {
-                        // If the condition not found, try to expand it. If
-                        // the expansion doesn't have any effect, then assume
-                        // false.
-                        found = format_expand1(es, condition);
-                        if strcmp(found, condition) == 0 {
-                            free_(found);
-                            found = xstrdup(c!("")).as_ptr();
-                            format_log1!(
-                                es,
-                                __func__,
-                                "condition '{}' not found; assuming false",
-                                _s(condition),
-                            );
-                        }
-                    } else {
-                        format_log1!(
-                            es,
-                            __func__,
-                            "condition '{}' found: {}",
-                            _s(condition),
-                            _s(found),
-                        );
-                    }
-
-                    if format_choose(es, cp.add(1), &raw mut left, &raw mut right, 0) != 0 {
-                        format_log1!(
-                            es,
-                            __func__,
-                            "condition '{}' syntax error: {}",
-                            _s(condition),
-                            _s(cp.add(1)),
-                        );
-                        free_(found);
-                        break 'fail;
-                    }
-                    if format_true(found) {
-                        format_log1!(es, __func__, "condition '{}' is true", _s(condition));
-                        value = format_expand1(es, left);
-                    } else {
-                        format_log1!(es, __func__, "condition '{}' is false", _s(condition));
-                        value = format_expand1(es, right);
-                    }
-                    free_(right);
-                    free_(left);
-
-                    free_(condition);
-                    free_(found);
-                } else if !mexp.is_null() {
-                    value = format_replace_expression(mexp, es, copy);
-                    if value.is_null() {
-                        value = xstrdup(c!("")).as_ptr();
-                    }
-                } else if !strstr(copy, c!("#{")).is_null() {
-                    format_log1!(es, __func__, "expanding inner format '{}'", _s(copy));
-                    value = format_expand1(es, copy);
-                } else {
-                    value = format_find(ft, copy, modifiers, time_format);
-                    if value.is_null() {
-                        format_log1!(es, __func__, "format '{}' not found", _s(copy));
-                        value = xstrdup(c!("")).as_ptr();
-                    } else {
-                        format_log1!(es, __func__, "format '{}' found: {}", _s(copy), _s(value),);
-                    }
-                }
-            }
-            // done:
-
-            // Expand again if required.
-            if modifiers.intersects(format_modifiers::FORMAT_EXPAND) {
-                new = format_expand1(es, value);
-                free_(value);
-                value = new;
-            } else if modifiers.intersects(format_modifiers::FORMAT_EXPANDTIME) {
-                format_copy_state(next, es, format_expand_flags::FORMAT_EXPAND_TIME);
-                new = format_expand1(next, value);
-                free_(value);
-                value = new;
-            }
-
-            // Perform substitution if any.
-            for i in 0..nsub {
-                left = format_expand1(es, *(**sub.add(i as usize)).argv);
-                right = format_expand1(es, *(**sub.add(i as usize)).argv.add(1));
-                new = format_sub(*sub.add(i as usize), value, left, right);
-                format_log1!(
-                    es,
-                    __func__,
-                    "substitute '{}' to '{}': {}",
-                    _s(left),
-                    _s(right),
-                    _s(new),
-                );
-                free_(value);
-                value = new;
-                free_(right);
-                free_(left);
-            }
-
-            // Truncate the value if needed.
-            debug_assert!(limit.abs() <= FORMAT_MAX_WIDTH && width.abs() <= FORMAT_MAX_WIDTH);
-            if limit > 0 {
-                new = format_trim_left(value, limit as u32);
-                value = if !marker.is_null() && strcmp(new, value) != 0 {
-                    free_(value);
-                    let marked = format_nul!("{}{}", _s(new), _s(marker));
-                    // The trimmed string was copied, so free it (upstream c95d3412).
-                    free_(new);
-                    marked
-                } else {
-                    free_(value);
-                    new
-                };
-                format_log1!(
-                    es,
-                    __func__,
-                    "applied length limit {}: {}",
-                    limit,
-                    _s(value),
-                );
-            } else if limit < 0 {
-                new = format_trim_right(value, (-limit) as u32);
-                value = if !marker.is_null() && strcmp(new, value) != 0 {
-                    free_(value);
-                    let marked = format_nul!("{}{}", _s(marker), _s(new));
-                    // The trimmed string was copied, so free it (upstream c95d3412).
-                    free_(new);
-                    marked
-                } else {
-                    free_(value);
-                    new
-                };
-                format_log1!(
-                    es,
-                    __func__,
-                    "applied length limit {}: {}",
-                    limit,
-                    _s(value),
-                );
-            }
-
-            // Pad the value if needed.
-            if width > 0 {
-                new = utf8_padcstr(value, width as u32);
-                free_(value);
-                value = new;
-                format_log1!(
-                    es,
-                    __func__,
-                    "applied padding width {}: {}",
-                    width,
-                    _s(value),
-                );
-            } else if width < 0 {
-                new = utf8_rpadcstr(value, (-width) as u32);
-                free_(value);
-                value = new;
-                format_log1!(
-                    es,
-                    __func__,
-                    "applied padding width {}: {}",
-                    width,
-                    _s(value),
-                );
-            }
-
-            // Replace with the length or width if needed.
-            if modifiers.intersects(format_modifiers::FORMAT_LENGTH) {
-                new = format_nul!("{}", strlen(value));
-                free_(value);
-                value = new;
-                format_log1!(es, __func__, "replacing with length: {}", _s(new));
-            }
-            if modifiers.intersects(format_modifiers::FORMAT_WIDTH) {
-                new = format_nul!("{}", format_width(cstr_to_str(value)));
-                free_(value);
-                value = new;
-                format_log1!(es, __func__, "replacing with width: {}", _s(new));
-            }
-
-            // Expand the buffer and copy in the value.
-            valuelen = strlen(value);
-            while *len - *off < valuelen + 1 {
-                *buf = xreallocarray((*buf).cast(), 2, *len).as_ptr().cast();
-                *len *= 2;
-            }
-            memcpy((*buf).add(*off).cast(), value.cast(), valuelen);
-            *off += valuelen;
-
-            format_log1!(
-                es,
-                __func__,
-                "replaced '{}' with '{}'",
-                _s(copy0),
-                _s(value),
-            );
-            free_(value);
-
-            free_(sub);
-            format_free_modifiers(list, count);
-            free_(copy0);
-            free_(time_format);
-            return 0;
-        }
-
-        // fail:
-        format_log1!(es, __func__, "failed {}", _s(copy0));
-
-        free_(sub);
-        format_free_modifiers(list, count);
-        free_(copy0);
-        free_(time_format);
-        -1
-    }
-}
-
-/// Expand keys in a template.
-pub unsafe fn format_expand1(es: *mut format_expand_state, mut fmt: *const u8) -> *mut u8 {
-    unsafe {
-        let ft = (*es).ft;
-        let mut out: *mut u8;
-
-        let mut s: *const u8;
-        let mut style_end: *const u8 = null();
-
-        const SIZEOF_EXPANDED: usize = 8192;
-        let mut expanded = MaybeUninit::<[u8; SIZEOF_EXPANDED]>::uninit();
-        let expanded = expanded.as_mut_ptr() as *mut u8;
-
-        if fmt.is_null() || *fmt == b'\0' {
-            return xstrdup(c!("")).as_ptr();
-        }
-
-        let elapsed = get_timer().saturating_sub((*es).start_time);
-        if elapsed >= FORMAT_TIME_LIMIT {
-            format_log1!(es, c!("format_expand1"), "reached time limit ({})", elapsed);
-            return xstrdup(c!("")).as_ptr();
-        }
-        if (*es).loop_ == FORMAT_LOOP_LIMIT as u32 {
-            format_log1!(
-                es,
-                c!("format_expand1"),
-                "reached loop limit ({})",
-                FORMAT_LOOP_LIMIT,
-            );
-            return xstrdup(c!("")).as_ptr();
-        }
-        (*es).loop_ += 1;
-
-        format_log1!(es, c!("format_expand1"), "expanding format: {}", _s(fmt),);
-
-        if ((*es)
-            .flags
-            .intersects(format_expand_flags::FORMAT_EXPAND_TIME))
-            && !strchr(fmt, b'%' as i32).is_null()
-        {
-            if (*es).time == 0 {
-                (*es).time = libc::time(null_mut());
-                localtime_r(&raw mut (*es).time, &raw mut (*es).tm);
-            }
-            if strftime(expanded, SIZEOF_EXPANDED, fmt, &raw mut (*es).tm) == 0 {
-                format_log1!(es, c!("format_expand1"), "format is too long",);
-                return xstrdup(c!("")).as_ptr();
-            }
-            if format_logging(&*ft) && strcmp(expanded, fmt) != 0 {
-                format_log1!(
-                    es,
-                    c!("format_expand1"),
-                    "after time expanded: {}",
-                    _s(expanded),
-                );
-            }
-            fmt = expanded;
-        }
-
-        let mut len = 64;
-        let mut buf: *mut u8 = xmalloc(len).as_ptr().cast();
-        let mut off = 0;
-        let mut n;
-
-        while *fmt != b'\0' {
-            if *fmt != b'#' {
-                while len - off < 2 {
-                    buf = xreallocarray(buf.cast(), 2, len).as_ptr().cast();
-                    len *= 2;
-                }
-                *buf.add(off) = *fmt;
-                off += 1;
-                fmt = fmt.add(1);
-                continue;
-            }
-            fmt = fmt.add(1);
-
-            // Trailing '#' at end of format string, so nothing follows.
-            if *fmt == b'\0' {
-                break;
-            }
-
-            let ch: u8 = *fmt;
-            fmt = fmt.add(1);
-            let mut brackets;
-
-            let mut ptr: *const u8;
-            match ch {
-                b'(' => {
-                    brackets = 1;
-                    ptr = fmt;
-                    while *ptr != b'\0' {
-                        if *ptr == b'(' {
-                            brackets += 1;
-                        }
-                        if *ptr == b')'
-                            && ({
-                                brackets -= 1;
-                                brackets == 0
-                            })
-                        {
-                            break;
-                        }
-                        ptr = ptr.add(1);
-                    }
-                    if *ptr != b')' || brackets != 0 {
-                        break;
-                    }
-                    n = ptr.offset_from(fmt) as usize;
-
-                    let name = xstrndup(fmt, n).as_ptr();
-                    format_log1!(es, c!("format_expand1"), "found #(): {}", _s(name),);
-
-                    if ((*ft).flags.intersects(format_flags::FORMAT_NOJOBS))
-                        || ((*es)
-                            .flags
-                            .intersects(format_expand_flags::FORMAT_EXPAND_NOJOBS))
-                    {
-                        out = xstrdup(c!("")).as_ptr();
-                        format_log1!(es, c!("format_expand1"), "#() is disabled");
-                    } else {
-                        out = format_job_get(es, name);
-                        format_log1!(es, c!("format_expand1"), "#() result: {}", _s(out),);
-                    }
-                    free_(name);
-
-                    let outlen = strlen(out);
-                    while len - off < outlen + 1 {
-                        buf = xreallocarray(buf.cast(), 2, len).as_ptr().cast();
-                        len *= 2;
-                    }
-                    memcpy(buf.add(off).cast(), out.cast(), outlen);
-                    off += outlen;
-
-                    free_(out);
-
-                    fmt = fmt.add(n + 1);
-                    continue;
-                }
-                b'{' => {
-                    ptr = format_skip(fmt.sub(2), c!("}"));
-                    if ptr.is_null() {
-                        break;
-                    }
-                    n = ptr.offset_from(fmt) as usize;
-
-                    format_log1!(es, c!("format_expand1"), "found #{}: {1:0$}", n, _s(fmt),);
-                    if format_replace(es, fmt, n, &raw mut buf, &raw mut len, &raw mut off) != 0 {
-                        break;
-                    }
-                    fmt = fmt.add(n + 1);
-                    continue;
-                }
-                b'[' | b'#' => {
-                    // If ##[ (with two or more #s), then it is a style and
-                    // can be left for format_draw to handle.
-                    ptr = fmt.sub((ch == b'[') as usize);
-                    n = 2 - (ch == b'[') as usize;
-                    while *ptr == b'#' {
-                        ptr = ptr.add(1);
-                        n += 1;
-                    }
-                    if *ptr == b'[' {
-                        style_end = format_skip(fmt.sub(2), c!("]"));
-                        format_log1!(es, c!("format_expand1"), "found #*{}[", n);
-                        while len - off < n + 2 {
-                            buf = xreallocarray(buf.cast(), 2, len).as_ptr().cast();
-                            len *= 2;
-                        }
-                        memcpy(buf.add(off).cast(), fmt.sub(2).cast(), n + 1);
-                        off += n + 1;
-                        fmt = ptr.add(1);
-                        continue;
-                    }
-                    // FALLTHROUGH
-                    format_log1!(es, c!("format_expand1"), "found #{}", ch as char);
-                    while len - off < 2 {
-                        buf = xreallocarray(buf.cast(), 2, len).as_ptr().cast();
-                        len *= 2;
-                    }
-                    *buf.add(off) = ch;
-                    off += 1;
-                    continue;
-                }
-                // FALLTHROUGH
-                b'}' | b',' => {
-                    format_log1!(es, c!("format_expand1"), "found #{}", ch as char,);
-                    while len - off < 2 {
-                        buf = xreallocarray(buf.cast(), 2, len).as_ptr().cast();
-                        len *= 2;
-                    }
-                    *buf.add(off) = ch;
-                    off += 1;
-                    continue;
-                }
-                _ => {
-                    s = null_mut();
-                    if fmt > style_end {
-                        if ch.is_ascii_uppercase() {
-                            s = FORMAT_UPPER[(ch - b'A') as usize].as_ptr();
-                        } else if ch.is_ascii_lowercase() {
-                            s = FORMAT_LOWER[(ch - b'a') as usize].as_ptr();
-                        }
-                    } // skip inside #[]
-                    if s.is_null() {
-                        while len - off < 3 {
-                            buf = xreallocarray(buf.cast(), 2, len).as_ptr().cast();
-                            len *= 2;
-                        }
-                        *buf.add(off) = b'#';
-                        off += 1;
-                        *buf.add(off) = ch;
-                        off += 1;
-
-                        continue;
-                    }
-                    n = strlen(s);
-                    format_log1!(es, c!("format_expand1"), "found #{}: {}", ch as char, _s(s),);
-                    if format_replace(es, s, n, &raw mut buf, &raw mut len, &raw mut off) != 0 {
-                        break;
-                    }
-                    continue;
-                }
-            }
-
-            #[expect(unreachable_code)]
-            {
-                break;
-            }
-        }
-        *buf.add(off) = b'\0';
-
-        format_log1!(es, c!("format_expand1"), "result is: {}", _s(buf),);
-        (*es).loop_ -= 1;
-
-        buf
-    }
-}
-
 /// Expand keys in a template, passing through strftime first.
 pub unsafe fn format_expand_time(ft: *mut format_tree, fmt: *const u8) -> *mut u8 {
-    unsafe {
-        let mut es = MaybeUninit::<format_expand_state>::uninit();
-        let es = es.as_mut_ptr();
-
-        memset0(es);
-        (*es).ft = ft;
-        (*es).flags = format_expand_flags::FORMAT_EXPAND_TIME;
-        (*es).start_time = get_timer();
-        format_expand1(es, fmt)
-    }
+    unsafe { format_to_c(&format_engine_expand(ft, format_bytes(fmt), true)) }
 }
 
 /// Expand keys in a template.
 pub unsafe fn format_expand(ft: *mut format_tree, fmt: *const u8) -> *mut u8 {
-    unsafe {
-        let mut es = MaybeUninit::<format_expand_state>::uninit();
-        let es = es.as_mut_ptr();
-
-        memset0(es);
-        (*es).ft = ft;
-        (*es).flags = format_expand_flags::empty();
-        (*es).start_time = get_timer();
-        format_expand1(es, fmt)
-    }
+    unsafe { format_to_c(&format_engine_expand(ft, format_bytes(fmt), false)) }
 }
 
 /// Expand a single string.
@@ -5679,7 +2956,7 @@ pub unsafe fn format_single(
 ) -> *mut u8 {
     unsafe {
         let fmt = CString::new(fmt).unwrap(); // TODO shim to not have to rewrite
-        // format_expand now, remove later
+                                                       // format_expand now, remove later
         format_single_bytes(item, fmt.as_ptr().cast(), c, s, wl, wp)
     }
 }
@@ -5712,22 +2989,7 @@ pub unsafe fn format_single_from_state(
     c: *mut client,
     fs: *mut cmd_find_state,
 ) -> *mut u8 {
-    unsafe {
-        format_single(
-            item,
-            fmt,
-            c,
-            (*fs)
-                .s
-                .and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut()),
-            (*fs).wl,
-            (*fs)
-                .wp
-                .and_then(|id| pane_from_id(id))
-                .unwrap_or(null_mut()),
-        )
-    }
+    unsafe { format_single(item, fmt, c, (*fs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()), (*fs).wl, (*fs).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())) }
 }
 
 /// Expand a single string using target.
@@ -5739,15 +3001,9 @@ pub unsafe fn format_single_from_target(item: *mut cmdq_item, fmt: *const u8) ->
             item,
             fmt,
             tc,
-            (*fs)
-                .s
-                .and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut()),
+            (*fs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()),
             (*fs).wl,
-            (*fs)
-                .wp
-                .and_then(|id| pane_from_id(id))
-                .unwrap_or(null_mut()),
+            (*fs).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut()),
         )
     }
 }
@@ -5782,21 +3038,7 @@ pub unsafe fn format_create_from_state(
     c: *mut client,
     fs: *mut cmd_find_state,
 ) -> *mut format_tree {
-    unsafe {
-        format_create_defaults(
-            item,
-            c,
-            (*fs)
-                .s
-                .and_then(|id| session_from_id(id))
-                .unwrap_or(null_mut()),
-            (*fs).wl,
-            (*fs)
-                .wp
-                .and_then(|id| pane_from_id(id))
-                .unwrap_or(null_mut()),
-        )
-    }
+    unsafe { format_create_defaults(item, c, (*fs).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut()), (*fs).wl, (*fs).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut())) }
 }
 
 /// Create and add defaults using target.
@@ -5866,9 +3108,7 @@ pub unsafe fn format_defaults(
             && let Some(wl) = wl
         {
             let w_a = winlink_window(wl);
-            if !w_a.is_null() {
-                wp = window_active_pane(w_a);
-            }
+            if !w_a.is_null() { wp = window_active_pane(w_a); }
         }
 
         if !c.is_null() {
@@ -5893,11 +3133,7 @@ pub unsafe fn format_defaults(
 /// Set default format keys for a session.
 pub unsafe fn format_defaults_session(ft: *mut format_tree, s: *mut session) {
     unsafe {
-        (*ft).s = if s.is_null() {
-            None
-        } else {
-            Some(SessionId((*s).id))
-        };
+        (*ft).s = if s.is_null() { None } else { Some(SessionId((*s).id)) };
     }
 }
 
@@ -5906,11 +3142,7 @@ pub unsafe fn format_defaults_client(ft: *mut format_tree, c: *mut client) {
     unsafe {
         if (*ft).s.is_none() {
             let s = client_get_session(c);
-            (*ft).s = if s.is_null() {
-                None
-            } else {
-                Some(SessionId((*s).id))
-            };
+            (*ft).s = if s.is_null() { None } else { Some(SessionId((*s).id)) };
         }
         (*ft).c = c;
     }
@@ -5919,11 +3151,7 @@ pub unsafe fn format_defaults_client(ft: *mut format_tree, c: *mut client) {
 /// Set default format keys for a window.
 pub unsafe fn format_defaults_window(ft: *mut format_tree, w: *mut window) {
     unsafe {
-        (*ft).w = if w.is_null() {
-            None
-        } else {
-            Some(WindowId((*w).id))
-        };
+        (*ft).w = if w.is_null() { None } else { Some(WindowId((*w).id)) };
     }
 }
 
@@ -5944,11 +3172,7 @@ pub unsafe fn format_defaults_pane(ft: *mut format_tree, wp: *mut window_pane) {
         if (*ft).w.is_none() {
             format_defaults_window(ft, window_pane_window(wp));
         }
-        (*ft).wp = if wp.is_null() {
-            None
-        } else {
-            Some(PaneId((*wp).id))
-        };
+        (*ft).wp = if wp.is_null() { None } else { Some(PaneId((*wp).id)) };
 
         if let Some(wme) = (*wp).modes.first().copied().and_then(NonNull::new)
             && let Some(formats) = (*(*wme.as_ptr()).mode).formats
@@ -5983,7 +3207,9 @@ pub unsafe fn format_grid_word(gd: *mut Grid, mut x: u32, mut y: u32) -> String 
             if gc.flags.intersects(GridFlag::PADDING) {
                 break;
             }
-            if gc.data.in_cstr(ws) || (gc.data.size == 1 && gc.data.data[0] == b' ') {
+            if gc.data.in_cstr(ws)
+                || (gc.data.size == 1 && gc.data.data[0] == b' ')
+            {
                 found = true;
                 break;
             }
@@ -6031,7 +3257,9 @@ pub unsafe fn format_grid_word(gd: *mut Grid, mut x: u32, mut y: u32) -> String 
             if gc.flags.intersects(GridFlag::PADDING) {
                 break;
             }
-            if gc.data.in_cstr(ws) || (gc.data.size == 1 && gc.data.data[0] == b' ') {
+            if gc.data.in_cstr(ws)
+                || (gc.data.size == 1 && gc.data.data[0] == b' ')
+            {
                 break;
             }
 
@@ -6137,66 +3365,3 @@ pub fn fuzz_format_expand(input: &[u8]) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ctime_layout() {
-        assert_eq!(
-            ctime_string(3, 10, 4, (9, 5, 7), 2026),
-            "Wed Nov  4 09:05:07 2026"
-        );
-        assert_eq!(
-            ctime_string(2, 10, 24, (11, 20, 2), 2026),
-            "Tue Nov 24 11:20:02 2026"
-        );
-        assert_eq!(
-            ctime_string(9, 12, 1, (0, 0, 0), 2026),
-            "??? ???  1 00:00:00 2026"
-        );
-    }
-
-    #[test]
-    fn loop_sort_defaults() {
-        let order = |m| format_loop_sort(m, None).order;
-        assert_eq!(order(b'S'), Some(SortOrder::Index));
-        assert_eq!(order(b'W'), Some(SortOrder::Order));
-        assert_eq!(order(b'P'), Some(SortOrder::Creation));
-        assert_eq!(order(b'L'), Some(SortOrder::Order));
-        assert!(!format_loop_sort(b'S', None).reversed);
-    }
-
-    #[test]
-    fn loop_sort_arguments() {
-        let sort = |m, arg: &str| format_loop_sort(m, Some(arg.as_bytes()));
-        assert_eq!(sort(b'S', "n").order, Some(SortOrder::Name));
-        assert_eq!(sort(b'S', "t").order, Some(SortOrder::Activity));
-        // i wins over n, n over t.
-        assert_eq!(sort(b'S', "ni").order, Some(SortOrder::Index));
-        assert_eq!(sort(b'W', "tn").order, Some(SortOrder::Name));
-        assert_eq!(sort(b'W', "i").order, Some(SortOrder::Order));
-        assert_eq!(sort(b'L', "x").order, Some(SortOrder::Order));
-        assert_eq!(sort(b'P', "z").order, Some(SortOrder::Z));
-        assert_eq!(sort(b'P', "zi").order, Some(SortOrder::Index));
-        assert_eq!(sort(b'P', "n").order, Some(SortOrder::Creation));
-        assert!(sort(b'S', "r").reversed);
-        assert_eq!(sort(b'S', "r").order, Some(SortOrder::Index));
-        assert!(!sort(b'W', "n").reversed);
-    }
-
-    #[test]
-    fn unescape() {
-        assert_eq!(format_unescape_bytes(b"a b"), b"a b");
-        assert_eq!(format_unescape_bytes(b"#,x#}"), b",x}");
-        assert_eq!(format_unescape_bytes(b"#{a#,b}"), b"#{a#,b}");
-        assert_eq!(format_unescape_bytes(b"x#"), b"x#");
-        assert_eq!(format_unescape_bytes(b"#a"), b"#a");
-    }
-
-    #[test]
-    fn quote_shell_single() {
-        assert_eq!(format_quote_shell_single(b"it's"), b"'it'\\''s'");
-        assert_eq!(format_quote_shell_single(b""), b"''");
-    }
-}

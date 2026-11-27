@@ -862,7 +862,6 @@ fn time_against_clock() {
 /// 3.8's `t/r` (time since, in the largest two units) and `t/d` (seconds
 /// since). The time is 1 hour, 2 minutes and 5 seconds ago, so `t/r` is
 /// the same for a minute.
-#[ignore = "3.8 t/r and t/d: not ported, formats run"]
 #[test]
 fn time_relative() {
     let tmux = server();
@@ -915,7 +914,6 @@ fn attached_client() {
 /// terminal features and `I/c` its terminfo capabilities, `c/f` and `c/b`
 /// give escape sequences for its terminal. RGB is left out because
 /// COLORTERM from the environment the tests run in turns it on.
-#[ignore = "3.8 I and c/f with a client: not ported, formats run"]
 #[test]
 fn attached_client_3_8() {
     let tmux = server();
@@ -1067,184 +1065,124 @@ fn basename_and_dirname() {
 
 /// 3.8's `#{?c1,a,c2,b,c}` else-if chains, and `#{?c,a}` with an empty
 /// else.
-#[ignore = "3.8 else-if chains and the implied empty else: not ported, formats run"]
 #[test]
 fn else_if_chains() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: ""
             ("#{?@num,a}", "a"),
-            // tmux-rs: "@num,b,c"
             ("#{?@zero,a,@num,b,c}", "b"),
-            // tmux-rs: "@zero,b,c"
             ("#{?@zero,a,@zero,b,c}", "c"),
-            // tmux-rs: "@zero,b"
             ("#{?@zero,a,@zero,b}", ""),
-            // tmux-rs: "@zero,b,@num,c,d"
             ("#{?@zero,a,@zero,b,@num,c,d}", "c"),
-            // tmux-rs: "@zero,b,@zero,c,d"
             ("#{?@zero,a,@zero,b,@zero,c,d}", "d"),
-            // tmux-rs: ""
             ("#{?a}", "a"),
         ],
     );
 }
 
 /// 3.8's `||` and `&&` take one, two or more arguments, and none is 0.
-#[ignore = "3.8 && and || with any number of arguments: not ported, formats run"]
 #[test]
 fn boolean_operators_any_arity() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: "1"
             ("#{||:0,0,0,0}", "0"),
-            // tmux-rs: ""
             ("#{||:}", "0"),
-            // tmux-rs: ""
             ("#{||:1}", "1"),
-            // tmux-rs: "1"
             ("#{&&:1,1,0}", "0"),
-            // tmux-rs: ""
             ("#{&&:1}", "1"),
-            // tmux-rs: ""
             ("#{&&:0}", "0"),
-            // tmux-rs: ""
             ("#{&&:}", "0"),
         ],
     );
 }
 
 /// 3.8's `!` and `!!`, which expand their argument and give 1 or 0.
-#[ignore = "3.8 ! and !! modifiers: not ported, formats run"]
 #[test]
 fn not_operators() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: ""
             ("#{!:0}", "1"),
-            // tmux-rs: ""
             ("#{!:1}", "0"),
-            // tmux-rs: ""
             ("#{!:}", "1"),
-            // tmux-rs: ""
             ("#{!:abc}", "0"),
-            // tmux-rs: ""
             ("#{!:@num}", "0"),
-            // tmux-rs: "!:42"
             ("#{!:#{@num}}", "0"),
-            // tmux-rs: "!:0"
             ("#{!:#{@zero}}", "1"),
-            // tmux-rs: ""
             ("#{!!:abc}", "1"),
-            // tmux-rs: ""
             ("#{!!:0}", "0"),
-            // tmux-rs: ""
             ("#{!!:}", "0"),
-            // tmux-rs: "!!:42"
             ("#{!!:#{@num}}", "1"),
-            // tmux-rs: ""
             ("#{!;!:1}", "0"),
-            // tmux-rs: "!:1"
             ("#{!:#{==:a,a}}", "0"),
         ],
     );
 }
 
 /// Since 3.8, `q` also escapes `{`, `}`, newline and tab.
-#[ignore = "3.8 shell quoting of braces, tab and newline: not ported, formats run"]
 #[test]
 fn shell_quoting_3_8() {
     let tmux = server();
-    check(
-        &tmux,
-        &[
-            // tmux-rs: "a{b}c\td\\|e\\;f"
-            ("#{q:@special}", "a\\{b\\}c\\\td\\|e\\;f"),
-        ],
-    );
+    check(&tmux, &[("#{q:@special}", "a\\{b\\}c\\\td\\|e\\;f")]);
 }
 
 /// 3.8's `c/f` and `c/b` give the escape sequence for a foreground or
 /// background colour, and `none` resets.
-#[ignore = "3.8 c/f and c/b: not ported, formats run"]
 #[test]
 fn colour_escapes() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: ""
             ("#{c/f:red}", "\u{1b}[31m"),
-            // tmux-rs: ""
             ("#{c/b:red}", "\u{1b}[41m"),
-            // tmux-rs: ""
             ("#{c/f:none}", "\u{1b}[0m"),
-            // tmux-rs: ""
             ("#{c/f:default}", "\u{1b}[39m"),
-            // tmux-rs: ""
             ("#{c/b:#123456}", "\u{1b}[48;2;18;52;86m"),
-            // tmux-rs: ""
             ("#{c/f:colour200}", "\u{1b}[38;5;200m"),
         ],
     );
 }
 
 /// A time that localtime cannot convert prints nothing in 3.8.
-#[ignore = "behaviour differs from 3.8: times localtime cannot convert, formats run"]
 #[test]
 fn times_out_of_range() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: "Sun Jan  0 15:30:07 219250468"
             ("#{t:@big}", ""),
-            // tmux-rs: "15:30"
             ("#{t/p:@big}", ""),
-            // tmux-rs: "219250468"
             ("#{t/f/%%%%Y:@big}", ""),
         ],
     );
 }
 
 /// `t/r` is empty for a time in the future or out of range.
-#[ignore = "3.8 t/r: not ported, formats run"]
 #[test]
 fn relative_time_future() {
     let tmux = server();
-    check(
-        &tmux,
-        &[
-            // tmux-rs: "Sun Jan  0 15:30:07 219250468"
-            ("#{t/r:@big}", ""),
-            // tmux-rs: "Fri Jan  1 00:00:00 2100"
-            ("#{t/r:@future}", ""),
-        ],
-    );
+    check(&tmux, &[("#{t/r:@big}", ""), ("#{t/r:@future}", "")]);
 }
 
 /// 3.8 adds `window_before_active`, `window_after_active` and the
 /// `next_` and `prev_` window index, active flag and user options to each
 /// item of a `W:` loop.
-#[ignore = "3.8 window neighbour variables in W: loops: not ported, formats run"]
 #[test]
 fn window_neighbours() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: "one::::: two::::: "
             (
                 "#{W:#{window_name}:#{window_before_active}#{window_after_active}:#{next_window_index}:#{prev_window_index}:#{next_window_active}:#{prev_window_active} }",
                 "one:00:1::0: two:01::0::1 ",
             ),
-            // tmux-rs: "| | "
             ("#{W:#{prev_@wopt}|#{next_@wopt} }", "|w2 w1| "),
         ],
     );
@@ -1252,73 +1190,54 @@ fn window_neighbours() {
 
 /// 3.8's `O:` loop over the options of a scope (`s`, `w`, `p`, `g`, `v`),
 /// with array items, user options and hooks.
-#[ignore = "3.8 O: loop: not ported, formats run"]
 #[test]
 fn options_loop() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: "O:= "
             (
                 "#{O:#{option_name}=#{option_value} }",
                 "default-size=80x24 ",
             ),
-            // tmux-rs: "O/g:"
             (
                 "#{O/g:#{?#{m:@*,#{option_name}},#{option_name} ,}}",
                 "@badpath @big @colour @dotdot @empty @float @fmt @future @hash @neg @num @numstr @path @ping @plain @pong @quote @rel @self @selfp @slash @special @time @trail @wide @zero ",
             ),
-            // tmux-rs: "O/s: "
             ("#{O/s:#{option_name} }", "default-size "),
-            // tmux-rs: "O/w:=: "
             (
                 "#{O/w:#{option_name}=#{option_value}:#{option_is_user} }",
                 "@wopt=w1:1 automatic-rename=off:0 ",
             ),
-            // tmux-rs: "O/p:= "
             ("#{O/p:#{option_name}=#{option_value} }", "@popt=p0 "),
-            // tmux-rs: "O/gw:"
             (
                 "#{O/gw:#{?#{==:#{option_name},@wopt},#{option_value},}}",
                 "",
             ),
-            // tmux-rs: "O/g:"
             (
                 "#{O/g:#{?#{==:#{option_name},status-left},#{option_value}|#{option_is_array}|#{option_is_user}|#{option_is_hook},}}",
                 "[#{session_name}] |0|0|0",
             ),
-            // tmux-rs: "O/v:"
             (
                 "#{O/v:#{?#{==:#{option_name},user-keys},#{option_array_key}=#{option_value}:#{option_array_first}#{option_array_last}#{option_array_count}:#{option_is_array} ,}}",
                 "0=x:102:1 5=y:012:1 ",
             ),
-            // tmux-rs: "O/v:"
             (
                 "#{O/v:#{?#{==:#{option_name},user-keys},#{option_array_index}|,}}",
                 "0|5|",
             ),
-            // tmux-rs: "O/g:"
-            (
-                "#{O/g:#{?#{==:#{option_name},status-format},#{option_array_key},}}",
-                "012",
-            ),
-            // tmux-rs: "O/gs:"
             (
                 "#{O/gs:#{?#{==:#{option_name},@num},#{option_value}:#{option_is_user},}}",
                 "42:1",
             ),
-            // tmux-rs: "O/v:"
             (
                 "#{O/v:#{?#{==:#{option_name},escape-time},#{option_value},}}",
                 "10",
             ),
-            // tmux-rs: "O/g:"
             (
                 "#{O/g:#{?#{==:#{option_name},after-new-window},#{option_is_hook}:#{option_is_array},}}",
                 "1:1",
             ),
-            // tmux-rs: "O/g:"
             (
                 "#{O/g:#{?#{==:#{option_name},@zero},#{loop_last_flag},}}",
                 "0",
@@ -1329,60 +1248,61 @@ fn options_loop() {
 
 /// 3.8's `V:` loop over the session (`s`), global (`g`) or client (`c`)
 /// environment. The session environment holds only `FMT_S` and `FMT_T`.
-#[ignore = "3.8 V: loop: not ported, formats run"]
 #[test]
 fn environment_loop() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: "V/g:"
             (
                 "#{V/g:#{?#{m:FMT*,#{environ_name}},#{environ_name}=#{environ_value}:#{environ_hidden}#{environ_removed} ,}}",
                 "FMT_A=1:00 FMT_B=two:00 FMT_HIDDEN=h:10 FMT_REMOVED=:01 ",
             ),
-            // tmux-rs: "V/c:"
             ("#{V/c:#{?#{==:#{environ_name},TERM},y,}}", "y"),
-            // tmux-rs: "V:=: "
             (
                 "#{V:#{environ_name}=#{environ_value}:#{loop_index}#{loop_last_flag} }",
                 "FMT_S=s:00 FMT_T=t:11 ",
             ),
-            // tmux-rs: "V/s: "
             ("#{V/s:#{environ_name} }", "FMT_S FMT_T "),
         ],
     );
 }
 
 /// 3.8's `R:text,count`, with arguments that are formats and its limits.
-#[ignore = "3.8 R modifier: not ported, formats run"]
 #[test]
 fn repeat() {
     let tmux = server();
     check(
         &tmux,
         &[
-            // tmux-rs: ""
             ("#{R:ab,3}", "ababab"),
-            // tmux-rs: ""
             ("#{R:ab,1}", "ab"),
-            // tmux-rs: "R:42,2"
             ("#{R:#{@num},2}", "4242"),
-            // tmux-rs: ""
             ("#{R:a#,b,2}", "a,ba,b"),
-            // tmux-rs: "0"
             ("#{n:#{R:ab,3}}", "6"),
-            // tmux-rs: "R:ab,42"
             (
                 "#{R:ab,#{@num}}",
                 "abababababababababababababababababababababababababababababababababababababababababab",
             ),
-            // tmux-rs: "0"
             ("#{n:#{R:ab,10000}}", "20000"),
-            // tmux-rs: "0"
             ("#{n:#{R:abcdefgh,8192}}", "65536"),
-            // tmux-rs: ""
             ("#{R:@num,2}", "@num@num"),
         ],
+    );
+}
+
+/// 3.8's status-format has three lines, so the array loop of `O:` finds
+/// three keys. tmux-rs still has 3.5's default (Track 3, switch-mode and
+/// the status lines).
+#[ignore = "3.8 status-format default: Track 3, formats run"]
+#[test]
+fn options_loop_status_format() {
+    let tmux = server();
+    check(
+        &tmux,
+        &[(
+            "#{O/g:#{?#{==:#{option_name},status-format},#{option_array_key},}}",
+            "012",
+        )],
     );
 }

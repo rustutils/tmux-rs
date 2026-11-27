@@ -31,7 +31,6 @@
 //!   strings. They are still useful inside tmux-rs while the rest of the codebase
 //!   migrates to safer idioms.
 
-use crate::libc::memcpy;
 use crate::*;
 
 // Re-export the core utf8 surface from `tmux-utf8`. External call sites
@@ -268,47 +267,6 @@ pub fn utf8_cstrwidth_(s: &[u8]) -> u32 {
 pub unsafe fn utf8_cstrwidth(s: *const u8) -> u32 {
     let bytes = unsafe { CStr::from_ptr(s.cast()).to_bytes() };
     utf8_cstrwidth_(bytes)
-}
-
-pub unsafe fn utf8_padcstr(s: *const u8, width: u32) -> *mut u8 {
-    unsafe {
-        let n = utf8_cstrwidth(s);
-        if n >= width {
-            return xstrdup(s).as_ptr();
-        }
-
-        let mut slen = strlen(s);
-        let out: *mut u8 = xmalloc(slen + 1 + (width - n) as usize).as_ptr().cast();
-        memcpy(out.cast(), s.cast(), slen);
-        let mut i = n;
-        while i < width {
-            *out.add(slen) = b' ';
-            slen += 1;
-            i += 1;
-        }
-        *out.add(slen) = b'\0';
-        out
-    }
-}
-
-pub unsafe fn utf8_rpadcstr(s: *const u8, width: u32) -> *mut u8 {
-    unsafe {
-        let n = utf8_cstrwidth(s);
-        if n >= width {
-            return xstrdup(s).as_ptr();
-        }
-
-        let slen = strlen(s);
-        let out: *mut u8 = xmalloc(slen + 1 + (width - n) as usize).as_ptr().cast();
-        let mut i = 0;
-        while i < width - n {
-            *out.add(i as usize) = b' ';
-            i += 1;
-        }
-        memcpy(out.add(i as usize).cast(), s.cast(), slen);
-        *out.add(i as usize + slen) = b'\0';
-        out
-    }
 }
 
 /// Fuzz-friendly wrapper: feeds arbitrary bytes through the UTF-8 decoder

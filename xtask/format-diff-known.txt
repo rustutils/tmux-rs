@@ -4,41 +4,16 @@
 # are the names the report prints. Remove entries as they get fixed, the
 # report lists entries that matched nothing. Crashes are never listed
 # here: they are fixed.
-group	operator !!	3.8 !! operator not ported
-group	operator !	3.8 ! operator not ported
-group	conditional with else-if	3.8 else-if chains in #{?} not ported
-group	conditional without else	3.8 implied empty else not ported, and 3.8 drops the rest of the format after a bad conditional
-group	conditional	conditions on variables tmux-rs lacks or prints differently
+group	conditional with else-if	conditions on pane_flags, a 3.8 variable not ported
+group	conditional without else	conditions on pane_flags, a 3.8 variable not ported
+group	conditional	conditions on pane_flags, a 3.8 variable not ported
 group	variable missing in tmux-rs	3.8 variables not ported
-group	operator ||	3.8 n-ary || not ported (one argument, none, more than two)
-group	operator &&	3.8 n-ary && not ported
-group	modifier R	3.8 R modifier not ported
-group	modifier C	C combined with modifiers tmux-rs lacks (R, !)
 group	variable window_layout	3.8 layout strings are JSON
 group	variable window_visible_layout	3.8 layout strings are JSON
-group	modifier O	3.8 O option loop not ported
-group	modifier V	3.8 V environment loop not ported
-group	modifier p	p combined with modifiers tmux-rs lacks (R, A, !, !!, c/f)
-group	modifier =	= combined with modifiers tmux-rs lacks (!, !!, c/f, I)
-group	modifier e	integer overflow, division by zero and precision over 100 differ
-group	modifier c	3.8 c/f and c/b not ported
-group	modifier s	s combined with modifiers tmux-rs lacks (!!, c/b, R)
-group	modifier I	3.8 I client modifiers not ported
-group	modifier A	3.8 A modifier not ported
-group	modifier n	n combined with modifiers tmux-rs lacks (c/f, A, I)
-group	modifier d	d combined with !! (not ported)
-group	modifier q	3.8 q escapes braces
-group	modifier w	w combined with I (not ported)
-group	modifier W	3.8 next_ and prev_ user options in W loops not ported
-group	operator >	> combined with !! (not ported)
+group	modifier O	O/v lists 3.8 server options that are not ported
+group	modifier W	a W: loop inside a W: loop: 3.8 reuses one static list in sort_get, so the outer loop goes on over the inner one (question for Patrick)
 group	variable pane-border-format	Track 3: floating panes (option default, see tests/parity_known.rs)
 group	variable status-format	Track 3: switch-mode and status lines (option default)
 group	variable status-format[0]	Track 3: switch-mode and status lines (option default)
 group	variable status-format[1]	Track 3: switch-mode and status lines (option default)
-group	modifier E	E combined with !! and R (not ported)
-group	modifier b	b combined with ! (not ported)
-group	modifier T	T combined with I (not ported)
-group	modifier l	l combined with !! (not ported)
-group	modifier N	N combined with ! (not ported)
-group	operator <	< combined with ! (not ported)
-group	modifier m	m combined with ! (not ported)
+group	modifier P	a P: loop inside a P: loop, as for modifier W (question for Patrick)

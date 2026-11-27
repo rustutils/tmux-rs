@@ -1654,3 +1654,55 @@ mod tests {
         assert_eq!(colour_fromstring(s), -1);
     }
 }
+
+/// `colour_toescape`: the escape sequence that sets `colour` as the
+/// foreground (or with `bg` the background) on a terminal with `flags`,
+/// for the `c/f` and `c/b` format modifiers. RGB colours fall back to the
+/// 256 colour palette and those to the 16 colours when the terminal lacks
+/// them. None for a colour without an escape (none, terminal).
+///
+/// 3.8 also maps theme colours, which are not ported (Track 3).
+pub fn colour_toescape(mut colour: i32, bg: bool, flags: term_flags) -> Option<String> {
+    let o = if bg { 40 } else { 30 };
+    if colour == 8 || colour == 9 {
+        return Some(format!("\x1b[{}m", o + 9));
+    }
+    if !flags.intersects(term_flags::TERM_RGBCOLOURS) && colour & COLOUR_FLAG_RGB != 0 {
+        let (r, g, b) = colour_split_rgb(colour);
+        colour = colour_find_rgb(r, g, b);
+    }
+    if !flags.intersects(term_flags::TERM_256COLOURS) && colour & COLOUR_FLAG_256 != 0 {
+        colour = colour_256to16(colour);
+    }
+    if colour & COLOUR_FLAG_RGB != 0 {
+        let (r, g, b) = colour_split_rgb(colour);
+        return Some(format!("\x1b[{};2;{r};{g};{b}m", o + 8));
+    }
+    if colour & COLOUR_FLAG_256 != 0 {
+        return Some(format!("\x1b[{};5;{}m", o + 8, colour & 0xff));
+    }
+    if (0..=7).contains(&colour) {
+        return Some(format!("\x1b[{}m", colour + o));
+    }
+    if (90..=97).contains(&colour) {
+        return Some(format!("\x1b[{}m", colour + o - 30));
+    }
+    None
+}
+
+#[cfg(test)]
+mod toescape_tests {
+    use super::*;
+
+    #[test]
+    fn escapes() {
+        let all = term_flags::TERM_256COLOURS | term_flags::TERM_RGBCOLOURS;
+        assert_eq!(colour_toescape(1, false, all).as_deref(), Some("\x1b[31m"));
+        assert_eq!(colour_toescape(8, true, all).as_deref(), Some("\x1b[49m"));
+        assert_eq!(colour_toescape(91, false, all).as_deref(), Some("\x1b[91m"));
+        assert_eq!(colour_toescape(200 | COLOUR_FLAG_256, false, all).as_deref(), Some("\x1b[38;5;200m"));
+        let rgb = colour_join_rgb(0x12, 0x34, 0x56);
+        assert_eq!(colour_toescape(rgb, true, all).as_deref(), Some("\x1b[48;2;18;52;86m"));
+        assert!(colour_toescape(rgb, true, term_flags::empty()).is_some_and(|s| !s.contains(";2;")));
+    }
+}
