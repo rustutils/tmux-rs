@@ -7,6 +7,9 @@
 - A `NAME=value` line in a configuration file made the server crash when it
   started the first pane. This came with 0.3.0 and broke configurations and
   themes that set variables this way.
+- A negative or very large precision in the `e` format modifier, as in
+  `#{e|+|f|-3:1,2}`, made the server crash. The precision is now limited to
+  100 either way as in tmux 3.8, and a negative one prints six digits.
 
 ## 0.3.0 (2026-11-26)
 

@@ -7,6 +7,7 @@ mod copy_mode;
 mod cursor;
 mod environment;
 mod format_strings;
+mod formats;
 pub mod harness;
 mod hook_monitors;
 mod hooks;

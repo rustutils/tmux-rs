@@ -38,6 +38,9 @@ pub const FORMAT_NONE: i32 = 0;
 pub const FORMAT_PANE: u32 = 0x80000000u32;
 pub const FORMAT_WINDOW: u32 = 0x40000000u32;
 
+/// The largest precision the `e` modifier takes, either sign (3.8).
+const FORMAT_MAX_PRECISION: i32 = 100;
+
 pub type format_cb = unsafe fn(_: &format_tree) -> format_table_type;
 
 // Entry in format job tree.
@@ -4319,7 +4322,7 @@ pub unsafe fn format_replace_expression(
 
         'fail: {
             let mut use_fp: i32 = 0;
-            let mut prec: u32 = 0;
+            let mut prec: i32 = 0;
 
             let mut mleft: f64;
             let mut mright: f64;
@@ -4380,8 +4383,12 @@ pub unsafe fn format_replace_expression(
 
             // The third argument may be precision.
             if argc >= 3 {
-                prec = match strtonum(*(*mexp).argv.add(2), i32::MIN, i32::MAX) {
-                    Ok(value) => value as u32,
+                prec = match strtonum(
+                    *(*mexp).argv.add(2),
+                    -FORMAT_MAX_PRECISION,
+                    FORMAT_MAX_PRECISION,
+                ) {
+                    Ok(value) => value,
                     Err(errstr) => {
                         format_log1!(
                             es,
@@ -4430,18 +4437,22 @@ pub unsafe fn format_replace_expression(
                 mleft = (mleft as c_longlong) as f64;
                 mright = (mright as c_longlong) as f64;
             }
+            // C prints with "%.*f", where a negative precision is taken as
+            // omitted, which means 6 digits.
+            let digits: usize = usize::try_from(prec).unwrap_or(6);
+            debug_assert!(digits <= FORMAT_MAX_PRECISION as usize);
             format_log1!(
                 es,
                 c!("format_replace_expression"),
-                "expression left side is: {1:0$}",
-                prec as usize,
+                "expression left side is: {1:.0$}",
+                digits,
                 mleft,
             );
             format_log1!(
                 es,
                 c!("format_replace_expression"),
-                "expression right side is: {1:0$}",
-                prec as usize,
+                "expression right side is: {1:.0$}",
+                digits,
                 mright,
             );
 
@@ -4460,9 +4471,9 @@ pub unsafe fn format_replace_expression(
             };
 
             value = if use_fp != 0 {
-                format_nul!("{:.*}", prec as usize, result)
+                format_nul!("{:.*}", digits, result)
             } else {
-                format_nul!("{:.*}", prec as usize, (result as c_longlong) as f64)
+                format_nul!("{:.*}", digits, (result as c_longlong) as f64)
             };
             format_log1!(
                 es,
