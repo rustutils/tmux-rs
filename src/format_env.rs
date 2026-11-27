@@ -37,7 +37,10 @@ use crate::options_::{
     ArrayKey, options_array_keys, options_entries, options_is_array, options_name, options_parse_get,
     options_table_entry, options_to_string,
 };
-use crate::sort::{SortCriteria, SortOrder};
+use std::cell::OnceCell;
+
+use crate::global::with_loop_lists;
+use crate::sort::{SortCriteria, SortOrder, loop_list_store};
 use crate::*;
 
 /// Expands `fmt` with the tree `ft`: `format_expand`, or `format_expand_time`
@@ -347,104 +350,55 @@ impl TreeEnv {
         unsafe { &*self.ft }
     }
 
-    /// `format_loop_sessions`.
-    fn loop_sessions(&self, sort: LoopSort) -> Vec<LoopChild<'_>> {
+    /// The sorted loops (`S:`, `W:`, `P:`, `L:`): sorts the items, stores
+    /// the list where 3.8's `sort_get` keeps it, and returns items that are
+    /// built from that list only when the engine reaches them. None for
+    /// `W:` without a session and `P:` without a window.
+    fn loop_sorted(&self, kind: SortedLoop, sort: LoopSort) -> Option<Vec<LoopChild<'_>>> {
+        let crit = criteria(sort);
         // SAFETY: the tree is valid (TreeEnv's invariant), and the
         // registries and sort_get only hand out live entities.
-        unsafe {
+        let count = unsafe {
             let ft = self.ft;
-            let current = if (*ft).c.is_null() { null_mut() } else { client_get_session((*ft).c) };
-            let l = sort_get_sessions(&criteria(sort));
-            let n = l.len();
-            let mut out = Vec::with_capacity(n);
-            for (i, s) in l.into_iter().enumerate() {
-                let nft = format_create((*ft).client, (*ft).item, FORMAT_NONE, (*ft).flags);
-                format_add!(nft, "loop_index", "{i}");
-                format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
-                format_defaults(nft, (*ft).c, NonNull::new(s), None, None);
-                let active = !current.is_null() && (*s).id == (*current).id;
-                out.push(Self::child(nft, active, format!("session loop: ${}", (*s).id)));
-            }
-            out
-        }
-    }
-
-    /// `format_loop_windows`, with 3.8's neighbour variables.
-    fn loop_windows(&self, sort: LoopSort) -> Option<Vec<LoopChild<'_>>> {
-        // SAFETY: the tree is valid (TreeEnv's invariant), and the
-        // registries and sort_get only hand out live entities.
-        unsafe {
-            let ft = self.ft;
-            let s = (*ft).s.and_then(|id| session_from_id(id))?;
-            let l = sort_get_winlinks_session(s, &criteria(sort));
-            let n = l.len();
-            let curw = (*s).curw_id();
-            let mut out = Vec::with_capacity(n);
-            for (i, &wl) in l.iter().enumerate() {
-                let w = winlink_window(wl);
-                let nft = format_create((*ft).client, (*ft).item, FORMAT_WINDOW as i32 | (*w).id as i32, (*ft).flags);
-                format_add!(nft, "loop_index", "{i}");
-                format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
-                let after = i > 0 && Some(l[i - 1].id) == curw;
-                let before = i + 1 < n && Some(l[i + 1].id) == curw;
-                format_add!(nft, "window_after_active", "{}", i32::from(after));
-                format_add!(nft, "window_before_active", "{}", i32::from(before));
-                if i + 1 < n {
-                    add_window_neighbour(nft, l[i + 1], s, "next");
+            match kind {
+                SortedLoop::Sessions => {
+                    let l: Vec<SessionId> = sort_get_sessions(&crit).into_iter().map(|s| SessionId((*s).id)).collect();
+                    with_loop_lists(|lists| loop_list_store(&mut lists.sessions, &l));
+                    l.len()
                 }
-                if i > 0 {
-                    add_window_neighbour(nft, l[i - 1], s, "prev");
+                SortedLoop::Windows => {
+                    let s = (*ft).s.and_then(|id| session_from_id(id))?;
+                    let l: Vec<WinlinkId> = sort_get_winlinks_session(s, &crit).into_iter().map(|wl| wl.id).collect();
+                    with_loop_lists(|lists| loop_list_store(&mut lists.winlinks, &l));
+                    l.len()
                 }
-                format_defaults(nft, (*ft).c, NonNull::new(s), Some(wl.id), None);
-                out.push(Self::child(nft, Some(wl.id) == curw, format!("window loop: {} @{}", wl.idx, (*w).id)));
+                SortedLoop::Panes => {
+                    let w = (*ft).w.and_then(|id| window_from_id(id))?;
+                    let l: Vec<PaneId> = sort_get_panes_window(w, &crit).into_iter().map(|wp| PaneId((*wp).id)).collect();
+                    with_loop_lists(|lists| loop_list_store(&mut lists.panes, &l));
+                    l.len()
+                }
+                SortedLoop::Clients => {
+                    let l: Vec<ClientId> = sort_get_clients(&crit).into_iter().map(|c| (*c).id).collect();
+                    with_loop_lists(|lists| loop_list_store(&mut lists.clients, &l));
+                    l.len()
+                }
             }
-            Some(out)
-        }
-    }
-
-    /// `format_loop_panes`.
-    fn loop_panes(&self, sort: LoopSort) -> Option<Vec<LoopChild<'_>>> {
-        // SAFETY: the tree is valid (TreeEnv's invariant), and the
-        // registries and sort_get only hand out live entities.
-        unsafe {
-            let ft = self.ft;
-            let w = (*ft).w.and_then(|id| window_from_id(id))?;
-            let s = (*ft).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-            let l = sort_get_panes_window(w, &criteria(sort));
-            let n = l.len();
-            let active = window_active_pane(w);
-            let mut out = Vec::with_capacity(n);
-            for (i, wp) in l.into_iter().enumerate() {
-                let nft = format_create((*ft).client, (*ft).item, FORMAT_PANE as i32 | (*wp).id as i32, (*ft).flags);
-                format_add!(nft, "loop_index", "{i}");
-                format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
-                format_defaults(nft, (*ft).c, NonNull::new(s), (*ft).wl.map(|wl| wl.id), NonNull::new(wp));
-                out.push(Self::child(nft, wp == active, format!("pane loop: %{}", (*wp).id)));
-            }
-            Some(out)
-        }
-    }
-
-    /// `format_loop_clients`.
-    fn loop_clients(&self, sort: LoopSort) -> Vec<LoopChild<'_>> {
-        // SAFETY: the tree is valid (TreeEnv's invariant), and the
-        // registries and sort_get only hand out live entities.
-        unsafe {
-            let ft = self.ft;
-            let s = (*ft).s.and_then(|id| session_from_id(id)).unwrap_or(null_mut());
-            let wp = (*ft).wp.and_then(|id| pane_from_id(id)).unwrap_or(null_mut());
-            let l = sort_get_clients(&criteria(sort));
-            let n = l.len();
-            let mut out = Vec::with_capacity(n);
-            for (i, c) in l.into_iter().enumerate() {
-                let nft = format_create(c, (*ft).item, 0, (*ft).flags);
-                format_add!(nft, "loop_index", "{i}");
-                format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
-                format_defaults(nft, c, NonNull::new(s), (*ft).wl.map(|wl| wl.id), NonNull::new(wp));
-                out.push(Self::child(nft, false, format!("client loop: {}", _s((*c).name))));
-            }
-            out
-        }
+        };
+        Some(
+            (0..count)
+                .map(|index| LoopChild {
+                    env: Box::new(LoopItem {
+                        parent: self.ft,
+                        kind,
+                        index,
+                        count,
+                        built: OnceCell::new(),
+                    }),
+                    active: false,
+                })
+                .collect(),
+        )
     }
 
     /// A new child tree for the `O:` and `V:` loops, with the parent's
@@ -612,10 +566,10 @@ impl FormatEnv for TreeEnv {
 
     fn children(&self, kind: LoopKind, sort: LoopSort, flags: &[u8]) -> Option<Vec<LoopChild<'_>>> {
         match kind {
-            LoopKind::Sessions => Some(self.loop_sessions(sort)),
-            LoopKind::Windows => self.loop_windows(sort),
-            LoopKind::Panes => self.loop_panes(sort),
-            LoopKind::Clients => Some(self.loop_clients(sort)),
+            LoopKind::Sessions => self.loop_sorted(SortedLoop::Sessions, sort),
+            LoopKind::Windows => self.loop_sorted(SortedLoop::Windows, sort),
+            LoopKind::Panes => self.loop_sorted(SortedLoop::Panes, sort),
+            LoopKind::Clients => self.loop_sorted(SortedLoop::Clients, sort),
             LoopKind::Options => Some(self.loop_options(flags)),
             LoopKind::Environ => Some(self.loop_environ(flags)),
         }
@@ -721,6 +675,206 @@ impl FormatEnv for TreeEnv {
                 format_cycle_start_timer(c);
             }
         }
+    }
+}
+
+/// The kinds of loop 3.8 sorts with `sort_get`.
+#[derive(Clone, Copy)]
+enum SortedLoop {
+    Sessions,
+    Windows,
+    Panes,
+    Clients,
+}
+
+/// An item of a sorted loop. C builds each item's tree only when its loop
+/// reaches it, from the loop's static list as it is then, and a nested
+/// loop of the same kind may have written over that list. So the item is
+/// built the first time the engine asks it anything, and reads the list
+/// in the bridge (`LoopLists`) then.
+struct LoopItem {
+    /// The tree of the loop, which outlives its items.
+    parent: *mut format_tree,
+    kind: SortedLoop,
+    index: usize,
+    /// How many items the loop has (C's n, which does not change).
+    count: usize,
+    /// The item's tree and whether it is the current one.
+    built: OnceCell<(TreeEnv, bool)>,
+}
+
+impl LoopItem {
+    fn env(&self) -> &TreeEnv {
+        &self.get().0
+    }
+
+    fn get(&self) -> &(TreeEnv, bool) {
+        // SAFETY: the parent tree is valid while its loop runs (the items
+        // are dropped before the loop returns), and the registries only
+        // hand out live entities.
+        self.built.get_or_init(|| unsafe { self.build() })
+    }
+
+    /// Builds the item from the list as it is now, as format.c's loop
+    /// functions build each item.
+    ///
+    /// # Safety
+    /// The parent tree must be valid.
+    unsafe fn build(&self) -> (TreeEnv, bool) {
+        unsafe {
+            let ft = self.parent;
+            let (i, n) = (self.index, self.count);
+            let s_parent = (*ft).s.and_then(|id| session_from_id(id));
+            let (nft, active, message) = match self.kind {
+                SortedLoop::Sessions => {
+                    let s = with_loop_lists(|l| l.sessions.get(i).copied()).and_then(|id| session_from_id(id));
+                    let current = if (*ft).c.is_null() { null_mut() } else { client_get_session((*ft).c) };
+                    let nft = format_create((*ft).client, (*ft).item, FORMAT_NONE, (*ft).flags);
+                    format_add!(nft, "loop_index", "{i}");
+                    format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
+                    format_defaults(nft, (*ft).c, s.and_then(NonNull::new), None, None);
+                    let active = s.is_some_and(|s| !current.is_null() && (*s).id == (*current).id);
+                    let message = s.map_or(String::new(), |s| format!("session loop: ${}", (*s).id));
+                    (nft, active, message)
+                }
+                SortedLoop::Windows => {
+                    let (wl, prev, next) = with_loop_lists(|l| {
+                        let at = |j: usize| l.winlinks.get(j).copied();
+                        (at(i), if i > 0 { at(i - 1) } else { None }, if i + 1 < n { at(i + 1) } else { None })
+                    });
+                    let wl = wl.and_then(winlink_get);
+                    let prev = prev.and_then(winlink_get);
+                    let next = next.and_then(winlink_get);
+                    let s = s_parent.unwrap_or(null_mut());
+                    let curw = if s.is_null() { None } else { (*s).curw_id() };
+                    let w = wl.map_or(null_mut(), |wl| winlink_window(wl));
+                    let tag = if w.is_null() { FORMAT_NONE } else { FORMAT_WINDOW as i32 | (*w).id as i32 };
+                    let nft = format_create((*ft).client, (*ft).item, tag, (*ft).flags);
+                    format_add!(nft, "loop_index", "{i}");
+                    format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
+                    let after = prev.is_some_and(|p| Some(p.id) == curw);
+                    let before = next.is_some_and(|p| Some(p.id) == curw);
+                    format_add!(nft, "window_after_active", "{}", i32::from(after));
+                    format_add!(nft, "window_before_active", "{}", i32::from(before));
+                    if !s.is_null() {
+                        if let Some(next) = next {
+                            add_window_neighbour(nft, next, s, "next");
+                        }
+                        if let Some(prev) = prev {
+                            add_window_neighbour(nft, prev, s, "prev");
+                        }
+                    }
+                    format_defaults(nft, (*ft).c, NonNull::new(s), wl.map(|wl| wl.id), None);
+                    let active = wl.is_some_and(|wl| Some(wl.id) == curw);
+                    let message = match wl {
+                        Some(wl) if !w.is_null() => format!("window loop: {} @{}", wl.idx, (*w).id),
+                        _ => String::new(),
+                    };
+                    (nft, active, message)
+                }
+                SortedLoop::Panes => {
+                    let wp = with_loop_lists(|l| l.panes.get(i).copied()).and_then(|id| pane_from_id(id));
+                    let w = (*ft).w.and_then(|id| window_from_id(id));
+                    let tag = wp.map_or(FORMAT_NONE, |wp| FORMAT_PANE as i32 | (*wp).id as i32);
+                    let nft = format_create((*ft).client, (*ft).item, tag, (*ft).flags);
+                    format_add!(nft, "loop_index", "{i}");
+                    format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
+                    format_defaults(
+                        nft,
+                        (*ft).c,
+                        s_parent.and_then(NonNull::new),
+                        (*ft).wl.map(|wl| wl.id),
+                        wp.and_then(NonNull::new),
+                    );
+                    let active = matches!((wp, w), (Some(wp), Some(w)) if wp == window_active_pane(w));
+                    let message = wp.map_or(String::new(), |wp| format!("pane loop: %{}", (*wp).id));
+                    (nft, active, message)
+                }
+                SortedLoop::Clients => {
+                    let c = with_loop_lists(|l| l.clients.get(i).copied())
+                        .and_then(|id| client_from_id(id))
+                        .unwrap_or(null_mut());
+                    let wp = (*ft).wp.and_then(|id| pane_from_id(id));
+                    let nft = format_create(c, (*ft).item, 0, (*ft).flags);
+                    format_add!(nft, "loop_index", "{i}");
+                    format_add!(nft, "loop_last_flag", "{}", i32::from(i + 1 == n));
+                    format_defaults(
+                        nft,
+                        c,
+                        s_parent.and_then(NonNull::new),
+                        (*ft).wl.map(|wl| wl.id),
+                        wp.and_then(NonNull::new),
+                    );
+                    let message = if c.is_null() { String::new() } else { format!("client loop: {}", _s((*c).name)) };
+                    (nft, false, message)
+                }
+            };
+            let mut env = TreeEnv::owned(nft);
+            env.loop_message = (!message.is_empty()).then(|| message.into_bytes());
+            (env, active)
+        }
+    }
+}
+
+impl FormatEnv for LoopItem {
+    fn lookup(&self, name: &[u8], for_time: bool) -> Option<Value> {
+        self.env().lookup(name, for_time)
+    }
+
+    fn children(&self, kind: LoopKind, sort: LoopSort, flags: &[u8]) -> Option<Vec<LoopChild<'_>>> {
+        self.env().children(kind, sort, flags)
+    }
+
+    fn jobs_disabled(&self) -> bool {
+        self.env().jobs_disabled()
+    }
+
+    fn job(&self, cmd: &[u8], expanded: &[u8]) -> Option<Vec<u8>> {
+        self.env().job(cmd, expanded)
+    }
+
+    fn name_exists(&self, kind: NameKind, name: &[u8]) -> Option<bool> {
+        self.env().name_exists(kind, name)
+    }
+
+    fn search_pane(&self, text: &[u8], regex: bool, icase: bool) -> Option<u32> {
+        self.env().search_pane(text, regex, icase)
+    }
+
+    fn client_query(&self, query: ClientQuery, name: &[u8]) -> Option<Vec<u8>> {
+        self.env().client_query(query, name)
+    }
+
+    fn colour_escape(&self, colour: i32, background: bool) -> Option<Vec<u8>> {
+        self.env().colour_escape(colour, background)
+    }
+
+    fn is_status(&self) -> bool {
+        self.env().is_status()
+    }
+
+    fn start_cycle_timer(&self) {
+        self.env().start_cycle_timer();
+    }
+
+    fn logging(&self) -> bool {
+        self.env().logging()
+    }
+
+    fn log(&self, depth: u32, message: &[u8]) {
+        self.env().log(depth, message);
+    }
+
+    fn loop_message(&self) -> Option<Vec<u8>> {
+        self.env().loop_message()
+    }
+
+    fn loop_active(&self) -> Option<bool> {
+        Some(self.get().1)
+    }
+
+    fn pane_id(&self) -> Option<u32> {
+        self.env().pane_id()
     }
 }
 

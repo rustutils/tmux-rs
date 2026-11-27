@@ -320,6 +320,16 @@ pub trait FormatEnv {
         None
     }
 
+    /// For a child of a loop that is built lazily: whether it is the
+    /// current item, asked just before the child is expanded. None uses
+    /// [`LoopChild::active`]. C builds each loop item from its list only
+    /// when it reaches it, and a nested loop of the same kind can change
+    /// that list (3.8's sort_get functions share one static array), so an
+    /// env that copies this decides late.
+    fn loop_active(&self) -> Option<bool> {
+        None
+    }
+
     /// The ID of the pane (without the %), for the log line of `C:`.
     /// Only asked when logging and [`FormatEnv::search_pane`] found a
     /// pane.

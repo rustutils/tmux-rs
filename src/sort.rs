@@ -793,3 +793,53 @@ mod tests {
         assert_eq!(cmp_bytes_ignore_ascii_case(b"_", b"A"), Ordering::Less);
     }
 }
+
+/// The last list each kind of format loop sorted, as 3.8's `sort_get`
+/// functions keep it: one static array per kind that every call writes
+/// over from the start and only ever grows. A loop nested in a loop of
+/// the same kind writes over the outer loop's list, and the outer loop
+/// goes on with what it finds there. The format adapter copies this.
+#[derive(Debug)]
+pub struct LoopLists<S, W, P, C> {
+    /// `sort_get_sessions`.
+    pub sessions: Vec<S>,
+    /// `sort_get_winlinks_session`.
+    pub winlinks: Vec<W>,
+    /// `sort_get_panes_window`.
+    pub panes: Vec<P>,
+    /// `sort_get_clients`.
+    pub clients: Vec<C>,
+}
+
+impl<S, W, P, C> Default for LoopLists<S, W, P, C> {
+    fn default() -> Self {
+        Self { sessions: Vec::new(), winlinks: Vec::new(), panes: Vec::new(), clients: Vec::new() }
+    }
+}
+
+/// Writes `items` over the start of `list`, keeping what was after them,
+/// as C's `sort_get` writes into its static array.
+pub fn loop_list_store<T: Copy>(list: &mut Vec<T>, items: &[T]) {
+    if list.len() < items.len() {
+        list.resize(items.len(), items[0]);
+    }
+    list[..items.len()].copy_from_slice(items);
+}
+
+#[cfg(test)]
+mod loop_list_tests {
+    use super::*;
+
+    #[test]
+    fn store_keeps_the_tail() {
+        let mut list = Vec::new();
+        loop_list_store(&mut list, &[3, 1, 2]);
+        assert_eq!(list, [3, 1, 2]);
+        loop_list_store(&mut list, &[7]);
+        assert_eq!(list, [7, 1, 2]);
+        loop_list_store(&mut list, &[]);
+        assert_eq!(list, [7, 1, 2]);
+        loop_list_store(&mut list, &[1, 2, 3, 4]);
+        assert_eq!(list, [1, 2, 3, 4]);
+    }
+}

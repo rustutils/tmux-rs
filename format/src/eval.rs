@@ -924,8 +924,11 @@ fn loop_over(
         {
             flog!(st, message);
         }
+        // An env that builds its item lazily answers only now, after the
+        // items before it were expanded (C reads its list again here).
+        let is_active = child.env.loop_active().unwrap_or(child.active);
         let fmt = match active {
-            Some(act) if child.active => act,
+            Some(act) if is_active => act,
             _ => all,
         };
         let depth = Cell::new(st.depth.get());

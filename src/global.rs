@@ -40,6 +40,8 @@ use crate::environ::Environ;
 use crate::cmd_::CmdList;
 use crate::events::EventBus;
 use crate::format_jobs::FormatJobs;
+use crate::sort::LoopLists;
+use crate::{ClientId, PaneId, SessionId, WinlinkId};
 use crate::job_::JobId;
 use crate::cmd_::cmd_wait_for::Waiter;
 use crate::key_bindings::KeyTables;
@@ -70,6 +72,8 @@ thread_local! {
     static WAIT_CHANNELS: RefCell<WaitChannels<Waiter>> = RefCell::new(WaitChannels::new());
     /// The links between sessions and windows, and the session groups.
     static LINKS: RefCell<Links> = RefCell::new(Links::new());
+    /// The lists the format loops last sorted (3.8's sort_get statics).
+    static LOOP_LISTS: RefCell<LoopLists<SessionId, WinlinkId, PaneId, ClientId>> = RefCell::new(LoopLists::default());
     /// The `#()` jobs of format trees without a client.
     static FORMAT_JOBS: RefCell<FormatJobs<JobId>> = RefCell::new(FormatJobs::new());
     /// The format engine and its cache of parsed formats. It has no
@@ -84,6 +88,14 @@ thread_local! {
 /// If `f` reaches these jobs again (see the module rules).
 pub fn with_format_jobs<R>(f: impl FnOnce(&mut FormatJobs<JobId>) -> R) -> R {
     FORMAT_JOBS.with(|jobs| f(&mut jobs.borrow_mut()))
+}
+
+/// Run `f` with the lists the format loops last sorted.
+///
+/// # Panics
+/// If `f` reaches these lists again (see the module rules).
+pub fn with_loop_lists<R>(f: impl FnOnce(&mut LoopLists<SessionId, WinlinkId, PaneId, ClientId>) -> R) -> R {
+    LOOP_LISTS.with(|lists| f(&mut lists.borrow_mut()))
 }
 
 /// Run `f` with the format engine. Unlike the stores, `f` may expand

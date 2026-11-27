@@ -7,10 +7,8 @@
 group	variable missing in tmux-rs	3.8 variables not ported
 group	variable window_layout	3.8 layout strings are JSON
 group	variable window_visible_layout	3.8 layout strings are JSON
-group	modifier O	O/v lists 3.8 server options that are not ported
-group	modifier W	a W: loop inside a W: loop: 3.8 reuses one static list in sort_get, so the outer loop goes on over the inner one (question for Patrick)
+group	modifier O	O/v lists the server options, 3.8 has options tmux-rs does not have yet (Track 3, see tests/parity_known.rs)
 group	variable pane-border-format	Track 3: floating panes (option default, see tests/parity_known.rs)
 group	variable status-format	Track 3: switch-mode and status lines (option default)
 group	variable status-format[0]	Track 3: switch-mode and status lines (option default)
 group	variable status-format[1]	Track 3: switch-mode and status lines (option default)
-group	modifier P	a P: loop inside a P: loop, as for modifier W (question for Patrick)

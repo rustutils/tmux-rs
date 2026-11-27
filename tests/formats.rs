@@ -1306,3 +1306,37 @@ fn options_loop_status_format() {
         )],
     );
 }
+
+/// A loop nested in a loop of the same kind. 3.8's `sort_get` functions
+/// keep one static list per kind, so the inner loop writes over the outer
+/// loop's list and the outer loop goes on over what it finds there: its
+/// items, their neighbours and which one is active. tmux-rs copies this.
+#[test]
+fn nested_loops() {
+    let tmux = server();
+    check(
+        &tmux,
+        &[
+            (
+                "#{W/nr:[#{W:#{window_index}}]#{window_index}#{?window_before_active,b,}#{next_window_index},<#{window_index}>}",
+                "[01]1b0[01]1",
+            ),
+            (
+                "#{P/r:[#{P:#{pane_index}}]#{pane_index},<#{pane_index}>}",
+                "[01]1[01]1",
+            ),
+            (
+                "#{S/nr:[#{S:#{session_name}}]#{session_name},<#{session_name}>}",
+                "[alphabeta]beta[alphabeta]beta",
+            ),
+            (
+                "#{W/nr:#{S:#{W:x}}#{window_index},<#{window_index}>}",
+                "xxx1xxx1",
+            ),
+            (
+                "#{W/n:#{window_index}#{prev_window_index}#{W:},<#{window_index}>}",
+                "<0>10",
+            ),
+        ],
+    );
+}
