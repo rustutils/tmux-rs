@@ -749,6 +749,7 @@ fn pane_variables() {
             ("#{history_all_bytes}", "12,480,0,0,0,0"),
             // Every command of the harness passes -f/dev/null.
             ("[#{config_files}]", "[/dev/null,/dev/null]"),
+            ("#{pane_tabs}", "8,16,24,32,40,48,56,64,72"),
             ("#{C:zzz}", "0"),
             ("#{C/r:z+}", "0"),
             ("#{C:}", "1"),
