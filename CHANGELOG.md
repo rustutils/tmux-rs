@@ -13,6 +13,8 @@
 - A very large or very negative width in the `=` and `p` format modifiers
   made the server crash or hang building a huge string. Widths beyond 10000
   either way are now ignored, as in tmux 3.8.
+- The `b` format modifier (basename) made the server crash on an empty value,
+  on `/` and on a path ending in `..`. It now gives what POSIX basename gives.
 
 ## 0.3.0 (2026-11-26)
 

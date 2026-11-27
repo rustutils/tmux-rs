@@ -3550,7 +3550,9 @@ unsafe fn format_find(
         let mut saved: *mut u8;
         if modifiers.intersects(format_modifiers::FORMAT_BASENAME) {
             saved = found;
-            found = xstrdup__(basename(cstr_to_str(saved)));
+            found = xmemdup_nul(crate::libc::basename_bytes(
+                std::ffi::CStr::from_ptr(saved.cast()).to_bytes(),
+            ));
             free_(saved);
         }
         if modifiers.intersects(format_modifiers::FORMAT_DIRNAME) {

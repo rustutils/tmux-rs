@@ -13,6 +13,8 @@
 //! display-message -p passes the format through strftime first, so a `%`
 //! meant for a modifier is written `%%`.
 
+use std::ffi::OsStr;
+use std::os::unix::ffi::OsStrExt as _;
 use std::time::Duration;
 
 use super::harness::TmuxTestHarness;
@@ -76,10 +78,24 @@ fn server() -> TmuxTestHarness {
         &["set", "-g", "@hash", "a#b"],
         &["set", "-g", "@colour", "red"],
         &["set", "-g", "@float", "2.5"],
+        &["set", "-g", "@slash", "/"],
+        &["set", "-g", "@dotdot", "/usr/.."],
+        &["set", "-g", "@trail", "/usr/bin/"],
+        &["set", "-g", "@rel", "a/b"],
     ];
     for args in setup {
         tmux.cmd().args(*args).run().assert_success();
     }
+    // A path whose last component is a byte that is not UTF-8.
+    tmux.cmd()
+        .args([
+            OsStr::new("set"),
+            OsStr::new("-g"),
+            OsStr::new("@badpath"),
+            OsStr::from_bytes(b"/a/\xff"),
+        ])
+        .run()
+        .assert_success();
     tmux
 }
 
@@ -145,6 +161,39 @@ fn limits() {
             ("#{e|+|f|-101:1,2}", ""),
             ("#{e|+|f|2147483647:1,2}", ""),
             ("#{e|+|:1,2}", "3"),
+        ],
+    );
+}
+
+/// `b` and `d` are POSIX basename and dirname, applied to a value found by
+/// name. An empty value, a value of only slashes and ".." are where they
+/// differ from Rust's Path.
+#[test]
+fn basename_and_dirname() {
+    let tmux = server();
+    check(
+        &tmux,
+        &[
+            ("#{b:@path}", "tmux"),
+            ("#{d:@path}", "/usr/local/bin"),
+            ("#{b:@empty}", "."),
+            ("#{d:@empty}", "."),
+            ("#{b:@slash}", "/"),
+            ("#{d:@slash}", "/"),
+            ("#{b:@dotdot}", ".."),
+            ("#{d:@dotdot}", "/usr"),
+            ("#{b:@trail}", "bin"),
+            ("#{d:@trail}", "/usr"),
+            ("#{b:@rel}", "b"),
+            ("#{d:@rel}", "a"),
+            ("#{b:@plain}", "hello world"),
+            ("#{d:@plain}", "."),
+            ("#{b;d:@path}", "."),
+            ("#{d;b:@path}", "."),
+            ("#{b:@nonexistent}|", "|"),
+            ("#{d:@badpath}", "/a"),
+            // A literal is not looked up, so there is nothing to cut.
+            ("#{b:hello/world}", ""),
         ],
     );
 }

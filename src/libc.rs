@@ -304,10 +304,50 @@ pub unsafe fn ttyname(fd: i32) -> *mut u8 {
     unsafe { ::libc::ttyname(fd).cast() }
 }
 
+/// POSIX basename(3) on bytes: the last component of `path`, ignoring
+/// slashes at the end. An empty path gives "." and a path of only slashes
+/// gives "/". Unlike `Path::file_name`, ".." is a component like any other.
+pub(crate) fn basename_bytes(path: &[u8]) -> &[u8] {
+    if path.is_empty() {
+        return b".";
+    }
+    let Some(last) = path.iter().rposition(|&b| b != b'/') else {
+        return b"/";
+    };
+    let trimmed = &path[..=last];
+    let start = trimmed
+        .iter()
+        .rposition(|&b| b == b'/')
+        .map_or(0, |slash| slash + 1);
+    &trimmed[start..]
+}
+
+/// POSIX basename(3), see `basename_bytes`.
 pub(crate) fn basename(path: &str) -> &str {
-    std::path::Path::new(path)
-        .file_name()
-        .expect("TODO properly handle this case with ..")
-        .to_str()
-        .expect("should always be utf8")
+    // The result is cut at '/' bytes or is a literal, so it stays UTF-8.
+    std::str::from_utf8(basename_bytes(path.as_bytes())).expect("cut at an ASCII byte")
+}
+
+#[cfg(test)]
+mod basename_tests {
+    use super::basename_bytes;
+
+    /// The cases where POSIX basename differs from `Path::file_name`.
+    #[test]
+    fn posix_basename() {
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"", b"."),
+            (b"/", b"/"),
+            (b"//", b"/"),
+            (b"a", b"a"),
+            (b"a/", b"a"),
+            (b"/usr/bin/", b"bin"),
+            (b"/usr/..", b".."),
+            (b".", b"."),
+            (b"/a/\xff", b"\xff"),
+        ];
+        for (path, expected) in cases {
+            assert_eq!(basename_bytes(path), *expected, "{path:?}");
+        }
+    }
 }
