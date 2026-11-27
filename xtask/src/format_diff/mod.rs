@@ -27,7 +27,7 @@ pub mod server;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -631,13 +631,16 @@ pub fn main(args: &[String], root: &std::path::Path) -> ExitCode {
 /// Runs a whole comparison. Returns Ok(false) when a difference that is
 /// not known was found.
 fn run(opts: &Options) -> Result<bool, String> {
-    let known = match &opts.known {
-        Some(p) => known::parse(
-            &fs::read_to_string(p).map_err(|e| format!("cannot read {}: {e}", p.display()))?,
-        )
-        .map_err(|e| format!("bad lines in {}:\n{e}", p.display()))?,
-        None => Vec::new(),
+    let known_text = match &opts.known {
+        Some(p) => {
+            fs::read_to_string(p).map_err(|e| format!("cannot read {}: {e}", p.display()))?
+        }
+        None => String::new(),
     };
+    let known = known::parse(&known_text).map_err(|e| {
+        let path = opts.known.as_deref().unwrap_or(Path::new(""));
+        format!("bad lines in {}:\n{e}", path.display())
+    })?;
 
     // The formats, as (source, format) with the source for the summary.
     let mut batches: Vec<(&str, Vec<String>)> = Vec::new();
@@ -884,8 +887,14 @@ fn compare_all(
                 });
             }
         }
-        fs::write(path, known::render(&entries))
-            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+        // Keep the comments at the top of the --known file.
+        let old = opts
+            .known
+            .as_ref()
+            .and_then(|p| fs::read_to_string(p).ok())
+            .unwrap_or_default();
+        let text = known::header(&old).to_string() + &known::render(&entries);
+        fs::write(path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         println!("wrote {} entries to {}", entries.len(), path.display());
     }
 

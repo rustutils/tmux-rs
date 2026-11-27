@@ -71,6 +71,18 @@ pub fn find(entries: &[Entry], group: &str, format: &str) -> Option<usize> {
     })
 }
 
+/// The comment lines at the start of a known file, which a rewrite keeps.
+pub fn header(text: &str) -> &str {
+    let mut end = 0;
+    for line in text.split_inclusive('\n') {
+        if !line.starts_with('#') {
+            break;
+        }
+        end += line.len();
+    }
+    &text[..end]
+}
+
 /// Renders entries in the file's form, one per line.
 pub fn render(entries: &[Entry]) -> String {
     let mut s = String::new();
@@ -113,6 +125,13 @@ mod tests {
             ]
         );
         assert_eq!(parse(&render(&entries)).unwrap(), entries);
+    }
+
+    #[test]
+    fn header_is_the_leading_comments() {
+        assert_eq!(header("# a\n# b\ngroup\tx\n# c\n"), "# a\n# b\n");
+        assert_eq!(header("group\tx\n"), "");
+        assert_eq!(header(""), "");
     }
 
     #[test]

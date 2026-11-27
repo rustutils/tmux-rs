@@ -1,11 +1,9 @@
-# Known differences for cargo xtask format-diff --known, from the first
-# run (corpus and 1000 generated formats with seed 1). Each line is a
+# Known differences for cargo xtask format-diff --known, from the corpus
+# and 5000 generated formats with seed 1 (--count 5000). Each line is a
 # kind (group or format), a key and a reason, separated by tabs. Groups
 # are the names the report prints. Remove entries as they get fixed, the
-# report lists entries that matched nothing.
-#
-# The crash group (crash: modifier b, basename of an empty value or of a
-# path ending in ..) is left out on purpose: crashes are fixed, not known.
+# report lists entries that matched nothing. Crashes are never listed
+# here: they are fixed.
 group	operator !!	3.8 !! operator not ported
 group	operator !	3.8 ! operator not ported
 group	conditional with else-if	3.8 else-if chains in #{?} not ported
@@ -41,3 +39,10 @@ group	variable status-format[0]	Track 3: switch-mode and status lines (option de
 group	variable status-format[1]	Track 3: switch-mode and status lines (option default)
 group	variable config_files	tmux-rs ends the list with a comma
 group	variable history_bytes	history byte count differs (tmux-rs 320, 3.8 200)
+group	modifier E	E combined with C, see modifier C
+group	modifier b	b combined with ! (not ported)
+group	modifier T	T combined with I (not ported)
+group	modifier l	l combined with !! (not ported)
+group	modifier N	N combined with ! (not ported)
+group	operator <	< combined with C, see modifier C
+group	modifier m	m combined with ! (not ported)
